@@ -86,3 +86,5 @@ jobs:
           path: Hex-iOS-unsigned.ipa
           if-no-files-found: error
           retention-days: 14
+
+# Triggered by updates to this workflow on the dev branch.
