@@ -1,0 +1,88 @@
+name: Build Hex iOS unsigned IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/build-ios-unsigned.yml"
+      - "ios/**"
+      - "app/AppIcon.icon/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hex-ios-unsigned-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Archive iOS app and package unsigned IPA
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Select Xcode
+        run: |
+          xcode-select -p
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project
+        working-directory: ios
+        run: xcodegen generate --spec project.yml
+
+      - name: Resolve Swift packages
+        working-directory: ios
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project HEXMobile.xcodeproj \
+            -scheme HEXMobile
+
+      - name: Build unsigned iOS archive
+        working-directory: ios
+        run: |
+          xcodebuild archive \
+            -project HEXMobile.xcodeproj \
+            -scheme HEXMobile \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Hex.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/Hex.xcarchive/Products/Applications/HEX.app"
+          test -d "$APP"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          ditto "$APP" "$RUNNER_TEMP/ipa/Payload/HEX.app"
+          cd "$RUNNER_TEMP/ipa"
+          /usr/bin/zip -qry "$GITHUB_WORKSPACE/Hex-iOS-unsigned.ipa" Payload
+          test -s "$GITHUB_WORKSPACE/Hex-iOS-unsigned.ipa"
+          echo "IPA_SIZE=$(du -h "$GITHUB_WORKSPACE/Hex-iOS-unsigned.ipa" | cut -f1)" >> "$GITHUB_ENV"
+
+      - name: Verify IPA contents
+        run: |
+          unzip -l Hex-iOS-unsigned.ipa | grep -E 'Payload/HEX.app/(Info.plist|PlugIns/.*\.appex/Info.plist)' || true
+          echo "Created unsigned IPA: $IPA_SIZE"
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hex-iOS-unsigned-IPA
+          path: Hex-iOS-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 14
