@@ -53,6 +53,12 @@ final class FullKeyboardEngineTests: XCTestCase {
         }
     }
 
+    func testChinesePinyinAndOriginalHexKeyPositionAreEnabledByDefault() {
+        let settings = FullKeyboardSettings(defaults: defaults)
+        XCTAssertTrue(settings.chinesePinyin, "fresh installs should type Simplified Chinese without setup")
+        XCTAssertEqual(settings.hexKeyPlacement, .rightOfSpace, "the Hex key belongs beside the space bar")
+    }
+
     func testOfflinePinyinSessionWarmupCompletesWithoutBlockingTheCaller() {
         let session = ChinesePinyinSession()
         XCTAssertTrue(session.isAvailable, "the Inputx native Pinyin core must be linked into the keyboard")
