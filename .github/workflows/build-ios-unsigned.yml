@@ -37,6 +37,16 @@ jobs:
           git -C "$RUNNER_TEMP/inputx" sparse-checkout init --cone
           git -C "$RUNNER_TEMP/inputx" sparse-checkout set core tools/eval/runner
           git -C "$RUNNER_TEMP/inputx" checkout 622d8651b50877ee63034adc1b4486028aeb6145
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("$RUNNER_TEMP/inputx/core/crates/inputx-core/src/composite/pinyin_adapter.rs")
+          text = source.read_text()
+          old = "pub const PINYIN_DISABLE_COMPOSE: bool = true;"
+          new = "pub const PINYIN_DISABLE_COMPOSE: bool = false;"
+          if old not in text:
+              raise SystemExit("Pinned Inputx source no longer matches the expected composition flag")
+          source.write_text(text.replace(old, new, 1))
+          PY
           cargo +stable build --manifest-path "$RUNNER_TEMP/inputx/core/Cargo.toml" --release --target aarch64-apple-ios -p inputx-core-ffi
           mkdir -p "$GITHUB_WORKSPACE/ios/vendor/inputx"
           ln -s "$RUNNER_TEMP/inputx/core" "$GITHUB_WORKSPACE/ios/vendor/inputx/core"
