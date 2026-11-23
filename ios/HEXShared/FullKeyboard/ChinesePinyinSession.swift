@@ -45,7 +45,7 @@ final class ChinesePinyinSession {
 
     var candidates: [String] {
         guard let handle else { return [] }
-        let count = min(Int(inputx_session_candidate_count(handle)), 64)
+        let count = min(Int(inputx_session_candidate_count(handle)), 2)
         guard count > 0 else { return [] }
         return (0..<count).compactMap { index in
             guard let value = inputx_session_candidate(handle, UInt(index)) else { return nil }
