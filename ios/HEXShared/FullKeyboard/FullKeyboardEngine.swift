@@ -1062,11 +1062,14 @@ final class FullKeyboardEngine {
                character.count == 1,
                let typed = character.lowercased().first,
                typed.isASCII, typed.isLetter {
-                _ = pinyinSession.insert(typed)
-                shift.didType()
-                refreshSuggestions()
-                onChange?()
-                return
+                if pinyinSession.insert(typed) {
+                    shift.didType()
+                    refreshSuggestions()
+                    onChange?()
+                    return
+                }
+                // If the native engine declines a key, preserve normal English
+                // typing rather than swallowing the character in Pinyin mode.
             }
             commitPinyinComposition()
         }
