@@ -124,6 +124,8 @@ nonisolated struct KeyboardThemeColors: Equatable, Sendable {
     var actionPressedFill: UIColor { Self.color(actionPressedFillHex) }
     /// The strip suggestion capsule's fill, nil where the palette's own answers.
     var stripPillFill: UIColor? { stripPillFillHex.map(Self.color) }
+    /// The pressed suggestion capsule follows the theme's pressed key surface.
+    var stripPillPressedFill: UIColor { keyPressedFill }
 }
 
 fileprivate extension KeyboardThemeColors {
