@@ -28,6 +28,21 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Build the pinned Inputx Pinyin core for iOS
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup target add aarch64-apple-ios --toolchain stable
+          git clone --filter=blob:none --no-checkout https://github.com/goliajp/inputx.git "$RUNNER_TEMP/inputx"
+          git -C "$RUNNER_TEMP/inputx" sparse-checkout init --cone
+          git -C "$RUNNER_TEMP/inputx" sparse-checkout set core tools/eval/runner
+          git -C "$RUNNER_TEMP/inputx" checkout 622d8651b50877ee63034adc1b4486028aeb6145
+          cargo +stable build --manifest-path "$RUNNER_TEMP/inputx/core/Cargo.toml" --release --target aarch64-apple-ios -p inputx-core-ffi
+          mkdir -p "$GITHUB_WORKSPACE/ios/vendor/inputx"
+          ln -s "$RUNNER_TEMP/inputx/core" "$GITHUB_WORKSPACE/ios/vendor/inputx/core"
+          test -s "$GITHUB_WORKSPACE/ios/vendor/inputx/core/include/inputx_core.h"
+          test -s "$GITHUB_WORKSPACE/ios/vendor/inputx/core/target/aarch64-apple-ios/release/libinputx_core.a"
+
       - name: Select Xcode
         run: |
           xcode-select -p
