@@ -685,6 +685,7 @@ final class KeyboardLayoutTests: XCTestCase {
 
     func testLetterRowsMatchApplesLayouts() {
         let rows: [KeyboardLanguage: [String]] = [
+            .chinese: ["qwertyuiop", "asdfghjkl", "zxcvbnm"],
             .english: ["qwertyuiop", "asdfghjkl", "zxcvbnm"],
             .norwegian: ["qwertyuiopå", "asdfghjkløæ", "zxcvbnm"],
             .spanish: ["qwertyuiop", "asdfghjklñ", "zxcvbnm"],
@@ -718,6 +719,7 @@ final class KeyboardLayoutTests: XCTestCase {
     /// and Norwegian, Russian and Ukrainian keep one layout here.
     func testEachLanguageOffersApplesLayoutsWithItsOwnFirst() {
         let offered: [KeyboardLanguage: [KeyboardLetterLayout]] = [
+            .chinese: [.qwerty],
             .english: [.qwerty, .azerty, .qwertz, .dvorak],
             .german: [.own, .qwertz, .qwerty, .azerty],
             .spanish: [.own, .qwerty, .azerty, .qwertz],
@@ -751,6 +753,31 @@ final class KeyboardLayoutTests: XCTestCase {
         XCTAssertEqual(KeyboardLanguage.hungarian.layoutName(.own), "QWERTZ – Magyar")
         XCTAssertEqual(KeyboardLanguage.hungarian.layoutName(.qwerty), "QWERTY – Magyar")
         XCTAssertEqual(KeyboardLanguage.polish.layoutName(.qwerty), "QWERTY")
+    }
+
+    func testSimplifiedChineseIsSelectableAndActivatesItsPinyinLayout() {
+        XCTAssertEqual(KeyboardLanguage.chinese.displayName, "简体中文")
+        XCTAssertEqual(KeyboardLanguage.chinese.inputModeLanguage, "zh-Hans")
+        XCTAssertEqual(KeyboardLanguage.chinese.letterRows.map { $0.joined() }, [
+            "qwertyuiop", "asdfghjkl", "zxcvbnm",
+        ])
+        XCTAssertEqual(KeyboardLanguage.chinese.letterLayouts, [.qwerty])
+        XCTAssertEqual(KeyboardLanguage.chinese.spellCheckCandidates, [])
+        XCTAssertTrue(KeyboardLanguage.selectable().contains(.chinese))
+        XCTAssertEqual(KeyboardLanguage.matching("zh-Hans-CN"), .chinese)
+        XCTAssertEqual(KeyboardLanguage.matching("zh-CN"), .chinese)
+        XCTAssertNil(KeyboardLanguage.matching("zh-Hant-TW"))
+        XCTAssertEqual(
+            KeyboardLanguage.automatic(dictationLanguage: "zh-CN", inputModes: [], preferredLanguages: []),
+            .chinese
+        )
+        let list = KeyboardLanguageList.resolve(
+            chosen: [.english, .chinese],
+            stored: .chinese,
+            automatic: .english
+        )
+        XCTAssertEqual(list.current, .chinese)
+        XCTAssertEqual(list.layout, .chinese)
     }
 
     /// The plain layouts are the same 26 letters in every language (iOS 27.0 simulator: English,
