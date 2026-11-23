@@ -216,7 +216,7 @@ private extension DictationBarAutoStart {
     }
 }
 
-/// Settings › Keyboard › Hex key: which end of the strip the full keyboard's Hex key sits at.
+/// Settings › Keyboard › Hex key: which side of the space bar the full keyboard's Hex key sits at.
 private extension KeyHapticStrength {
     var label: String {
         switch self {
