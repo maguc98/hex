@@ -158,9 +158,9 @@ struct FullKeyboardSettings {
         nonmutating set { defaults?.set(newValue, forKey: Key.koreanKeyboard) }
     }
 
-    /// Settings › Keyboard › Chinese Pinyin: enables the offline full-Pinyin input mode.
-    /// Off by default. The keyboard keeps its existing QWERTY layout; a space-bar swipe
-    /// switches between English and Chinese while this option is enabled.
+    /// Settings › Keyboard › Chinese Pinyin: enables offline full-Pinyin composition over
+    /// the existing QWERTY layout. Off by default; choosing Simplified Chinese in Keyboard
+    /// Languages also activates Pinyin. English words remain selectable in the same sentence.
     var chinesePinyin: Bool {
         get { defaults?.object(forKey: Key.chinesePinyin) as? Bool ?? false }
         nonmutating set { defaults?.set(newValue, forKey: Key.chinesePinyin) }
