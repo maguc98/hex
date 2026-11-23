@@ -47,6 +47,13 @@ final class FullKeyboardEngine {
     var trackpadSelectionState = TrackpadSelectionState()
     /// Settings › Experiments › Korean keyboard (두벌식): its switch and composing run.
     var korean = KoreanKeyboardState()
+    private lazy var pinyinSession = ChinesePinyinSession()
+    private(set) var isChinesePinyinMode = false
+    var chinesePinyinEnabled = false {
+        didSet {
+            if !chinesePinyinEnabled { setChinesePinyinMode(false) }
+        }
+    }
 
     /// Where each letter of the word being typed was tapped (nil for one that came another
     /// way, such as an accent), for Spatial autocorrect.
@@ -334,7 +341,26 @@ final class FullKeyboardEngine {
     func refreshSuggestions() {
         syncLearning()
         let next: [KeyboardSuggestion]
-        if let swipeSuggestions {
+        if isChinesePinyinMode {
+            if pinyinSession.isComposing {
+                let raw = KeyboardSuggestion(
+                    displayText: pinyinSession.preedit,
+                    replacement: pinyinSession.preedit,
+                    kind: .keepLiteral
+                )
+                let words = pinyinSession.candidates
+                let candidates = words.prefix(2).enumerated().map { index, word in
+                    KeyboardSuggestion(
+                        displayText: word,
+                        replacement: word,
+                        kind: index == 0 ? .primary(autoReplace: false) : .secondary
+                    )
+                }
+                next = [raw] + candidates
+            } else {
+                next = []
+            }
+        } else if let swipeSuggestions {
             next = displayed(swipeSuggestions)
         } else {
             autocorrect.decoderTaps = currentTokenTaps
@@ -358,7 +384,49 @@ final class FullKeyboardEngine {
         }
     }
 
+    /// Commits the first Chinese candidate when leaving Pinyin composition. If the
+    /// current syllable sequence has no dictionary match, preserve the typed Latin text.
+    func commitPinyinComposition() {
+        guard isChinesePinyinMode, pinyinSession.isComposing else { return }
+        let raw = pinyinSession.preedit
+        let committed = pinyinSession.commitFirst()
+        if committed == nil { pinyinSession.clear() }
+        let text = committed ?? raw
+        guard !text.isEmpty else { return }
+        target.insertText(text)
+        tokenTaps.removeAll()
+        didEdit()
+    }
+
+    /// Enables/disables the Chinese composition layer without changing the key layout.
+    func setChinesePinyinMode(_ enabled: Bool) {
+        let next = enabled && chinesePinyinEnabled
+        guard next != isChinesePinyinMode else { return }
+        if !next { commitPinyinComposition() }
+        isChinesePinyinMode = next
+        if next { pinyinSession.clear() }
+        refreshSuggestions()
+        onChange?()
+    }
+
     func acceptSuggestion(_ suggestion: KeyboardSuggestion) {
+        if isChinesePinyinMode, pinyinSession.isComposing {
+            let picked: String?
+            if suggestion.kind == .keepLiteral {
+                picked = pinyinSession.preedit
+                pinyinSession.clear()
+            } else if let index = pinyinSession.candidates.firstIndex(of: suggestion.replacement) {
+                picked = pinyinSession.commit(at: index)
+            } else {
+                picked = nil
+            }
+            if let picked, !picked.isEmpty {
+                target.insertText(picked)
+                tokenTaps.removeAll()
+                didEdit()
+            }
+            return
+        }
         // `typeHeldSpace` asks `spacePending`, so the record stays until the pick's own insert
         // replaces it; every delete below counts the token in the host's text (`textBefore`).
         typeHeldSpace(before: suggestion)
@@ -425,6 +493,7 @@ final class FullKeyboardEngine {
     /// Types an emoji from the emoji panel: no spacing or autocorrect around it.
     func insertEmoji(_ text: String, source: String) {
         commitHangulComposition()
+        commitPinyinComposition()
         adaptiveTouch?.forget()
         learning?.didFinish(word: AutocorrectEngine.currentToken(in: textBefore), language: autocorrect.language.rawValue)
         insert(text, source: source)
@@ -511,6 +580,7 @@ final class FullKeyboardEngine {
             deleteBackward()
         case .layerSwitch(let next):
             commitHangulComposition()
+            commitPinyinComposition()
             touch.returnLayer = layerState.layer
             layerState.switchTo(next)
             if next == .letters { shift.reset() }
@@ -731,6 +801,7 @@ final class FullKeyboardEngine {
             }
         case .returnKey:
             commitHangulComposition()
+            commitPinyinComposition()
             if target.enablesReturnKeyAutomatically == true && !target.hasText {
                 typingLog?.edit("return", [
                     TypingLogField("returnKeyType", .string(TypingLogTraits.name(target.returnKeyType ?? .default))),
@@ -832,6 +903,12 @@ final class FullKeyboardEngine {
     /// keyboard does (black box, iOS 27.2), and the strip then offers what you typed
     /// (`offeringRevert`); Adaptive touch keeps the word's taps for that revert.
     func deleteBackward(takesSwipeBack: Bool = true, source: String = "key") {
+        if isChinesePinyinMode, pinyinSession.isComposing {
+            _ = pinyinSession.backspace()
+            refreshSuggestions()
+            onChange?()
+            return
+        }
         if deleteHangulBackward() { return }
         // The held space is a boundary question that deletes nothing: ask it before forgetting
         // what Hex typed, and keep the record when it answers, as the text has not changed.
@@ -902,6 +979,19 @@ final class FullKeyboardEngine {
     /// `down`: where a tap's finger went down, for Adaptive touch (nil for a slide from shift).
     private func commitCharacter(_ key: KeyboardKey, at point: CGPoint, down: CGPoint? = nil) {
         guard let character = key.character else { return }
+        if isChinesePinyinMode {
+            if layerState.layer == .letters,
+               character.count == 1,
+               let typed = character.lowercased().first,
+               typed.isASCII, typed.isLetter {
+                _ = pinyinSession.insert(typed)
+                shift.didType()
+                refreshSuggestions()
+                onChange?()
+                return
+            }
+            commitPinyinComposition()
+        }
         if typeHangul(character) {
             shift.didTypeOneShot()
             return
@@ -1141,6 +1231,7 @@ final class FullKeyboardEngine {
     /// `point` is where the space bar was tapped, as on the unsplit keyboard.
     private func typeSpace(at point: CGPoint? = nil) {
         commitHangulComposition()
+        commitPinyinComposition()
         // Space never autocorrects a swiped word: it is a reading, not a typo.
         let afterSwipe = swipedWord != nil
         swipedWord = nil
