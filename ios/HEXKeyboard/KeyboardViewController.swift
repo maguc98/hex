@@ -254,6 +254,7 @@ final class KeyboardViewController: UIInputViewController {
         launchWork.forEach { $0.cancel() }
         launchWork = []
         fullKeyboard?.engine.commitHangulComposition()
+        fullKeyboard?.engine.commitPinyinComposition()
         closeBarEmojiPanel()
         // A dictation under way finishes without the keyboard, and the next one delivers it.
         localDictation.keyboardWillHide()
