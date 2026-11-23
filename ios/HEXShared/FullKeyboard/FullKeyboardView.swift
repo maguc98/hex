@@ -494,7 +494,11 @@ final class FullKeyboardView: UIView {
             reportedInputModeLanguage = identifier
             hostController?.primaryLanguage = identifier
         }
-        guard list != languages || engine.language != list.current || engine.letterLayout != letters else { return }
+        guard list != languages || engine.language != list.current || engine.letterLayout != letters else {
+            refreshSpaceLabel()
+            syncSwipeTyping()
+            return
+        }
         languages = list
         engine.layoutLanguage = list.layout == list.current ? nil : list.layout
         engine.letterLayout = letters
