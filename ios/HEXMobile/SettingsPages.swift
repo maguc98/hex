@@ -322,7 +322,7 @@ struct KeyboardSettingsPage: View {
 
                     SettingsToggleRow(
                         title: String(localized: "Chinese Pinyin"),
-                        detail: String(localized: "Offline full Pinyin. Swipe the space bar to switch Chinese and English."),
+                        detail: String(localized: "Offline Pinyin with Chinese and English mixed in the same sentence. No mode switching needed."),
                         isOn: $chinesePinyin
                     )
 
