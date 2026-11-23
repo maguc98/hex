@@ -5,7 +5,11 @@ import InputxCoreC
 /// The keyboard owns one session for its lifetime; all calls are serialized
 /// on the keyboard's main thread, matching UIInputViewController's event flow.
 final class ChinesePinyinSession {
+    private static let learningKey = "keyboard.pinyin.learning.v1"
+    private let defaults = UserDefaults(suiteName: KeyboardBridge.appGroup)
     private var handle: OpaquePointer?
+
+    var isAvailable: Bool { handle != nil }
 
     init() {
         guard let session = inputx_session_new() else {
@@ -16,6 +20,9 @@ final class ChinesePinyinSession {
         // InputxEngineMode.pinyinOnly = 2; InputxInputMode.cjk = 0.
         _ = inputx_session_set_engine_mode(session, 2)
         _ = inputx_session_set_input_mode(session, 0)
+        if let saved = defaults?.string(forKey: Self.learningKey) {
+            saved.withCString { _ = inputx_session_import_l0_json(session, 1, $0) }
+        }
     }
 
     deinit {
@@ -41,7 +48,7 @@ final class ChinesePinyinSession {
         let count = min(Int(inputx_session_candidate_count(handle)), 64)
         guard count > 0 else { return [] }
         return (0..<count).compactMap { index in
-            guard let value = inputx_session_candidate(handle, index) else { return nil }
+            guard let value = inputx_session_candidate(handle, UInt(index)) else { return nil }
             defer { inputx_string_free(value) }
             return String(cString: value)
         }
@@ -61,9 +68,17 @@ final class ChinesePinyinSession {
 
     func commit(at index: Int) -> String? {
         guard let handle, index >= 0,
-              let value = inputx_session_commit_index(handle, index) else { return nil }
+              let value = inputx_session_commit_index(handle, UInt(index)) else { return nil }
         defer { inputx_string_free(value) }
-        return String(cString: value)
+        let text = String(cString: value)
+        persistLearning()
+        return text
+    }
+
+    private func persistLearning() {
+        guard let handle, let json = inputx_session_export_l0_json(handle, 1) else { return }
+        defer { inputx_string_free(json) }
+        defaults?.set(String(cString: json), forKey: Self.learningKey)
     }
 
     func commitFirst() -> String? {
