@@ -28,6 +28,15 @@ final class KeyboardViewController: UIInputViewController {
     /// clear on iOS's glass panel.
     private var backdrop: KeyboardBackdropView?
     private var didConfigureView = false
+    /// Keep the first keyboard frame lightweight; the full surface is mounted after UIKit
+    /// has completed the extension's first appearance transition.
+    private var launchPlaceholder: UIView?
+    /// Numeric-field hand-off must not run against a stale document proxy during activation.
+    private var mayRouteInitialField = false
+    private let lifecycleLogger = Logger(
+        subsystem: Bundle.main.bundleIdentifier ?? "anomaly.hex.mobile.keyboard",
+        category: "KeyboardLifecycle"
+    )
     /// Hex's keyboards on screen in this process, and this one's name among them.
     private static var onScreen = KeyboardsOnScreen() {
         didSet {
@@ -140,7 +149,6 @@ final class KeyboardViewController: UIInputViewController {
         KeyboardLocalDictation.allowHapticsWhileRecording()
         _ = Self.hostLeaveObserver
         configureView()
-        syncFromBridge(animated: false)
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -151,21 +159,33 @@ final class KeyboardViewController: UIInputViewController {
         coldStartJobID = UUID().uuidString
         didHandOffCurrentField = false
         handOffWaitsForPosture = false
+        mayRouteInitialField = false
         // The keyboard may come back for another field: settle on where the dictation was last seen.
         dictationEdits.finish(nil)
-        mountSurface()
-        fullKeyboard?.prepareForField()
+        installLaunchPlaceholderIfNeeded()
         isShown = true
         Self.onScreen.appeared(keyboardID, in: currentDocument)
         updateBackdrop()
         beginTypingLogSession(trigger: "appear")
-        handOffNumericPadIfNeeded()
-        syncFromBridge(animated: false)
-        schedulePoll(force: true)
+        lifecycleLogger.info("Keyboard will appear; waiting for UIKit activation")
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        lifecycleLogger.info("Keyboard did appear; mounting the input surface")
+        if isShown, !isRetired {
+            mountSurface()
+            fullKeyboard?.prepareForField()
+            syncFromBridge(animated: false)
+            schedulePoll(force: true)
+        }
+        // Do not route to another keyboard until UIKit has attached the real text field.
+        // During viewWillAppear, textDocumentProxy can still describe the previous field.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
+            guard let self, self.isShown, !self.isRetired else { return }
+            self.mayRouteInitialField = true
+            self.handOffNumericPadIfNeeded()
+        }
         // iOS holds back touches near the screen's side edges in a keyboard's window while it
         // waits to see whether they start a system gesture: on an iPhone they reached the keys
         // about 80 ms late (Record typing logs), so q, a, p, l, shift and delete lagged and
@@ -250,6 +270,7 @@ final class KeyboardViewController: UIInputViewController {
         TypingJournal.sharedIfEnabled()?.save()
         AdaptiveTouch.current?.save()
         isShown = false
+        mayRouteInitialField = false
         Self.onScreen.disappeared(keyboardID)
         launchWork.forEach { $0.cancel() }
         launchWork = []
@@ -526,7 +547,10 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func handOffNumericPadIfNeeded() {
-        guard let fullKeyboard else { return }
+        guard mayRouteInitialField,
+              isShown,
+              viewIfLoaded?.window != nil,
+              let fullKeyboard else { return }
         if KeyboardFieldRouting.route(for: textDocumentProxy.keyboardType) == .handOff {
             guard !didHandOffCurrentField else { return }
             // The Duo's posture needs the keyboard's window: layout asks again once it has one.
@@ -537,6 +561,7 @@ final class KeyboardViewController: UIInputViewController {
             handOffWaitsForPosture = false
             didHandOffCurrentField = true
             if KeyboardFieldRouting.handsOffNumberPad(needsInputModeSwitchKey: needsInputModeSwitchKey, posture: posture) {
+                lifecycleLogger.info("Handing off Hex for an unsupported numeric keyboard type")
                 advanceToNextInputMode()
             }
         } else {
@@ -595,6 +620,8 @@ final class KeyboardViewController: UIInputViewController {
         handOffWaitsForPosture = false
         closeBarEmojiPanel()
         barEmojiLibrary = nil
+        launchPlaceholder?.removeFromSuperview()
+        launchPlaceholder = nil
         children.forEach { child in
             child.willMove(toParent: nil)
             child.viewIfLoaded?.removeFromSuperview()
@@ -784,7 +811,49 @@ final class KeyboardViewController: UIInputViewController {
             ContainingAppOpener.open(url, from: self)
         }
 
-        mountSurface()
+        installLaunchPlaceholderIfNeeded()
+    }
+
+    /// A deliberately cheap first frame. The actual keyboard can be comparatively expensive
+    /// to construct (layout, language state, and its SwiftUI/UIKit subtrees), so leave UIKit a
+    /// real, correctly-sized input view before mounting it after viewDidAppear.
+    private func installLaunchPlaceholderIfNeeded() {
+        guard surface == nil, launchPlaceholder == nil else { return }
+
+        let orientation = FullKeyboardView.orientation(for: traitCollection)
+        let wantsFullKeyboard = FullKeyboardSettings().isEnabled || !hasFullAccess
+        let height = wantsFullKeyboard
+            ? KeyboardLayout.height(for: orientation)
+            : Self.barHeight + barTopInset
+        applyHeight(height)
+
+        let placeholder = UIView()
+        placeholder.backgroundColor = .clear
+        placeholder.isUserInteractionEnabled = false
+        placeholder.accessibilityElementsHidden = true
+
+        let title = UILabel()
+        title.text = "Hex"
+        title.font = .systemFont(ofSize: 11, weight: .semibold)
+        title.textColor = .secondaryLabel
+        title.textAlignment = .center
+        title.translatesAutoresizingMaskIntoConstraints = false
+        placeholder.addSubview(title)
+        NSLayoutConstraint.activate([
+            title.centerXAnchor.constraint(equalTo: placeholder.centerXAnchor),
+            title.centerYAnchor.constraint(equalTo: placeholder.centerYAnchor)
+        ])
+
+        placeholder.translatesAutoresizingMaskIntoConstraints = false
+        (view as? KeyboardInputView)?.noteHexSubview(placeholder)
+        view.addSubview(placeholder)
+        NSLayoutConstraint.activate([
+            placeholder.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            placeholder.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            placeholder.topAnchor.constraint(equalTo: view.topAnchor),
+            placeholder.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+        launchPlaceholder = placeholder
     }
 
     /// The full keyboard, or the dictation bar once it was chosen, on an iPhone and an iPad alike.
@@ -859,6 +928,8 @@ final class KeyboardViewController: UIInputViewController {
         ])
         if !wantsFull { barTopConstraint = top }
         surface = mounted
+        launchPlaceholder?.removeFromSuperview()
+        launchPlaceholder = nil
         attachTypingLog()
         schedulePoll(force: false)
     }
