@@ -902,6 +902,27 @@ nonisolated struct KeyboardLanguageList: Equatable, Sendable {
         return KeyboardLanguageList(languages: languages, current: current)
     }
 
+    /// Selecting Simplified Chinese makes it the sole keyboard language: Pinyin's
+    /// candidate strip handles English words in the same sentence, so adding it must not
+    /// create a separate English/Chinese space-bar switch. Other languages keep the usual
+    /// Automatic-plus-selected behavior.
+    static func toggled(
+        _ language: KeyboardLanguage,
+        in chosen: [KeyboardLanguage],
+        automatic: KeyboardLanguage
+    ) -> [KeyboardLanguage] {
+        if let index = chosen.firstIndex(of: language) {
+            var next = chosen
+            next.remove(at: index)
+            return next
+        }
+        if language == .chinese { return [.chinese] }
+        if chosen.isEmpty {
+            return language == automatic ? [language] : [automatic, language]
+        }
+        return chosen + [language]
+    }
+
     /// Two or more: the space bar names the language and switches it.
     var switches: Bool { languages.count > 1 }
 
