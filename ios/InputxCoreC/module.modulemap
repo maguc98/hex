@@ -1,0 +1,5 @@
+module InputxCoreC [system] {
+    header "../vendor/inputx/core/include/inputx_core.h"
+    link "inputx_core"
+    export *
+}
