@@ -3239,6 +3239,28 @@ final class FullKeyboardEngineTests: XCTestCase {
         XCTAssertEqual(controller.reportedLanguages, ["it-IT", "en-US", "it-IT"], "each change sent once")
     }
 
+    /// Native Pinyin warmup may gate text entry, but must never disable the parent keyboard
+    /// or the globe button: UIKit needs the globe to remain available to switch input modes.
+    func testPinyinWarmupDisablesOnlyTextEntrySurfaces() {
+        let view = FullKeyboardView(model: KeyboardViewModel(), target: target)
+
+        view.setPinyinInputInteractionEnabled(false)
+
+        XCTAssertTrue(view.isUserInteractionEnabled, "the keyboard container stays interactive")
+        XCTAssertTrue(view.globeButton.isUserInteractionEnabled, "the system input-mode switch stays usable")
+        XCTAssertTrue(view.hexKey.isUserInteractionEnabled, "dictation remains available")
+        XCTAssertFalse(view.plane.isUserInteractionEnabled, "letter and modifier keys wait for Pinyin warmup")
+        XCTAssertFalse(view.stripView.isUserInteractionEnabled, "candidate actions wait for Pinyin warmup")
+        XCTAssertFalse(view.selectionStrip.isUserInteractionEnabled, "text-selection actions wait for Pinyin warmup")
+
+        view.setPinyinInputInteractionEnabled(true)
+
+        XCTAssertTrue(view.plane.isUserInteractionEnabled)
+        XCTAssertTrue(view.stripView.isUserInteractionEnabled)
+        XCTAssertTrue(view.selectionStrip.isUserInteractionEnabled)
+        XCTAssertTrue(view.globeButton.isUserInteractionEnabled)
+    }
+
     /// The globe hands its own touches to UIKit's `handleInputModeList(from:with:)` (Apple's
     /// documented wiring). Where Apple's keyboard is split (the Duo unfolded), a tap's lift isn't
     /// passed on, so the list opens instead of UIKit's switch to the next keyboard, which can end
