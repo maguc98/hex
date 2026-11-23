@@ -2000,7 +2000,7 @@ final class FullKeyboardEngineTests: XCTestCase {
             }
             // Russian and Ukrainian have no Latin letters: press their own а and hold their own
             // е (Ukrainian's ʼ, its only key with long-press options); Greek its α and ε; Korean
-            // its ㅂ (Hangul holds nothing).
+            // its ㅂ (Hangul holds nothing); Chinese uses QWERTY Pinyin without held accents.
             let first = language == .korean ? "ㅂ" : language == .greek ? "α" : language.isLatin ? "a" : "а"
             for (id, kind) in [KeyKind.character(first), .space, .delete].enumerated() {
                 let key = view.engine.layout.key(kind)!
@@ -2018,16 +2018,18 @@ final class FullKeyboardEngineTests: XCTestCase {
             case .czech: "r"
             case .greek: "ε"
             case .korean: "ㅂ"
+            case .chinese: "e"
             default: "e"
             }
             view.debugHoldAccent(held, selectIndex: 1)
             counts[language] = asked
         }
         XCTAssertGreaterThanOrEqual(counts[.english] ?? 0, 4, "three keys and an accent step")
-        for language in KeyboardLanguage.allCases where language != .korean {
+        for language in KeyboardLanguage.allCases where language != .korean && language != .chinese {
             XCTAssertEqual(counts[language], counts[.english], "\(language.rawValue) haptics")
         }
         XCTAssertEqual(counts[.korean] ?? 0, 3, "three keys, and no held accents")
+        XCTAssertEqual(counts[.chinese] ?? 0, 3, "three keys, and no held accents")
     }
 
     /// TestFlight: "Cannot hear the iOS typing sound when using your keyboard." Every key asks
