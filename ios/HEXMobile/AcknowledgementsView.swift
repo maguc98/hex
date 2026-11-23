@@ -44,6 +44,12 @@ struct AcknowledgementsView: View {
     /// and Parakeet Ultra for Experiments › Multilingual model); keep in step with ios/README.md.
     static let entries: [Entry] = [
         Entry(
+            title: "Inputx Chinese Pinyin engine",
+            body: """
+            Hex's offline full-Pinyin input engine is based on Inputx             (github.com/goliajp/inputx), pinned to commit             622d8651b50877ee63034adc1b4486028aeb6145. The engine source is dual-licensed             under the MIT License or Apache License, Version 2.0. Its Chinese dictionary             incorporates Unihan data (Unicode License), jieba and pypinyin (MIT), and             Leipzig Corpora Collection and SUBTLEX-CH data (Creative Commons Attribution 4.0).
+            """
+        ),
+        Entry(
             title: "Google Books Ngram data",
             body: """
             Spatial autocorrect's word and word-pair frequencies, and German's capitalisation \
