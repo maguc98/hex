@@ -517,8 +517,9 @@ final class FullKeyboardView: UIView {
     func switchLanguage(by step: Int) {
         guard languageOverride == nil else { return }
         if engine.chinesePinyinEnabled, languages.languages.count == 1 {
-            let enabled = !engine.isChinesePinyinMode
-            engine.setChinesePinyinMode(enabled)
+            let requested = !engine.isChinesePinyinMode
+            engine.setChinesePinyinMode(requested)
+            let enabled = engine.isChinesePinyinMode
             FullKeyboardSettings().chinesePinyinMode = enabled
             let identifier = enabled ? "zh-Hans" : languages.current.inputModeLanguage
             reportedInputModeLanguage = identifier
