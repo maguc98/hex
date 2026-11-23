@@ -786,11 +786,13 @@ final class FullKeyboardView: UIView {
         stripView.frame = layout.stripFrame.offsetBy(dx: 0, dy: lift)
         selectionStrip.frame = stripView.frame
         stripView.slotFrames = layout.stripSlotFrames.map { $0.offsetBy(dx: -layout.stripFrame.minX, dy: -layout.stripFrame.minY) }
-        stripView.pillInset = layout.metrics.stripInset
+        // Hex's original strip uses compact word chips and its own dividers, not Apple's
+        // full-cell prediction bubbles. Keep Apple's measured key geometry, but not its bar styling.
+        stripView.pillInset = max(4, layout.metrics.stripInset)
         stripView.textCenterY = layout.metrics.stripTextCenter
-        stripView.chipHeight = layout.metrics.stripChipHeight
-        stripView.appleBar = layout.metrics.appleBar
-        stripView.dividerBesideHex = layout.metrics.appleBar && layout.key(.hex).map { $0.row < 0 } == true
+        stripView.chipHeight = min(24, layout.metrics.stripChipHeight)
+        stripView.appleBar = false
+        stripView.dividerBesideHex = false
         stripView.hexOnLeading = layout.hexOnLeading
         stripView.barMidX = layout.stripBarFrame.midX - layout.stripFrame.minX
 
