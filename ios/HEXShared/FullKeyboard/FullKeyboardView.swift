@@ -41,10 +41,8 @@ final class FullKeyboardView: UIView {
     let callout = KeyCalloutView()
     let accentCallout = AccentCalloutView()
     let hexKey = HexKeyControl()
-    /// A theme's own opaque panel behind every key and the strip, at the glass panel's own
-    /// frame and top corners (`KeyboardThemePanelView`): this view's own background stays
-    /// clear, since filling its whole rect would draw square corners over the app. Hidden
-    /// under Automatic, which leaves iOS's glass exactly as it was.
+    /// Hex's opaque keyboard panel behind every key and the strip, at the system panel's
+    /// frame and top corners (`KeyboardThemePanelView`); named themes can replace its colours.
     let themePanel = KeyboardThemePanelView()
     let globeButton = UIButton(type: .custom)
     /// The capsule that grows from the Hex mark across the strip into the recording bar.
@@ -118,9 +116,8 @@ final class FullKeyboardView: UIView {
     /// Settings › Experiments › Hide word suggestions: the strip keeps its height, chips,
     /// status and notices but shows no words (`refreshStrip`).
     private var hidesWordSuggestions = false
-    /// Settings › Experiments › Keyboard themes: Automatic keeps iOS's glass; another theme
-    /// paints the keyboard's own colours. Read again by `syncSettings`, which rebuilds the
-    /// palette when it changes.
+    /// Settings › Experiments › Keyboard themes: Automatic uses Hex's original palette;
+    /// another theme replaces its colours. Read again by `syncSettings`.
     private var keyboardTheme = FullKeyboardSettings().effectiveKeyboardTheme
     /// A paste iOS asked about or refused: the strip points to the setting that stops it.
     var showsAllowPasteHint = false
@@ -832,9 +829,8 @@ final class FullKeyboardView: UIView {
         let isDark = appearanceOverride
             ?? FullKeyboardPalette.isDark(traits: traitCollection)
         let next = FullKeyboardPalette(isDark: isDark, theme: keyboardTheme)
-        // A theme paints its own opaque panel, so the system glass behind the keys never
-        // shows through. The panel, not this view, keeps the glass panel's corners;
-        // Automatic leaves both clear as before.
+        // Hex paints its own opaque panel, so the system glass never shows through. The
+        // panel, not this view, keeps the rounded top corners.
         backgroundColor = drawsBackdrop ? next.backdrop : .clear
         themePanel.isHidden = !next.drawsOwnBackground
         themePanel.backgroundColor = next.drawsOwnBackground ? next.backdrop : .clear
