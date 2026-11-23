@@ -401,22 +401,7 @@ struct KeyboardLanguagesPage: View {
     }
 
     private func toggle(_ language: KeyboardLanguage) {
-        if let index = chosen.firstIndex(of: language) {
-            var next = chosen
-            next.remove(at: index)
-            choose(next)
-        } else if chosen.isEmpty {
-            // Simplified Chinese is a composition language: keep it selected on its own so
-            // Pinyin can write Chinese and English in the same sentence without a mode switch.
-            // Other languages retain Automatic's current language as their first switch choice.
-            if language == .chinese {
-                choose([.chinese])
-            } else {
-                choose(language == automatic ? [language] : [automatic, language])
-            }
-        } else {
-            choose(chosen + [language])
-        }
+        choose(KeyboardLanguageList.toggled(language, in: chosen, automatic: automatic))
     }
 
     private func choose(_ languages: [KeyboardLanguage]) {
