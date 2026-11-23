@@ -20,6 +20,10 @@ final class ChinesePinyinSession {
         // InputxEngineMode.pinyinOnly = 2; InputxInputMode.cjk = 0.
         _ = inputx_session_set_engine_mode(session, 2)
         _ = inputx_session_set_input_mode(session, 0)
+        // Hex owns candidate selection and commits through the suggestion strip.
+        // Never let Inputx auto-commit internally: that would clear its preedit
+        // before Swift receives the candidate/commit and can silently lose text.
+        _ = inputx_session_set_auto_commit_policy(session, 0)
         if let saved = defaults?.string(forKey: Self.learningKey) {
             saved.withCString { _ = inputx_session_import_l0_json(session, 1, $0) }
         }
