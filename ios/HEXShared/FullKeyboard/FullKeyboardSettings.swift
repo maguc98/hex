@@ -294,9 +294,8 @@ struct FullKeyboardSettings {
         nonmutating set { defaults?.set(newValue, forKey: Key.swipeDeleteLetterByLetter) }
     }
 
-    /// Settings › Keyboard › Hex key: Right (false, the default) or Left. Left puts the Hex key
-    /// at the strip's leading end, for people who type with their left thumb; everything
-    /// tied to it (the recording bar's ✕ and ✓, its menu, the Full Access hint) follows.
+    /// Settings › Keyboard › Hex key: Right (false, the default) or Left. The key sits beside
+    /// the space bar, on the chosen side, as in Hex's original key plane.
     var hexKeyOnLeft: Bool {
         get { defaults?.bool(forKey: Key.hexKeyOnLeft) ?? false }
         nonmutating set { defaults?.set(newValue, forKey: Key.hexKeyOnLeft) }
