@@ -393,14 +393,12 @@ final class FullKeyboardEngine {
         if committed == nil { pinyinSession.clear() }
         let text = committed ?? raw
         guard !text.isEmpty else { return }
-        target.insertText(text)
-        tokenTaps.removeAll()
-        didEdit()
+        insert(text, source: "pinyin")
     }
 
     /// Enables/disables the Chinese composition layer without changing the key layout.
     func setChinesePinyinMode(_ enabled: Bool) {
-        let next = enabled && chinesePinyinEnabled
+        let next = enabled && chinesePinyinEnabled && pinyinSession.isAvailable
         guard next != isChinesePinyinMode else { return }
         if !next { commitPinyinComposition() }
         isChinesePinyinMode = next
@@ -421,9 +419,7 @@ final class FullKeyboardEngine {
                 picked = nil
             }
             if let picked, !picked.isEmpty {
-                target.insertText(picked)
-                tokenTaps.removeAll()
-                didEdit()
+                insert(picked, source: "pinyin")
             }
             return
         }
@@ -1005,6 +1001,10 @@ final class FullKeyboardEngine {
             shift.didType()
         }
         if layerState.layer == .letters, typeLayoutRules(&text) { return }
+        if isChinesePinyinMode, let punctuation = Self.chinesePunctuation[text] {
+            insert(punctuation, source: "key", at: point)
+            return
+        }
         if dropsSuggestionSpace(before: text) || !correctWord(endingWith: text) {
             insert(text, source: "key", at: point)
         }
@@ -1016,6 +1016,11 @@ final class FullKeyboardEngine {
 
     /// Punctuation that closes a word, as Apple's keyboard treats it: , . ! ? ; : ) and ".
     static let wordEnders: Set<Character> = [",", ".", "!", "?", ";", ":", ")", "\""]
+    private static let chinesePunctuation: [String: String] = [
+        ",": "，", ".": "。", "?": "？", "!": "！",
+        ":": "：", ";": "；", "(": "（", ")": "）",
+        "[": "【", "]": "】"
+    ]
 
     /// Punctuation right after a word corrects it as space does ("teh," becomes "the,"), and
     /// goes in after the fix. Delete right after takes only the mark, as after a space.
