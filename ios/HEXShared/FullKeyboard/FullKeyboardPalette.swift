@@ -1,7 +1,7 @@
 import UIKit
 
-/// The full keyboard's colours, light and dark, calibrated against Apple's iOS 26
-/// Liquid Glass system keyboard. Dark follows the keyboard's trait collection, which iOS
+/// Hex's original full-keyboard palette, light and dark. Its own panel and raised keys are
+/// drawn rather than borrowing Apple's Liquid Glass surface. Dark follows the keyboard's trait collection, which iOS
 /// sets from the field's `keyboardAppearance` and the host's current style, as it does
 /// the system platter behind the keys. The document proxy's `keyboardAppearance` can't
 /// decide it: the host resolves a default field to light or dark when it sends its traits
@@ -9,8 +9,8 @@ import UIKit
 /// could still say light in dark mode (TestFlight build 29).
 struct FullKeyboardPalette: Equatable {
     let isDark: Bool
-    /// Settings › Experiments › Keyboard themes: Automatic keeps iOS's glass, every other
-    /// theme supplies its own opaque colours.
+    /// Settings › Experiments › Keyboard themes: Automatic uses Hex's original colours; named
+    /// themes replace them.
     let theme: KeyboardTheme
 
     init(isDark: Bool, theme: KeyboardTheme = .automatic) {
@@ -24,7 +24,7 @@ struct FullKeyboardPalette: Equatable {
     private var colors: KeyboardThemeColors? { theme.colors }
 
     /// The keyboard draws an opaque panel behind its keys instead of showing iOS's glass.
-    var drawsOwnBackground: Bool { theme.colors != nil }
+    var drawsOwnBackground: Bool { true }
 
     static func isDark(traits: UITraitCollection) -> Bool {
         traits.userInterfaceStyle == .dark
@@ -39,16 +39,14 @@ struct FullKeyboardPalette: Equatable {
         )
     }
 
-    /// The panel behind the keys: a stand-in for the system Liquid Glass platter in standalone
-    /// snapshot scenes, or a theme's own opaque background.
-    var backdrop: UIColor { colors?.background ?? (isDark ? Self.rgb(0x17181A) : Self.rgb(0xDFE1E6)) }
+    /// The panel behind the keys: Hex's own backdrop, or a named theme's opaque background.
+    var backdrop: UIColor { colors?.background ?? (isDark ? Self.rgb(0x1D1E21) : Self.rgb(0xD3D5DB)) }
 
-    var textBase: UIColor { isDark ? .white : .black }
+    var textBase: UIColor { isDark ? UIColor(white: 1, alpha: 0.94) : Self.rgb(0x14161B) }
     var textMuted: UIColor { isDark ? UIColor(white: 1, alpha: 0.56) : Self.rgb(0x525763) }
 
-    /// Unified iOS 26 Liquid Glass keycap fill across letters and modifiers:
-    /// `white @ 0.16` composites to `(61,61,63)` on dark `(23,24,26)` and `(94,94,96)` on dark-field `(64,64,66)`.
-    var keyFill: UIColor { colors?.keyFill ?? (isDark ? UIColor(white: 1, alpha: 0.16) : .white) }
+    /// Translucent keycaps from Hex's original raised-key design, composed over its own panel.
+    var keyFill: UIColor { colors?.keyFill ?? (isDark ? UIColor(white: 1, alpha: 0.135) : .white) }
     var keyPressedFill: UIColor { colors?.keyPressedFill ?? (isDark ? UIColor(white: 1, alpha: 0.28) : Self.rgb(0xD8DCE4)) }
     /// A held key on the key plane, under its pop-up: Apple's grey (222 on white keys; 105 on
     /// dark ones, iOS 27.2).
@@ -59,8 +57,8 @@ struct FullKeyboardPalette: Equatable {
     /// A held space bar: only a shade darker (242, 242, 247; 56 on dark keys).
     var spaceHeldFill: UIColor { colors?.spaceHeldFill ?? (isDark ? UIColor(white: 1, alpha: 0.1) : Self.rgb(0xF2F2F7)) }
     /// Secondary fill for non-key chips and the recording panel's cancel pill.
-    var functionFill: UIColor { isDark ? UIColor(white: 1, alpha: 0.09) : UIColor(white: 0, alpha: 0.065) }
-    var keyShadow: UIColor { colors?.keyShadow ?? .clear }
+    var functionFill: UIColor { isDark ? UIColor(white: 1, alpha: 0.06) : UIColor(white: 0, alpha: 0.11) }
+    var keyShadow: UIColor { colors?.keyShadow ?? UIColor(white: 0, alpha: isDark ? 0.30 : 0.16) }
 
     /// Opaque so balloons and menus float cleanly over the strip and neighbouring keys.
     var popupFill: UIColor { colors?.popupFill ?? (isDark ? Self.rgb(0x4E5056) : .white) }
@@ -83,16 +81,16 @@ struct FullKeyboardPalette: Equatable {
     /// iOS 27.2): words (163,163,164) / (74,74,76), dividers (50,50,53) / (211,212,217), and the
     /// pending autocorrection's and a pressed word's capsule (115,115,115) under white words /
     /// (235,237,240) under (44,46,49).
-    var stripText: UIColor { isDark ? UIColor(white: 1, alpha: 0.58) : UIColor(white: 0, alpha: 0.67) }
-    var stripDivider: UIColor { isDark ? UIColor(white: 1, alpha: 0.075) : UIColor(white: 0, alpha: 0.066) }
+    var stripText: UIColor { textMuted }
+    var stripDivider: UIColor { separator }
     /// A pending autocorrection's or pressed word's capsule. White's own light grey comes from
     /// the theme, since Automatic's translucent white would vanish on its white bar.
     var stripPillFill: UIColor {
-        colors?.stripPillFill ?? (isDark ? UIColor(white: 1, alpha: 0.37) : UIColor(white: 1, alpha: 0.33))
+        colors?.stripPillFill ?? chipFill
     }
     /// A pressed word gets the same capsule (measured the same on Apple's bar).
-    var stripPillPressedFill: UIColor { stripPillFill }
-    var stripPillText: UIColor { isDark ? .white : UIColor(white: 0, alpha: 0.81) }
+    var stripPillPressedFill: UIColor { colors?.stripPillPressedFill ?? keyPressedFill }
+    var stripPillText: UIColor { textBase }
 
     /// Apple system keyboard action blue (`#007AFF`).
     var actionFill: UIColor { colors?.actionFill ?? Self.rgb(0x007AFF) }
@@ -150,7 +148,7 @@ enum HexMarkPath {
 }
 
 extension CGContext {
-    /// Draws a continuous-corner iOS 26 Liquid Glass keycap with no legacy under-shadow.
+    /// Draws a continuous-corner Hex keycap with its original raised edge and drop shadow.
     func fillKeycap(_ rect: CGRect, fill: UIColor, shadow: UIColor = .clear, radius: CGFloat = FullKeyboardPalette.cornerRadius) {
         let path = UIBezierPath(roundedRect: rect, cornerRadius: radius).cgPath
         saveGState()

@@ -6,8 +6,8 @@ import UIKit
 /// `FullKeyboardView.syncSettings`.
 @MainActor
 extension FullKeyboardView {
-    /// Settings › Keyboard › Hex key: Right (the strip's trailing end) or Left (its leading
-    /// end), kept in `HexKeyPlacement.current` too for typing logs.
+    /// Settings › Keyboard › Hex key: Right by default (beside the space bar) or Left,
+    /// kept in `HexKeyPlacement.current` too for typing logs.
     func syncHexPlacement() {
         let placement = hexPlacementOverride ?? FullKeyboardSettings().hexKeyPlacement
         HexKeyPlacement.current = placement

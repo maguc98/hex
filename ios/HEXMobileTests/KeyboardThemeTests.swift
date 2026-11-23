@@ -2,8 +2,7 @@ import UIKit
 import XCTest
 @testable import HEX
 
-/// Settings › Experiments › Keyboard themes: the full keyboard's own colours, off by default,
-/// and Automatic (the system glass) exactly as it was before them.
+/// Settings › Experiments › Keyboard themes: optional named colours over Hex's default palette.
 @MainActor
 final class KeyboardThemeTests: XCTestCase {
     private var suiteName: String!
@@ -60,44 +59,42 @@ final class KeyboardThemeTests: XCTestCase {
         XCTAssertEqual(settings.effectiveKeyboardTheme, .forest)
     }
 
-    /// Automatic is exactly what the keyboard drew before themes: every themed property keeps
-    /// its old value, pinned here rather than compared with a second palette of the same code
-    /// (`git show origin/dev:ios/HEXShared/FullKeyboard/FullKeyboardPalette.swift`).
-    func testAutomaticIsTheOldPalette() {
+    /// Automatic is Hex's own original palette: a distinct panel, raised keycaps and compact suggestion chips.
+    func testAutomaticUsesTheOriginalHexPalette() {
         for isDark in [false, true] {
             let automatic = FullKeyboardPalette(isDark: isDark, theme: .automatic)
             XCTAssertEqual(automatic.theme, .automatic)
             XCTAssertEqual(automatic.isDark, isDark)
-            XCTAssertFalse(automatic.drawsOwnBackground)
+            XCTAssertTrue(automatic.drawsOwnBackground)
         }
 
         let light = FullKeyboardPalette(isDark: false)
-        assertSameColor(light.backdrop, color(0xDFE1E6))
+        assertSameColor(light.backdrop, color(0xD3D5DB))
         assertSameColor(light.keyFill, .white)
         assertSameColor(light.keyPressedFill, color(0xD8DCE4))
         assertSameColor(light.keyHeldFill, color(0xDEDEDE))
         assertSameColor(light.functionHeldFill, color(0xC5C5C9))
         assertSameColor(light.spaceHeldFill, color(0xF2F2F7))
-        assertSameColor(light.keyShadow, .clear)
+        assertSameColor(light.keyShadow, UIColor(white: 0, alpha: 0.16))
         assertSameColor(light.popupFill, .white)
         assertSameColor(light.bubbleFill, .white)
         assertSameColor(light.accentSelectFill, color(0xE3E3E6))
-        assertSameColor(light.stripPillFill, UIColor(white: 1, alpha: 0.33))
+        assertSameColor(light.stripPillFill, UIColor(white: 0, alpha: 0.065))
         assertSameColor(light.actionFill, color(0x007AFF))
         assertSameColor(light.actionPressedFill, color(0x0062CC))
 
         let dark = FullKeyboardPalette(isDark: true)
-        assertSameColor(dark.backdrop, color(0x17181A))
-        assertSameColor(dark.keyFill, UIColor(white: 1, alpha: 0.16))
+        assertSameColor(dark.backdrop, color(0x1D1E21))
+        assertSameColor(dark.keyFill, UIColor(white: 1, alpha: 0.135))
         assertSameColor(dark.keyPressedFill, UIColor(white: 1, alpha: 0.28))
         assertSameColor(dark.keyHeldFill, UIColor(white: 1, alpha: 0.32))
         assertSameColor(dark.functionHeldFill, UIColor(white: 1, alpha: 0.44))
         assertSameColor(dark.spaceHeldFill, UIColor(white: 1, alpha: 0.1))
-        assertSameColor(dark.keyShadow, .clear)
+        assertSameColor(dark.keyShadow, UIColor(white: 0, alpha: 0.30))
         assertSameColor(dark.popupFill, color(0x4E5056))
         assertSameColor(dark.bubbleFill, color(0x3F3F41))
         assertSameColor(dark.accentSelectFill, color(0x57575A))
-        assertSameColor(dark.stripPillFill, UIColor(white: 1, alpha: 0.37))
+        assertSameColor(dark.stripPillFill, UIColor(white: 1, alpha: 0.09))
         assertSameColor(dark.actionFill, color(0x007AFF))
         assertSameColor(dark.actionPressedFill, color(0x0062CC))
     }
@@ -107,7 +104,7 @@ final class KeyboardThemeTests: XCTestCase {
         XCTAssertTrue(FullKeyboardPalette(isDark: false, theme: .black).isDark)
         XCTAssertFalse(FullKeyboardPalette(isDark: true, theme: .white).isDark)
         XCTAssertTrue(FullKeyboardPalette(isDark: false, theme: .black).drawsOwnBackground)
-        XCTAssertFalse(FullKeyboardPalette(isDark: false, theme: .automatic).drawsOwnBackground)
+        XCTAssertTrue(FullKeyboardPalette(isDark: false, theme: .automatic).drawsOwnBackground)
     }
 
     /// Labels stay readable on every theme's keys: WCAG AA's 4.5:1 for body text.
@@ -119,40 +116,37 @@ final class KeyboardThemeTests: XCTestCase {
         }
     }
 
-    /// White's suggestion capsule has to read on its white bar, where Automatic's translucent
-    /// white vanishes; every other theme keeps the palette's own capsule, Automatic included.
+    /// White's suggestion capsule has to read on its white bar; Automatic uses Hex's compact chip fill.
     func testWhitesStripCapsuleReadsOnItsBar() {
         let white = FullKeyboardPalette(isDark: false, theme: .white)
         assertSameColor(white.stripPillFill, color(0xE4E5EA))
         XCTAssertNotEqual(white.stripPillFill, .white, "not invisible on the white bar")
-        // A pressed word keeps the same capsule, which derives from the fill.
-        assertSameColor(white.stripPillPressedFill, white.stripPillFill)
         XCTAssertGreaterThan(contrast(white.stripPillFill, white.backdrop), 1.05)
         // The bar behind the capsule is White's own white.
         assertSameColor(white.backdrop, .white)
 
-        // Automatic, light and dark, is the palette it always was.
+        // Automatic uses a compact, palette-matched chip rather than Apple's white capsule.
         assertSameColor(
             FullKeyboardPalette(isDark: false, theme: .automatic).stripPillFill,
-            UIColor(white: 1, alpha: 0.33)
+            UIColor(white: 0, alpha: 0.065)
         )
         assertSameColor(
             FullKeyboardPalette(isDark: true, theme: .automatic).stripPillFill,
-            UIColor(white: 1, alpha: 0.37)
+            UIColor(white: 1, alpha: 0.09)
         )
 
-        // The dark themes have no capsule of their own: the palette's translucent white stands.
+        // Dark themes without a custom chip use the compact dark palette fill.
         for theme in KeyboardTheme.allCases where theme != .automatic && theme != .white {
             let palette = FullKeyboardPalette(isDark: false, theme: theme)
             XCTAssertNil(theme.colors?.stripPillFill, "\(theme.rawValue) keeps the palette's")
-            assertSameColor(palette.stripPillFill, UIColor(white: 1, alpha: 0.37))
+            assertSameColor(palette.stripPillFill, UIColor(white: 1, alpha: 0.09))
         }
     }
 
     /// A theme paints its own opaque panel behind the keys, in iOS's glass panel's own place:
     /// the panel's top corners, 1 pt inside its rim (`KeyboardBackdropView`'s frame and corner
     /// radius), never this view's whole rect, whose square corners would show over the app as
-    /// a panel inside iOS's panel. The view itself stays clear; Automatic has no panel at all.
+    /// a panel inside iOS's panel. Automatic uses the same panel geometry with Hex's original background.
     func testAThemePaintsItsPanelInTheGlassPanelsCorners() throws {
         let settings = FullKeyboardSettings()
         let wasEnabled = settings.keyboardThemesEnabled
@@ -182,13 +176,13 @@ final class KeyboardThemeTests: XCTestCase {
         XCTAssertEqual(panel.layer.cornerRadius, KeyboardBackdropView.cornerRadius(in: view.bounds))
         XCTAssertEqual(panel.layer.cornerRadius, KeyboardBackdropView.panelCornerRadius - KeyboardBackdropView.rimInset)
 
-        // Automatic: the keyboard is iOS's glass, so the view's own background is clear and
-        // nothing draws over the panel.
+        // Automatic returns to Hex's own panel and original key palette.
         settings.keyboardThemesEnabled = false
         view.syncSettings()
         view.layoutIfNeeded()
         XCTAssertEqual(view.palette.theme, .automatic)
-        XCTAssertTrue(panel.isHidden)
+        XCTAssertFalse(panel.isHidden)
+        assertSameColor(try XCTUnwrap(panel.backgroundColor), color(0xD3D5DB))
         assertSameColor(try XCTUnwrap(view.backgroundColor), .clear)
     }
 
@@ -220,13 +214,13 @@ final class KeyboardThemeTests: XCTestCase {
 
         settings.keyboardThemesEnabled = false
         view.syncSettings()
-        XCTAssertEqual(view.palette.theme, .automatic, "off again: back on the system look")
-        XCTAssertTrue(view.themePanel.isHidden)
+        XCTAssertEqual(view.palette.theme, .automatic, "off again: back on Hex’s original look")
+        XCTAssertFalse(view.themePanel.isHidden)
+        assertSameColor(try XCTUnwrap(view.themePanel.backgroundColor), color(0xD3D5DB))
     }
 
-    /// Only White's keys take a shadow, a faint edge on its light panel. Every other theme
-    /// answers exactly `.clear`, so `fillKeycap` skips `setShadow` rather than drawing black
-    /// at alpha 0.
+    /// Named themes other than White keep their own shadow choice; Automatic restores Hex's
+    /// original raised keycaps.
     func testOnlyWhitesKeysHaveAShadow() {
         for theme in KeyboardTheme.allCases where theme != .automatic && theme != .white {
             let shadow = FullKeyboardPalette(isDark: false, theme: theme).keyShadow
@@ -240,9 +234,8 @@ final class KeyboardThemeTests: XCTestCase {
         XCTAssertGreaterThan(a, 0)
         XCTAssertLessThanOrEqual(a, 0.25, "faint")
 
-        // Automatic keeps the flat keycaps it always had: no shadow at all.
-        assertSameColor(FullKeyboardPalette(isDark: false).keyShadow, .clear)
-        assertSameColor(FullKeyboardPalette(isDark: true).keyShadow, .clear)
+        assertSameColor(FullKeyboardPalette(isDark: false).keyShadow, UIColor(white: 0, alpha: 0.16))
+        assertSameColor(FullKeyboardPalette(isDark: true).keyShadow, UIColor(white: 0, alpha: 0.30))
     }
 
     private func color(_ hex: UInt32) -> UIColor {

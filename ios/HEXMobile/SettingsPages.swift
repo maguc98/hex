@@ -216,7 +216,7 @@ private extension DictationBarAutoStart {
     }
 }
 
-/// Settings › Keyboard › Hex key: which end of the strip the full keyboard's Hex key sits at.
+/// Settings › Keyboard › Hex key: which side of the space bar the full keyboard's Hex key sits at.
 private extension KeyHapticStrength {
     var label: String {
         switch self {
@@ -828,7 +828,7 @@ struct ExperimentsSettingsPage: View {
 
         SettingsDivider()
 
-        // Off by default: the full keyboard keeps iOS's glass.
+        // Off by default: the full keyboard keeps Hex's original palette.
         SettingsToggleRow(
             title: String(localized: "Keyboard themes"),
             detail: String(localized: "Choose a color for the full keyboard"),

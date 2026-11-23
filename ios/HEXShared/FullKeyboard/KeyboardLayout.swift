@@ -576,7 +576,7 @@ nonisolated enum HexKeyPlacement: String, CaseIterable, Sendable {
     /// The keyboard's, for typing logs: `FullKeyboardView` keeps Settings › Keyboard › Hex key
     /// (`FullKeyboardSettings.hexKeyPlacement`) here; layouts take theirs as a parameter. The
     /// snapshot stage's `--hex-placement` can render the others for comparison.
-    nonisolated(unsafe) static var current: HexKeyPlacement = .stripTrailing
+    nonisolated(unsafe) static var current: HexKeyPlacement = .rightOfSpace
 
     var isInStrip: Bool { self == .stripLeading || self == .stripTrailing }
 }

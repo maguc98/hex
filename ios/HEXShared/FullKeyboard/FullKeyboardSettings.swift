@@ -159,10 +159,10 @@ struct FullKeyboardSettings {
     }
 
     /// Settings › Keyboard › Chinese Pinyin: enables offline full-Pinyin composition over
-    /// the existing QWERTY layout. Off by default; choosing Simplified Chinese in Keyboard
-    /// Languages also activates Pinyin. English words remain selectable in the same sentence.
+    /// the existing QWERTY layout. On by default for immediate Simplified Chinese and English
+    /// mixed input; choosing Simplified Chinese in Keyboard Languages also activates Pinyin.
     var chinesePinyin: Bool {
-        get { defaults?.object(forKey: Key.chinesePinyin) as? Bool ?? false }
+        get { defaults?.object(forKey: Key.chinesePinyin) as? Bool ?? true }
         nonmutating set { defaults?.set(newValue, forKey: Key.chinesePinyin) }
     }
 
@@ -229,9 +229,9 @@ struct FullKeyboardSettings {
     }
 
     /// Settings › Experiments › Keyboard themes: the full keyboard draws its own opaque
-    /// colours (black, white, navy, forest or ember) instead of translucent keycaps over
-    /// iOS's glass. Off by default, so the keyboard keeps the system look; the dictation bar
-    /// and iOS's own strip above the keyboard keep it either way. Stored as
+    /// colours (black, white, navy, forest or ember) instead of Hex's original panel and raised
+    /// keycaps. Off by default, so the keyboard keeps its original look; the dictation bar and
+    /// iOS's own strip above the keyboard keep it either way. Stored as
     /// `experiments.keyboardThemes`.
     var keyboardThemesEnabled: Bool {
         get { defaults?.object(forKey: Key.keyboardThemes) as? Bool ?? false }
@@ -294,9 +294,8 @@ struct FullKeyboardSettings {
         nonmutating set { defaults?.set(newValue, forKey: Key.swipeDeleteLetterByLetter) }
     }
 
-    /// Settings › Keyboard › Hex key: Right (false, the default) or Left. Left puts the Hex key
-    /// at the strip's leading end, for people who type with their left thumb; everything
-    /// tied to it (the recording bar's ✕ and ✓, its menu, the Full Access hint) follows.
+    /// Settings › Keyboard › Hex key: Right (false, the default) or Left. The key sits beside
+    /// the space bar, on the chosen side, as in Hex's original key plane.
     var hexKeyOnLeft: Bool {
         get { defaults?.bool(forKey: Key.hexKeyOnLeft) ?? false }
         nonmutating set { defaults?.set(newValue, forKey: Key.hexKeyOnLeft) }
@@ -339,9 +338,9 @@ struct FullKeyboardSettings {
         nonmutating set { defaults?.set(newValue.rawValue, forKey: Key.dictationBarAutoStart) }
     }
 
-    /// Where the full keyboard's Hex key sits for `hexKeyOnLeft`.
+    /// Where the full keyboard's Hex key sits beside the space bar, as in Hex's original key plane.
     var hexKeyPlacement: HexKeyPlacement {
-        hexKeyOnLeft ? .stripLeading : .stripTrailing
+        hexKeyOnLeft ? .leftOfSpace : .rightOfSpace
     }
 
     /// Simulator scenes pass `--experiment-full-keyboard` or `--keyboard full|dictation-bar`
