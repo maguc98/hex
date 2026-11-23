@@ -2,8 +2,7 @@ import UIKit
 import XCTest
 @testable import HEX
 
-/// Settings › Experiments › Keyboard themes: the full keyboard's own colours, off by default,
-/// and Automatic (the system glass) exactly as it was before them.
+/// Settings › Experiments › Keyboard themes: optional named colours over Hex's default palette.
 @MainActor
 final class KeyboardThemeTests: XCTestCase {
     private var suiteName: String!
