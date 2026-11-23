@@ -1,7 +1,7 @@
 import UIKit
 
-/// The full keyboard's colours, light and dark, calibrated against Apple's iOS 26
-/// Liquid Glass system keyboard. Dark follows the keyboard's trait collection, which iOS
+/// Hex's original full-keyboard palette, light and dark. Its own panel and raised keys are
+/// drawn rather than borrowing Apple's Liquid Glass surface. Dark follows the keyboard's trait collection, which iOS
 /// sets from the field's `keyboardAppearance` and the host's current style, as it does
 /// the system platter behind the keys. The document proxy's `keyboardAppearance` can't
 /// decide it: the host resolves a default field to light or dark when it sends its traits
@@ -9,8 +9,8 @@ import UIKit
 /// could still say light in dark mode (TestFlight build 29).
 struct FullKeyboardPalette: Equatable {
     let isDark: Bool
-    /// Settings › Experiments › Keyboard themes: Automatic keeps iOS's glass, every other
-    /// theme supplies its own opaque colours.
+    /// Settings › Experiments › Keyboard themes: Automatic uses Hex's original colours; named
+    /// themes replace them.
     let theme: KeyboardTheme
 
     init(isDark: Bool, theme: KeyboardTheme = .automatic) {
@@ -39,15 +39,13 @@ struct FullKeyboardPalette: Equatable {
         )
     }
 
-    /// The panel behind the keys: a stand-in for the system Liquid Glass platter in standalone
-    /// snapshot scenes, or a theme's own opaque background.
+    /// The panel behind the keys: Hex's own backdrop, or a named theme's opaque background.
     var backdrop: UIColor { colors?.background ?? (isDark ? Self.rgb(0x1D1E21) : Self.rgb(0xD3D5DB)) }
 
     var textBase: UIColor { isDark ? UIColor(white: 1, alpha: 0.94) : Self.rgb(0x14161B) }
     var textMuted: UIColor { isDark ? UIColor(white: 1, alpha: 0.56) : Self.rgb(0x525763) }
 
-    /// Unified iOS 26 Liquid Glass keycap fill across letters and modifiers:
-    /// `white @ 0.16` composites to `(61,61,63)` on dark `(23,24,26)` and `(94,94,96)` on dark-field `(64,64,66)`.
+    /// Translucent keycaps from Hex's original raised-key design, composed over its own panel.
     var keyFill: UIColor { colors?.keyFill ?? (isDark ? UIColor(white: 1, alpha: 0.135) : .white) }
     var keyPressedFill: UIColor { colors?.keyPressedFill ?? (isDark ? UIColor(white: 1, alpha: 0.28) : Self.rgb(0xD8DCE4)) }
     /// A held key on the key plane, under its pop-up: Apple's grey (222 on white keys; 105 on
