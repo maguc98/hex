@@ -485,14 +485,17 @@ final class FullKeyboardView: UIView {
         let letters = letterLayoutOverride.map(list.layout.offered) ?? settings.letterLayout(for: list.layout)
         // The host spells and autocorrects in the input mode's language, which supersedes the
         // Info.plist's en-US (`primaryLanguage`): report every change, a space-bar switch too.
-        let identifier = list.current.inputModeLanguage
+        let pinyinEnabled = FullKeyboardSettings().chinesePinyin
+        engine.chinesePinyinEnabled = pinyinEnabled
+        engine.setChinesePinyinMode(pinyinEnabled && FullKeyboardSettings().chinesePinyinMode)
+        engine.switchesLanguage = list.switches || (pinyinEnabled && list.languages.count == 1)
+        let identifier = engine.isChinesePinyinMode ? "zh-Hans" : list.current.inputModeLanguage
         if identifier != reportedInputModeLanguage {
             reportedInputModeLanguage = identifier
             hostController?.primaryLanguage = identifier
         }
         guard list != languages || engine.language != list.current || engine.letterLayout != letters else { return }
         languages = list
-        engine.switchesLanguage = list.switches
         engine.layoutLanguage = list.layout == list.current ? nil : list.layout
         engine.letterLayout = letters
         engine.language = list.current
@@ -508,7 +511,20 @@ final class FullKeyboardView: UIView {
     /// (`LanguageSettings.keyboardDictationLanguage`); with Switch dictation too, a dictation
     /// language picked by hand goes back to Automatic, so it follows too.
     func switchLanguage(by step: Int) {
-        guard languages.switches, languageOverride == nil else { return }
+        guard languageOverride == nil else { return }
+        if engine.chinesePinyinEnabled, languages.languages.count == 1 {
+            let enabled = !engine.isChinesePinyinMode
+            engine.setChinesePinyinMode(enabled)
+            FullKeyboardSettings().chinesePinyinMode = enabled
+            let identifier = enabled ? "zh-Hans" : languages.current.inputModeLanguage
+            reportedInputModeLanguage = identifier
+            hostController?.primaryLanguage = identifier
+            typingLog?.ui("keyboard_language", [TypingLogField("language", .string(identifier))])
+            selectionFeedback()
+            refreshSpaceLabel()
+            return
+        }
+        guard languages.switches else { return }
         let next = languages.switched(by: step)
         typingLog?.ui("keyboard_language", [TypingLogField("language", .string(next.rawValue))])
         switchedLanguage = next
@@ -523,7 +539,11 @@ final class FullKeyboardView: UIView {
     /// With two or more languages the space bar names the keyboard's; otherwise, with Full
     /// Access, the dictation language's.
     private func refreshSpaceLabel() {
-        plane.spaceLabel = languages.spaceLabel ?? (model.hasFullAccess ? model.languageSummary : nil)
+        if engine.chinesePinyinEnabled, languages.languages.count == 1 {
+            plane.spaceLabel = engine.isChinesePinyinMode ? "中文" : "EN"
+        } else {
+            plane.spaceLabel = languages.spaceLabel ?? (model.hasFullAccess ? model.languageSummary : nil)
+        }
     }
 
     func syncSettings() {
