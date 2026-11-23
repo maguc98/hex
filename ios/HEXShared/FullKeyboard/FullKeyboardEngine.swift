@@ -976,6 +976,9 @@ final class FullKeyboardEngine {
     func deleteBackward(takesSwipeBack: Bool = true, source: String = "key") {
         if isChinesePinyinMode, pinyinSession.isComposing {
             _ = pinyinSession.backspace()
+            if let committed = pinyinSession.takePendingCommit() {
+                insert(committed, source: "pinyin")
+            }
             refreshSuggestions()
             onChange?()
             return
@@ -1063,6 +1066,9 @@ final class FullKeyboardEngine {
                let typed = character.lowercased().first,
                typed.isASCII, typed.isLetter {
                 if pinyinSession.insert(typed) {
+                    if let committed = pinyinSession.takePendingCommit() {
+                        insert(committed, source: "pinyin")
+                    }
                     shift.didType()
                     refreshSuggestions()
                     onChange?()
