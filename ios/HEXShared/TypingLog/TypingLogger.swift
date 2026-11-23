@@ -357,6 +357,8 @@ final class TypingLogger {
                 fields.append(TypingLogField("kind", .string("swiped")))
             case .revert:
                 fields.append(TypingLogField("kind", .string("revert")))
+            case .pinyinEnglish:
+                fields.append(TypingLogField("kind", .string("pinyin_english")))
             }
             return .object(fields)
         })
