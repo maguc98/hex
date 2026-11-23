@@ -214,7 +214,7 @@ final class KeyboardThemeTests: XCTestCase {
 
         settings.keyboardThemesEnabled = false
         view.syncSettings()
-        XCTAssertEqual(view.palette.theme, .automatic, "off again: back on the system look")
+        XCTAssertEqual(view.palette.theme, .automatic, "off again: back on Hex’s original look")
         XCTAssertFalse(view.themePanel.isHidden)
         assertSameColor(try XCTUnwrap(view.themePanel.backgroundColor), color(0xD3D5DB))
     }
