@@ -311,6 +311,20 @@ final class KeyboardViewController: UIInputViewController {
         if handOffWaitsForPosture { handOffNumericPadIfNeeded() }
     }
 
+    /// UIKit can lay out a custom keyboard before delivering its first appearance callback.
+    /// Treat the first real layout as a second, idempotent opportunity to replace the launch
+    /// placeholder; otherwise iOS can leave the placeholder ("Hex") on screen indefinitely.
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard isShown, !isRetired, surface == nil else { return }
+        lifecycleLogger.info("Keyboard laid out before surface mount; mounting as fallback")
+        mountSurface()
+        guard surface != nil else { return }
+        fullKeyboard?.prepareForField()
+        syncFromBridge(animated: false)
+        schedulePoll(force: true)
+    }
+
     /// The dictation bar's own height, under `barTopInset`: 4 pt top padding, the 40 pt
     /// top row (44 pt tap areas around 26 pt pills), a 2 pt gap, the 44 pt stage well, an
     /// 8 pt gap, the 42 pt keys, and 6 pt bottom padding.
