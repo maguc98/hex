@@ -406,8 +406,14 @@ struct KeyboardLanguagesPage: View {
             next.remove(at: index)
             choose(next)
         } else if chosen.isEmpty {
-            // From Automatic: keep the language it was typing in, and add this one.
-            choose(language == automatic ? [language] : [automatic, language])
+            // Simplified Chinese is a composition language: keep it selected on its own so
+            // Pinyin can write Chinese and English in the same sentence without a mode switch.
+            // Other languages retain Automatic's current language as their first switch choice.
+            if language == .chinese {
+                choose([.chinese])
+            } else {
+                choose(language == automatic ? [language] : [automatic, language])
+            }
         } else {
             choose(chosen + [language])
         }
