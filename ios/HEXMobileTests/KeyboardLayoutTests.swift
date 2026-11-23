@@ -780,6 +780,21 @@ final class KeyboardLayoutTests: XCTestCase {
         XCTAssertEqual(list.layout, .chinese)
     }
 
+    func testChoosingChineseDoesNotCreateAnEnglishChineseLanguageSwitch() {
+        XCTAssertEqual(
+            KeyboardLanguageList.toggled(.chinese, in: [.english], automatic: .english),
+            [.chinese]
+        )
+        XCTAssertEqual(
+            KeyboardLanguageList.toggled(.chinese, in: [.english, .spanish], automatic: .english),
+            [.chinese]
+        )
+        XCTAssertEqual(
+            KeyboardLanguageList.toggled(.chinese, in: [.english, .chinese], automatic: .english),
+            [.english]
+        )
+    }
+
     /// The plain layouts are the same 26 letters in every language (iOS 27.0 simulator: English,
     /// German, French, Spanish, Italian, Portuguese, Polish, Serbian and Romanian alike), but
     /// Czech, whose QWERTY is its own with Z and Y swapped (`testCzechsRowsAndPagesMatchApples`).
