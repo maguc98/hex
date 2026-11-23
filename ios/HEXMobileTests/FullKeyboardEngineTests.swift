@@ -53,6 +53,19 @@ final class FullKeyboardEngineTests: XCTestCase {
         }
     }
 
+    func testOfflinePinyinSessionComposesAndCommitsSimplifiedChinese() {
+        let session = ChinesePinyinSession()
+        XCTAssertTrue(session.isAvailable, "the Inputx native Pinyin core must be linked into the keyboard")
+        for character in "nihao" {
+            XCTAssertTrue(session.insert(character), "Inputx should consume Pinyin key \(character)")
+        }
+        XCTAssertTrue(session.isComposing)
+        XCTAssertEqual(session.preedit, "nihao")
+        XCTAssertTrue(session.candidates.contains("你好"), "nihao should offer the Simplified Chinese greeting")
+        XCTAssertEqual(session.commitFirst(), "你好")
+        XCTAssertFalse(session.isComposing)
+    }
+
     func testRolloverKeepsOrder() {
         down(1, .character("t"))
         down(2, .character("h"))
