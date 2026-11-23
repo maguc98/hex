@@ -485,10 +485,12 @@ final class FullKeyboardView: UIView {
         let letters = letterLayoutOverride.map(list.layout.offered) ?? settings.letterLayout(for: list.layout)
         // The host spells and autocorrects in the input mode's language, which supersedes the
         // Info.plist's en-US (`primaryLanguage`): report every change, a space-bar switch too.
-        let pinyinEnabled = FullKeyboardSettings().chinesePinyin
+        let mixedPinyinEnabled = FullKeyboardSettings().chinesePinyin
+        // Choosing Simplified Chinese activates Pinyin on that language. The existing
+        // Chinese Pinyin setting also keeps composition active while the user mixes
+        // Chinese and English in one sentence without switching the selected language.
+        let pinyinEnabled = mixedPinyinEnabled || list.current == .chinese
         engine.chinesePinyinEnabled = pinyinEnabled
-        // Pinyin is a composition layer, not a language mode: keep it ready while the
-        // user types Chinese and English in the same sentence.
         engine.setChinesePinyinMode(pinyinEnabled)
         engine.switchesLanguage = list.switches
         let identifier = pinyinEnabled ? "zh-Hans" : list.current.inputModeLanguage
