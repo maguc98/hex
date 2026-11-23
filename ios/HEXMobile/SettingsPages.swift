@@ -828,7 +828,7 @@ struct ExperimentsSettingsPage: View {
 
         SettingsDivider()
 
-        // Off by default: the full keyboard keeps iOS's glass.
+        // Off by default: the full keyboard keeps Hex's original palette.
         SettingsToggleRow(
             title: String(localized: "Keyboard themes"),
             detail: String(localized: "Choose a color for the full keyboard"),
