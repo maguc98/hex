@@ -94,6 +94,8 @@ final class FullKeyboardView: UIView {
         }
     }
     private var keyTicks = UIImpactFeedbackGenerator(style: FullKeyboardView.keyTickStyle(.medium))
+    /// Prevents a first key from blocking on the native Pinyin session's cold-path warmup.
+    private var pinyinInteractionGeneration = 0
 
     /// Apple's key haptic is a crisp tick, so every strength is a rigid impact (the sharpest
     /// style) but Strong, a fuller medium one. Medium, the default, is 0.8 of a rigid tap;
@@ -498,6 +500,7 @@ final class FullKeyboardView: UIView {
             reportedInputModeLanguage = identifier
             hostController?.primaryLanguage = identifier
         }
+        updatePinyinInteractionAvailability()
         guard list != languages || engine.language != list.current || engine.letterLayout != letters else {
             refreshSpaceLabel()
             syncSwipeTyping()
@@ -512,6 +515,30 @@ final class FullKeyboardView: UIView {
         refreshSpaceLabel()
         syncSwipeTyping()
         setNeedsLayout()
+    }
+
+    /// Keep the keyboard visible but temporarily non-interactive while its Chinese session
+    /// warms. The session lock is shared with first-key FFI calls; accepting a touch too early
+    /// would make UIKit wait on the keyboard's main thread for the entire warmup.
+    private func updatePinyinInteractionAvailability() {
+        pinyinInteractionGeneration += 1
+        let generation = pinyinInteractionGeneration
+        guard engine.isChinesePinyinMode else {
+            isUserInteractionEnabled = true
+            return
+        }
+        guard !engine.isChinesePinyinReady else {
+            isUserInteractionEnabled = true
+            return
+        }
+        isUserInteractionEnabled = false
+        engine.whenChinesePinyinReady { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, self.pinyinInteractionGeneration == generation else { return }
+                self.isUserInteractionEnabled = true
+                self.refreshStrip()
+            }
+        }
     }
 
     /// A swipe along the space bar: the next or previous language (its letters, accents and

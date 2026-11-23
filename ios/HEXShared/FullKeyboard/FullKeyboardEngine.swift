@@ -477,6 +477,20 @@ final class FullKeyboardEngine {
         onChange?()
     }
 
+    /// Readiness is separate from availability: a native session may exist while its cold-path
+    /// dictionary warmup still owns the lock. The view uses this to avoid blocking first touch.
+    var isChinesePinyinReady: Bool {
+        !isChinesePinyinMode || pinyinSession.isWarmupComplete
+    }
+
+    func whenChinesePinyinReady(_ completion: @escaping @Sendable () -> Void) {
+        guard isChinesePinyinMode else {
+            completion()
+            return
+        }
+        pinyinSession.whenWarmupCompletes(completion)
+    }
+
     func acceptSuggestion(_ suggestion: KeyboardSuggestion) {
         if isChinesePinyinMode, pinyinSession.isComposing {
             if suggestion.kind == .pinyinEnglish {

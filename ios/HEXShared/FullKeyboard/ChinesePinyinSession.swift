@@ -9,6 +9,9 @@ final class ChinesePinyinSession: @unchecked Sendable {
     private static let learningKey = "keyboard.pinyin.learning.v1"
     private let defaults = UserDefaults(suiteName: KeyboardBridge.appGroup)
     private let sessionLock = NSRecursiveLock()
+    /// The native session's first-key preparation can take about half a second. Keep that
+    /// work off the keyboard's main thread, and let the view wait without blocking touches.
+    private let warmupGroup = DispatchGroup()
     private var handle: OpaquePointer?
     private var pendingCommit = ""
 
@@ -37,11 +40,31 @@ final class ChinesePinyinSession: @unchecked Sendable {
 
         // Inputx documents a ~500 ms cold path (dictionary/FST and Pinyin indexes).
         // Warm the same session before the first key; all FFI access is lock-serialized.
+        warmupGroup.enter()
         DispatchQueue.global(qos: .userInitiated).async { [self] in
+            defer { warmupGroup.leave() }
             sessionLock.lock()
             defer { sessionLock.unlock() }
             guard let handle else { return }
             inputx_session_warmup(handle)
+        }
+    }
+
+    /// True only when the shared session lock is no longer occupied by cold-path warmup.
+    /// This check is intentionally nonblocking because callers run on the keyboard's main thread.
+    var isWarmupComplete: Bool {
+        warmupGroup.wait(timeout: .now()) == .success
+    }
+
+    /// Calls back off the main thread when the native session has finished warming.
+    func whenWarmupCompletes(_ completion: @escaping @Sendable () -> Void) {
+        guard !isWarmupComplete else {
+            completion()
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async { [self] in
+            _ = warmupGroup.wait(timeout: .distantFuture)
+            completion()
         }
     }
 

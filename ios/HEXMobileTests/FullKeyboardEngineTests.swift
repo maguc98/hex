@@ -53,6 +53,15 @@ final class FullKeyboardEngineTests: XCTestCase {
         }
     }
 
+    func testOfflinePinyinSessionWarmupCompletesWithoutBlockingTheCaller() {
+        let session = ChinesePinyinSession()
+        XCTAssertTrue(session.isAvailable, "the Inputx native Pinyin core must be linked into the keyboard")
+        let warmed = expectation(description: "native Pinyin session warmed")
+        session.whenWarmupCompletes { warmed.fulfill() }
+        wait(for: [warmed], timeout: 3)
+        XCTAssertTrue(session.isWarmupComplete)
+    }
+
     func testOfflinePinyinSessionComposesAndCommitsSimplifiedChinese() {
         let session = ChinesePinyinSession()
         XCTAssertTrue(session.isAvailable, "the Inputx native Pinyin core must be linked into the keyboard")
