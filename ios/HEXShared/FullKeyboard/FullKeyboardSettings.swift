@@ -74,6 +74,8 @@ struct FullKeyboardSettings {
         static let spatialAutocorrect = "experiments.spatialAutocorrect"
         static let germanSpatialAutocorrect = "experiments.germanSpatialAutocorrect"
         static let koreanKeyboard = KoreanKeyboardExperiment.key
+        static let chinesePinyin = "settings.chinesePinyin"
+        static let chinesePinyinMode = "settings.chinesePinyinMode"
         static let keyPopups = "settings.keyboardKeyPopups"
         static let haptics = "settings.keyboardHaptics"
         static let hapticStrength = "settings.keyboardHapticStrength"
@@ -154,6 +156,20 @@ struct FullKeyboardSettings {
     var koreanKeyboard: Bool {
         get { defaults?.object(forKey: Key.koreanKeyboard) as? Bool ?? false }
         nonmutating set { defaults?.set(newValue, forKey: Key.koreanKeyboard) }
+    }
+
+    /// Settings › Keyboard › Chinese Pinyin: enables the offline full-Pinyin input mode.
+    /// Off by default. The keyboard keeps its existing QWERTY layout; a space-bar swipe
+    /// switches between English and Chinese while this option is enabled.
+    var chinesePinyin: Bool {
+        get { defaults?.object(forKey: Key.chinesePinyin) as? Bool ?? false }
+        nonmutating set { defaults?.set(newValue, forKey: Key.chinesePinyin) }
+    }
+
+    /// The last Chinese/English mode selected with a space-bar swipe.
+    var chinesePinyinMode: Bool {
+        get { defaults?.bool(forKey: Key.chinesePinyinMode) ?? false }
+        nonmutating set { defaults?.set(newValue, forKey: Key.chinesePinyinMode) }
     }
 
     /// The typing model the keyboard may read `language`'s taps with: its bundled model, with
