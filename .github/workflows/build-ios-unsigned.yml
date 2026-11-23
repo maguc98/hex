@@ -37,9 +37,10 @@ jobs:
           git -C "$RUNNER_TEMP/inputx" sparse-checkout init --cone
           git -C "$RUNNER_TEMP/inputx" sparse-checkout set core tools/eval/runner
           git -C "$RUNNER_TEMP/inputx" checkout 622d8651b50877ee63034adc1b4486028aeb6145
-          python3 - <<'PY'
+          python3 - "$RUNNER_TEMP/inputx/core/crates/inputx-core/src/composite/pinyin_adapter.rs" <<'PY'
+          import sys
           from pathlib import Path
-          source = Path("$RUNNER_TEMP/inputx/core/crates/inputx-core/src/composite/pinyin_adapter.rs")
+          source = Path(sys.argv[1])
           text = source.read_text()
           old = "pub const PINYIN_DISABLE_COMPOSE: bool = true;"
           new = "pub const PINYIN_DISABLE_COMPOSE: bool = false;"
