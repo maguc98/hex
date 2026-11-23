@@ -514,28 +514,31 @@ final class FullKeyboardView: UIView {
         setNeedsLayout()
     }
 
-    /// Keep the keyboard visible but temporarily non-interactive while its Chinese session
-    /// warms. The session lock is shared with first-key FFI calls; accepting a touch too early
-    /// would make UIKit wait on the keyboard's main thread for the entire warmup.
+    /// Keep text-entry surfaces idle while the native Pinyin session warms. Its lock is shared
+    /// with first-key FFI calls, so touching a key or candidate too early could block UIKit's
+    /// main thread. Do not disable this whole view: the globe must remain available to UIKit.
     private func updatePinyinInteractionAvailability() {
         pinyinInteractionGeneration += 1
         let generation = pinyinInteractionGeneration
-        guard engine.isChinesePinyinMode else {
-            isUserInteractionEnabled = true
-            return
-        }
-        guard !engine.isChinesePinyinReady else {
-            isUserInteractionEnabled = true
-            return
-        }
-        isUserInteractionEnabled = false
+        let canEnterText = !engine.isChinesePinyinMode || engine.isChinesePinyinReady
+        setPinyinInputInteractionEnabled(canEnterText)
+        guard !canEnterText else { return }
+
         engine.whenChinesePinyinReady { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, self.pinyinInteractionGeneration == generation else { return }
-                self.isUserInteractionEnabled = true
+                self.setPinyinInputInteractionEnabled(true)
                 self.refreshStrip()
             }
         }
+    }
+
+    /// Gate only controls that can enter text or call the Pinyin session. The globe and Hex
+    /// dictation key are siblings and deliberately remain interactive during native warmup.
+    func setPinyinInputInteractionEnabled(_ enabled: Bool) {
+        plane.isUserInteractionEnabled = enabled
+        stripView.isUserInteractionEnabled = enabled
+        selectionStrip.isUserInteractionEnabled = enabled
     }
 
     /// A swipe along the space bar: the next or previous language (its letters, accents and
