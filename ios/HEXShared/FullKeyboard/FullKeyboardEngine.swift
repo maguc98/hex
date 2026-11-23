@@ -938,7 +938,14 @@ final class FullKeyboardEngine {
     }
 
     func deleteWordBackward() {
+        if isChinesePinyinMode, pinyinSession.isComposing {
+            pinyinSession.clear()
+            refreshSuggestions()
+            onChange?()
+            return
+        }
         commitHangulComposition()
+        commitPinyinComposition()
         forgetTypingContext()
         swipedWord = nil
         adaptiveTouch?.forget()
