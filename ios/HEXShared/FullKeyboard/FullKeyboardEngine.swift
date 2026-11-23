@@ -1230,8 +1230,11 @@ final class FullKeyboardEngine {
 
     /// `point` is where the space bar was tapped, as on the unsplit keyboard.
     private func typeSpace(at point: CGPoint? = nil) {
+        if isChinesePinyinMode, pinyinSession.isComposing {
+            commitPinyinComposition()
+            return
+        }
         commitHangulComposition()
-        commitPinyinComposition()
         // Space never autocorrects a swiped word: it is a reading, not a typo.
         let afterSwipe = swipedWord != nil
         swipedWord = nil
