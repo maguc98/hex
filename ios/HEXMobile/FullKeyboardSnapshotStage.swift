@@ -200,6 +200,15 @@ struct FullKeyboardSnapshotStage: View {
             case "accents": "한"
             default: "10분 늦어요. "
             }
+        case .chinese:
+            return switch state {
+            case "inserted": "我会晚到10分钟，预计7:30到家。你们先开始吧。"
+            case "numbers": "我会晚到10分钟，预计7:3"
+            case "shift": "我会晚到十分钟。"
+            case "typing": "我会晚到十分钟"
+            case "accents": "今天"
+            default: "我会晚到十分钟，"
+            }
         case .english:
             break
         }
