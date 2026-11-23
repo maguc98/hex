@@ -27,6 +27,7 @@ import Foundation
 /// composes as the jamo are typed; it is offered only while Settings › Experiments › Korean
 /// keyboard is on.
 nonisolated enum KeyboardLanguage: String, CaseIterable, Sendable {
+    case chinese = "zh-Hans"
     case english = "en"
     case norwegian = "nb"
     case spanish = "es"
@@ -49,6 +50,7 @@ nonisolated enum KeyboardLanguage: String, CaseIterable, Sendable {
     /// Its own name, as Apple's keyboard list shows it.
     var displayName: String {
         switch self {
+        case .chinese: "简体中文"
         case .english: "English"
         case .norwegian: "Norsk"
         case .spanish: "Español"
@@ -90,6 +92,7 @@ nonisolated enum KeyboardLanguage: String, CaseIterable, Sendable {
     /// typing: the language's usual region, as `dictationLanguage` falls back to.
     var inputModeLanguage: String {
         switch self {
+        case .chinese: "zh-Hans"
         case .english: "en-US"
         case .norwegian: "nb-NO"
         case .spanish: "es-ES"
@@ -209,6 +212,7 @@ nonisolated enum KeyboardLanguage: String, CaseIterable, Sendable {
     /// ones. One layout: no choice.
     var letterLayouts: [KeyboardLetterLayout] {
         switch self {
+        case .chinese: [.qwerty]
         case .english: [.qwerty, .azerty, .qwertz, .dvorak]
         case .german: [.own, .qwertz, .qwerty, .azerty]
         case .spanish: [.own, .qwerty, .azerty, .qwertz]
@@ -259,7 +263,7 @@ nonisolated enum KeyboardLanguage: String, CaseIterable, Sendable {
 
     private var ownLetterRows: [String] {
         switch self {
-        case .english, .italian, .portuguese, .polish, .romanian:
+        case .chinese, .english, .italian, .portuguese, .polish, .romanian:
             ["qwertyuiop", "asdfghjkl", "zxcvbnm"]
         // Apple's "AZERTY – French", the first layout Français (France) and (Belgique) list
         // (iOS 27.2 simulator): row 3 is W to N and the apostrophe key, seven keys a letter wide
@@ -526,8 +530,8 @@ nonisolated enum KeyboardLanguage: String, CaseIterable, Sendable {
                 "d": ["d", "đ"],
                 "c": ["c", "č", "ć", "ç"],
             ]
-        case .korean:
-            // Hangul's letters hold nothing: a syllable is composed from the keys.
+        case .korean, .chinese:
+            // Hangul is composed from jamo; Chinese Pinyin uses the plain QWERTY keys.
             [:]
         }
     }
@@ -556,7 +560,7 @@ nonisolated enum KeyboardLanguage: String, CaseIterable, Sendable {
     /// system keyboard's held $, is held there.
     var symbolHolds: [String: [String]] {
         switch self {
-        case .english, .serbianLatin, .korean, .hungarian:
+        case .english, .serbianLatin, .korean, .hungarian, .chinese:
             [:]
         case .norwegian:
             [
@@ -655,7 +659,7 @@ nonisolated enum KeyboardLanguage: String, CaseIterable, Sendable {
         case .serbianLatin: ["sr_Latn", "sr_Latn_RS", "sr-Latn"]
         // No dictionary: Hangul is composed, not spelled, and never autocorrected into another
         // language.
-        case .korean: []
+        case .korean, .chinese: []
         }
     }
 
@@ -697,7 +701,7 @@ nonisolated enum KeyboardLanguage: String, CaseIterable, Sendable {
         case .hungarian:
             ["az", "és", "is", "de", "ha", "ez", "el", "ki", "be", "rá", "én", "te", "mi", "ne", "se"]
         case .norwegian, .german, .french, .frenchCanadian, .frenchSwiss, .portuguese, .polish,
-             .czech, .romanian, .russian, .ukrainian, .greek, .serbianLatin, .korean:
+             .czech, .romanian, .russian, .ukrainian, .greek, .serbianLatin, .korean, .chinese:
             []
         }
     }
@@ -727,7 +731,7 @@ nonisolated enum KeyboardLanguage: String, CaseIterable, Sendable {
             ]
         case .english, .norwegian, .spanish, .german, .french, .frenchCanadian, .frenchSwiss,
              .portuguese, .polish, .czech, .hungarian, .romanian, .russian, .ukrainian, .greek,
-             .serbianLatin, .korean:
+             .serbianLatin, .korean, .chinese:
             [:]
         }
     }
@@ -740,7 +744,7 @@ nonisolated enum KeyboardLanguage: String, CaseIterable, Sendable {
         case .italian: ["e": "è", "ce": "c'è"]
         case .english, .norwegian, .spanish, .german, .french, .frenchCanadian, .frenchSwiss,
              .portuguese, .polish, .czech, .hungarian, .romanian, .russian, .ukrainian, .greek,
-             .serbianLatin, .korean:
+             .serbianLatin, .korean, .chinese:
             [:]
         }
     }
@@ -788,6 +792,11 @@ nonisolated enum KeyboardLanguage: String, CaseIterable, Sendable {
             .map(String.init)
         let code = parts.first ?? ""
         switch code {
+        case "zh":
+            // Hex's Pinyin engine writes Simplified Chinese. Traditional Chinese and Cantonese
+            // remain distinct until their own composition engines are available.
+            if parts.contains("hant") || ["tw", "hk", "mo"].contains(where: parts.contains) { return nil }
+            return .chinese
         case "nb", "no", "nn": return .norwegian
         case "en": return .english
         case "es": return .spanish
