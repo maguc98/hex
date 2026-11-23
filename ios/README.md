@@ -2027,3 +2027,19 @@ The Xcode Cloud workflow needs a tag start condition with prefix `ios-beta-`,
 container `ios/HEXMobile.xcodeproj`, shared scheme `HEXMobile`, an iOS Archive
 action, and a TestFlight post-action for **Hex Internal**. Cloud owns the build
 number. Verify the run's source tag and the processed build in that group.
+
+## Chinese Pinyin
+
+The full keyboard can optionally use an offline Mandarin full-Pinyin engine. Enable
+**Settings › Keyboard › Chinese Pinyin**, then swipe the space bar to switch between
+English and Chinese. The existing Hex QWERTY key plane and candidate strip remain in
+place; the Pinyin composition layer handles letter buffering, candidate selection,
+backspace, and commit-on-space / punctuation / return. The engine is embedded in the
+keyboard process and does not send typed text to a server.
+
+The native engine is Inputx, pinned to
+`goliajp/inputx@622d8651b50877ee63034adc1b4486028aeb6145`. The iOS build workflow
+sparsely checks out its Rust core, enables continuous full-Pinyin phrase composition,
+builds the `aarch64-apple-ios` static library, and links it into both the app and
+keyboard extension. The engine source is MIT OR Apache-2.0; dictionary data notices
+are listed in Settings › Acknowledgements.
