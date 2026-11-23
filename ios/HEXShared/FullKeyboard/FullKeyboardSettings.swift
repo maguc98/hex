@@ -339,9 +339,9 @@ struct FullKeyboardSettings {
         nonmutating set { defaults?.set(newValue.rawValue, forKey: Key.dictationBarAutoStart) }
     }
 
-    /// Where the full keyboard's Hex key sits for `hexKeyOnLeft`.
+    /// Where the full keyboard's Hex key sits beside the space bar, as in Hex's original key plane.
     var hexKeyPlacement: HexKeyPlacement {
-        hexKeyOnLeft ? .stripLeading : .stripTrailing
+        hexKeyOnLeft ? .leftOfSpace : .rightOfSpace
     }
 
     /// Simulator scenes pass `--experiment-full-keyboard` or `--keyboard full|dictation-bar`
