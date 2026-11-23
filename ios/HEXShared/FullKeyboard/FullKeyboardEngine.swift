@@ -48,6 +48,14 @@ final class FullKeyboardEngine {
     /// Settings › Experiments › Korean keyboard (두벌식): its switch and composing run.
     var korean = KoreanKeyboardState()
     private lazy var pinyinSession = ChinesePinyinSession()
+    /// A separate English decoder used while Mandarin Pinyin is active, so mixed sentences
+    /// can offer English spellings without changing the keyboard's selected layout language.
+    private lazy var mixedEnglishAutocorrect: AutocorrectEngine = {
+        let engine = AutocorrectEngine(checker: SystemTextChecker(language: "en_US"))
+        engine.setLanguage(.english)
+        engine.decoder = FullKeyboardSettings().typingModel(for: .english).map { TypingDecoder(model: $0) }
+        return engine
+    }()
     private(set) var isChinesePinyinMode = false
     var chinesePinyinEnabled = false {
         didSet {
@@ -343,18 +351,30 @@ final class FullKeyboardEngine {
         let next: [KeyboardSuggestion]
         if isChinesePinyinMode {
             if pinyinSession.isComposing {
+                let preedit = pinyinSession.preedit
+                let english = mixedEnglishSuggestion(for: preedit)
+                let exactEnglish = mixedEnglishAutocorrect.checker.isWordValid(preedit)
                 let raw = KeyboardSuggestion(
-                    displayText: pinyinSession.preedit,
-                    replacement: pinyinSession.preedit,
+                    displayText: exactEnglish ? "EN · \(preedit)" : preedit,
+                    replacement: preedit,
                     kind: .keepLiteral
                 )
                 let words = pinyinSession.candidates
-                let candidates = words.prefix(2).enumerated().map { index, word in
+                var candidates = words.prefix(1).map { word in
                     KeyboardSuggestion(
                         displayText: word,
                         replacement: word,
-                        kind: index == 0 ? .primary(autoReplace: false) : .secondary
+                        kind: .primary(autoReplace: false)
                     )
+                }
+                if let english, english.replacement.caseInsensitiveCompare(preedit) != .orderedSame {
+                    candidates.append(english)
+                } else if words.count > 1 {
+                    candidates.append(KeyboardSuggestion(
+                        displayText: words[1],
+                        replacement: words[1],
+                        kind: .secondary
+                    ))
                 }
                 next = [raw] + candidates
             } else {
@@ -384,6 +404,56 @@ final class FullKeyboardEngine {
         }
     }
 
+    /// Offers an English reading beside Pinyin candidates. Exact English words are
+    /// selectable as-is; confident English autocorrections are offered for misspellings.
+    /// When Chinese and English are both plausible, neither is silently forced: the user
+    /// chooses from the existing candidate strip.
+    private func mixedEnglishSuggestion(for preedit: String) -> KeyboardSuggestion? {
+        guard preedit.count >= 2,
+              preedit.allSatisfy({ $0.isASCII && $0.isLetter }) else { return nil }
+        let before = stripBefore ?? ""
+        let needsBoundary = before.last.map { $0.isLetter && !$0.isASCII } ?? false
+        let virtualBefore = before + (needsBoundary ? " " : "") + preedit
+        let model = FullKeyboardSettings().typingModel(for: .english)
+        let options = mixedEnglishAutocorrect.suggestions(
+            beforeInput: virtualBefore,
+            field: field,
+            autocorrectionType: target.autocorrectionType,
+            predictionModel: model,
+            capitalizesNext: false
+        )
+        if mixedEnglishAutocorrect.checker.isWordValid(preedit) {
+            return KeyboardSuggestion(
+                displayText: "EN · \(preedit)",
+                replacement: preedit,
+                kind: .pinyinEnglish
+            )
+        }
+        if let correction = options.first(where: { suggestion in
+            if case .primary(let autoReplace) = suggestion.kind { return autoReplace }
+            return false
+        }) {
+            return KeyboardSuggestion(
+                displayText: "EN · \(correction.replacement)",
+                replacement: correction.replacement,
+                kind: .pinyinEnglish
+            )
+        }
+        if pinyinSession.candidates.isEmpty,
+           let completion = options.first(where: { suggestion in
+               if case .primary = suggestion.kind { return true }
+               if case .secondary = suggestion.kind { return true }
+               return false
+           }), completion.replacement.caseInsensitiveCompare(preedit) != .orderedSame {
+            return KeyboardSuggestion(
+                displayText: "EN · \(completion.replacement)",
+                replacement: completion.replacement,
+                kind: .pinyinEnglish
+            )
+        }
+        return nil
+    }
+
     /// Commits the first Chinese candidate when leaving Pinyin composition. If the
     /// current syllable sequence has no dictionary match, preserve the typed Latin text.
     func commitPinyinComposition() {
@@ -409,6 +479,11 @@ final class FullKeyboardEngine {
 
     func acceptSuggestion(_ suggestion: KeyboardSuggestion) {
         if isChinesePinyinMode, pinyinSession.isComposing {
+            if suggestion.kind == .pinyinEnglish {
+                pinyinSession.clear()
+                insert(suggestion.replacement, source: "mixed_english")
+                return
+            }
             let picked: String?
             if suggestion.kind == .keepLiteral {
                 picked = pinyinSession.preedit
