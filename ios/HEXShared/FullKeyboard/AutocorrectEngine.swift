@@ -17,6 +17,9 @@ nonisolated struct KeyboardSuggestion: Equatable, Sendable {
         /// Another reading of the word just swiped (Settings › Keyboard › Swipe typing): tapping it
         /// puts it in that word's place.
         case swiped
+        /// An English spelling offered alongside Chinese Pinyin, committed without ending the
+        /// mixed-input mode.
+        case pinyinEnglish
         /// What you typed before autocorrect changed it, offered once the cursor is back at the
         /// end of the corrected words (delete takes only their space): tapping it puts it back.
         case revert
