@@ -148,7 +148,7 @@ enum HexMarkPath {
 }
 
 extension CGContext {
-    /// Draws a continuous-corner iOS 26 Liquid Glass keycap with no legacy under-shadow.
+    /// Draws a continuous-corner Hex keycap with its original raised edge and drop shadow.
     func fillKeycap(_ rect: CGRect, fill: UIColor, shadow: UIColor = .clear, radius: CGFloat = FullKeyboardPalette.cornerRadius) {
         let path = UIBezierPath(roundedRect: rect, cornerRadius: radius).cgPath
         saveGState()
