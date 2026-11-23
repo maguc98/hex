@@ -66,6 +66,23 @@ final class FullKeyboardEngineTests: XCTestCase {
         XCTAssertFalse(session.isComposing)
     }
 
+    func testChineseKeyboardUsesPinyinCandidatesAndCommitsThem() {
+        engine.language = .chinese
+        engine.chinesePinyinEnabled = true
+        engine.setChinesePinyinMode(true)
+
+        type("nihao")
+
+        XCTAssertTrue(engine.isChinesePinyinMode)
+        XCTAssertTrue(engine.suggestions.contains { $0.replacement == "你好" })
+        guard let chinese = engine.suggestions.first(where: { $0.replacement == "你好" }) else {
+            XCTFail("The Chinese candidate must be available in the suggestion strip")
+            return
+        }
+        engine.acceptSuggestion(chinese)
+        XCTAssertEqual(target.text, "你好")
+    }
+
     func testRolloverKeepsOrder() {
         down(1, .character("t"))
         down(2, .character("h"))
