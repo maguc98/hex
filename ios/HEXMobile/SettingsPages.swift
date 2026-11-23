@@ -253,6 +253,7 @@ struct KeyboardSettingsPage: View {
     let fullAccessOn: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var fullKeyboard = FullKeyboardSettings().isEnabled
+    @State private var chinesePinyin = FullKeyboardSettings().chinesePinyin
     @State private var autoCapitalization = FullKeyboardSettings().autoCapitalization
     @State private var hexKeyOnLeft = FullKeyboardSettings().hexKeyOnLeft
     @State private var numberRow = FullKeyboardSettings().numberRow
@@ -316,6 +317,14 @@ struct KeyboardSettingsPage: View {
 
                 if fullKeyboard {
                     KeyboardLanguagesRow()
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        title: String(localized: "Chinese Pinyin"),
+                        detail: String(localized: "Offline full Pinyin. Swipe the space bar to switch Chinese and English."),
+                        isOn: $chinesePinyin
+                    )
 
                     SettingsDivider()
 
@@ -444,6 +453,9 @@ struct KeyboardSettingsPage: View {
         .onChange(of: fullKeyboard) { _, enabled in
             FullKeyboardSettings().isEnabled = enabled
         }
+        .onChange(of: chinesePinyin) { _, enabled in
+            FullKeyboardSettings().chinesePinyin = enabled
+        }
         .onChange(of: autoCapitalization) { _, enabled in
             FullKeyboardSettings().autoCapitalization = enabled
         }
@@ -479,6 +491,7 @@ struct KeyboardSettingsPage: View {
         }
         .onAppear {
             fullKeyboard = FullKeyboardSettings().isEnabled
+            chinesePinyin = FullKeyboardSettings().chinesePinyin
             autoCapitalization = FullKeyboardSettings().autoCapitalization
             hexKeyOnLeft = FullKeyboardSettings().hexKeyOnLeft
             numberRow = FullKeyboardSettings().numberRow
