@@ -159,8 +159,8 @@ struct FullKeyboardSettings {
     }
 
     /// Settings › Keyboard › Chinese Pinyin: enables offline full-Pinyin composition over
-    /// the existing QWERTY layout. Off by default; choosing Simplified Chinese in Keyboard
-    /// Languages also activates Pinyin. English words remain selectable in the same sentence.
+    /// the existing QWERTY layout. On by default for immediate Simplified Chinese and English
+    /// mixed input; choosing Simplified Chinese in Keyboard Languages also activates Pinyin.
     var chinesePinyin: Bool {
         get { defaults?.object(forKey: Key.chinesePinyin) as? Bool ?? true }
         nonmutating set { defaults?.set(newValue, forKey: Key.chinesePinyin) }
@@ -229,9 +229,9 @@ struct FullKeyboardSettings {
     }
 
     /// Settings › Experiments › Keyboard themes: the full keyboard draws its own opaque
-    /// colours (black, white, navy, forest or ember) instead of translucent keycaps over
-    /// iOS's glass. Off by default, so the keyboard keeps the system look; the dictation bar
-    /// and iOS's own strip above the keyboard keep it either way. Stored as
+    /// colours (black, white, navy, forest or ember) instead of Hex's original panel and raised
+    /// keycaps. Off by default, so the keyboard keeps its original look; the dictation bar and
+    /// iOS's own strip above the keyboard keep it either way. Stored as
     /// `experiments.keyboardThemes`.
     var keyboardThemesEnabled: Bool {
         get { defaults?.object(forKey: Key.keyboardThemes) as? Bool ?? false }
