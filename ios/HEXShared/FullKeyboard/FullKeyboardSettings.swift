@@ -162,7 +162,7 @@ struct FullKeyboardSettings {
     /// the existing QWERTY layout. Off by default; choosing Simplified Chinese in Keyboard
     /// Languages also activates Pinyin. English words remain selectable in the same sentence.
     var chinesePinyin: Bool {
-        get { defaults?.object(forKey: Key.chinesePinyin) as? Bool ?? false }
+        get { defaults?.object(forKey: Key.chinesePinyin) as? Bool ?? true }
         nonmutating set { defaults?.set(newValue, forKey: Key.chinesePinyin) }
     }
 
