@@ -85,13 +85,27 @@ final class FullKeyboardEngineTests: XCTestCase {
         type("nihao")
 
         XCTAssertTrue(engine.isChinesePinyinMode)
-        XCTAssertTrue(engine.suggestions.contains { $0.replacement == "你好" })
+        XCTAssertFalse(engine.suggestions.isEmpty)
+        XCTAssertEqual(engine.suggestions.first?.replacement, "你好",
+                       "the first visible slot should be the top Simplified Chinese candidate")
         guard let chinese = engine.suggestions.first(where: { $0.replacement == "你好" }) else {
             XCTFail("The Chinese candidate must be available in the suggestion strip")
             return
         }
         engine.acceptSuggestion(chinese)
         XCTAssertEqual(target.text, "你好")
+    }
+
+    func testChinesePinyinSpaceCommitsTheTopCandidate() {
+        engine.language = .chinese
+        engine.chinesePinyinEnabled = true
+        engine.setChinesePinyinMode(true)
+
+        type("nihao")
+        tap(.space)
+
+        XCTAssertEqual(target.text, "你好",
+                       "space should accept the top Chinese candidate, not insert Latin Pinyin")
     }
 
     func testRolloverKeepsOrder() {
