@@ -120,7 +120,7 @@ final class ChinesePinyinSession: @unchecked Sendable {
 
     var candidates: [String] {
         withSession([]) { session in
-            let count = min(Int(inputx_session_candidate_count(session)), 2)
+            let count = min(Int(inputx_session_candidate_count(session)), 3)
             guard count > 0 else { return [] }
             return (0..<count).compactMap { index in
                 guard let value = inputx_session_candidate(session, UInt(index)) else { return nil }
