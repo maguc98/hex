@@ -362,8 +362,8 @@ final class FullKeyboardEngine {
                 let words = pinyinSession.candidates
 
                 // Put a real Chinese word in the first (easiest-to-tap) slot.
-                // Keep the English reading beside it for mixed-language typing,
-                // then use the remaining slot for another Chinese candidate or raw Pinyin.
+                // Keep an English reading beside it when one exists, including an
+                // exact English word, then fill the remaining slots with Chinese candidates.
                 var candidates: [KeyboardSuggestion] = []
                 if let first = words.first {
                     candidates.append(KeyboardSuggestion(
@@ -372,17 +372,17 @@ final class FullKeyboardEngine {
                         kind: .primary(autoReplace: false)
                     ))
                 }
-                if let english, english.replacement.caseInsensitiveCompare(preedit) != .orderedSame {
+                if let english {
                     candidates.append(english)
                 }
-                if words.count > 1, candidates.count < 3 {
+                for word in words.dropFirst() where candidates.count < 3 {
                     candidates.append(KeyboardSuggestion(
-                        displayText: words[1],
-                        replacement: words[1],
+                        displayText: word,
+                        replacement: word,
                         kind: .secondary
                     ))
                 }
-                if candidates.count < 3, !candidates.contains(where: { $0.replacement == raw.replacement }) {
+                if candidates.count < 3 {
                     candidates.append(raw)
                 }
                 next = candidates
