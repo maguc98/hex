@@ -56,8 +56,10 @@ final class FullKeyboardEngineTests: XCTestCase {
     func testOfflinePinyinSessionComposesAndCommitsSimplifiedChinese() {
         let session = ChinesePinyinSession()
         XCTAssertTrue(session.isAvailable, "the Inputx native Pinyin core must be linked into the keyboard")
-        for character in "nihao" {
+        let prefixes = ["n", "ni", "nih", "niha", "nihao"]
+        for (character, prefix) in zip("nihao", prefixes) {
             XCTAssertTrue(session.insert(character), "Inputx should consume Pinyin key \(character)")
+            XCTAssertEqual(session.preedit, prefix, "the composition should update after each key")
         }
         XCTAssertTrue(session.isComposing)
         XCTAssertEqual(session.preedit, "nihao")
