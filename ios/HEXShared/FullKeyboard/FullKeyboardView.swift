@@ -487,9 +487,11 @@ final class FullKeyboardView: UIView {
         // Info.plist's en-US (`primaryLanguage`): report every change, a space-bar switch too.
         let pinyinEnabled = FullKeyboardSettings().chinesePinyin
         engine.chinesePinyinEnabled = pinyinEnabled
-        engine.setChinesePinyinMode(pinyinEnabled && FullKeyboardSettings().chinesePinyinMode)
-        engine.switchesLanguage = list.switches || (pinyinEnabled && list.languages.count == 1)
-        let identifier = engine.isChinesePinyinMode ? "zh-Hans" : list.current.inputModeLanguage
+        // Pinyin is a composition layer, not a language mode: keep it ready while the
+        // user types Chinese and English in the same sentence.
+        engine.setChinesePinyinMode(pinyinEnabled)
+        engine.switchesLanguage = list.switches
+        let identifier = pinyinEnabled ? "zh-Hans" : list.current.inputModeLanguage
         if identifier != reportedInputModeLanguage {
             reportedInputModeLanguage = identifier
             hostController?.primaryLanguage = identifier
@@ -516,19 +518,8 @@ final class FullKeyboardView: UIView {
     /// language picked by hand goes back to Automatic, so it follows too.
     func switchLanguage(by step: Int) {
         guard languageOverride == nil else { return }
-        if engine.chinesePinyinEnabled, languages.languages.count == 1 {
-            let requested = !engine.isChinesePinyinMode
-            engine.setChinesePinyinMode(requested)
-            let enabled = engine.isChinesePinyinMode
-            FullKeyboardSettings().chinesePinyinMode = enabled
-            let identifier = enabled ? "zh-Hans" : languages.current.inputModeLanguage
-            reportedInputModeLanguage = identifier
-            hostController?.primaryLanguage = identifier
-            typingLog?.ui("keyboard_language", [TypingLogField("language", .string(identifier))])
-            selectionFeedback()
-            refreshSpaceLabel()
-            return
-        }
+        // Chinese Pinyin and English now coexist on the same key layout. A space-bar
+        // swipe only changes the configured keyboard language list, never disables Pinyin.
         guard languages.switches else { return }
         let next = languages.switched(by: step)
         typingLog?.ui("keyboard_language", [TypingLogField("language", .string(next.rawValue))])
@@ -545,7 +536,7 @@ final class FullKeyboardView: UIView {
     /// Access, the dictation language's.
     private func refreshSpaceLabel() {
         if engine.chinesePinyinEnabled, languages.languages.count == 1 {
-            plane.spaceLabel = engine.isChinesePinyinMode ? "中文" : "EN"
+            plane.spaceLabel = "中英"
         } else {
             plane.spaceLabel = languages.spaceLabel ?? (model.hasFullAccess ? model.languageSummary : nil)
         }
