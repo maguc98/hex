@@ -236,6 +236,8 @@ final class KeyboardViewController: UIInputViewController {
             startWarmDictation()
         } else if let local = viewModel.onLocalDictateTap {
             local()
+        } else if viewModel.quickWakeEnabled {
+            viewModel.onDictationUnavailable?()
         }
     }
 
@@ -1233,10 +1235,18 @@ final class KeyboardViewController: UIInputViewController {
         let now = Date().timeIntervalSince1970
         if localDictationAvailable != nil || !available, now - lastAvailabilityNote >= 5 {
             lastAvailabilityNote = now
-            let change = available
-                ? "dictating in the keyboard"
-                : multilingualOpensHex ? "multilingual model on, Dictate opens Hex"
-                : needsHex ? "speech model missing here, Dictate opens Hex" : "short of memory, Dictate opens Hex"
+            let change: String
+            if available {
+                change = "dictating in the keyboard"
+            } else if viewModel.quickWakeEnabled {
+                change = multilingualOpensHex ? "quick wake blocked: multilingual model needs Hex"
+                    : needsHex ? "quick wake blocked: speech model missing in keyboard"
+                    : "quick wake blocked: short of memory"
+            } else {
+                change = multilingualOpensHex ? "multilingual model on, Dictate opens Hex"
+                    : needsHex ? "speech model missing here, Dictate opens Hex"
+                    : "short of memory, Dictate opens Hex"
+            }
             KeyboardProbeLog.shared.write("\(change) \(KeyboardProbeLog.memory())")
         }
         localDictationAvailable = available
@@ -1250,10 +1260,9 @@ final class KeyboardViewController: UIInputViewController {
         } : nil
     }
 
-    /// Loads in-keyboard dictation's capture page once the keyboard has shown
-    /// (`scheduleLaunchWork`, after its first frame), so the Hex key only waits for the
-    /// microphone. Only with Full Access, which dictation needs, and not while a warm Hex
-    /// session takes the Hex key instead; `prepare` checks memory.
+    /// Loads the in-keyboard capture page after the first keyboard frame so Quick wake
+    /// only waits for the microphone. It is prepared when the keyboard is the selected
+    /// dictation path; `prepare` checks memory but does not open the microphone while idle.
     private func prepareLocalDictationIfNeeded() {
         guard hasFullAccess, viewModel.onLocalDictateTap != nil, !viewModel.dictatesThroughHex else { return }
         localDictation.prepare(in: view)
