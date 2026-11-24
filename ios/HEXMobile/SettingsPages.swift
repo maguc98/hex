@@ -76,6 +76,21 @@ struct DictationSettingsPage: View {
                 DictationLanguageRow(dictation: dictation)
             }
 
+            // While the keyboard records by itself (iOS 26 and later): its live words.
+            if #available(iOS 26.0, *) {
+                SettingsCard {
+                    SettingsToggleRow(title: String(localized: "Show what I say"), isOn: $showsWhatISay)
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        title: String(localized: "Type as I speak"),
+                        detail: String(localized: "Words can change until you stop"),
+                        isOn: $typesAsISpeak
+                    )
+                }
+            }
+
             SettingsCard {
                 TranslateDictationRow()
                     .padding(.horizontal, 16)

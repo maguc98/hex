@@ -50,6 +50,8 @@ final class FullKeyboardView: UIView {
     /// The capsule that grows from the Hex mark across the strip into the recording bar.
     private let morph = UIView()
     private var recordingPanel: HexKeyRecordingPanel?
+    /// The words so far over the keys while recording (Show words as you speak).
+    let livePreview = LiveDictationPreviewHost()
     private var styleMenu: HexStyleMenuView?
     private(set) var palette = FullKeyboardPalette(isDark: false)
     private var didApplyPalette = false
@@ -279,6 +281,7 @@ final class FullKeyboardView: UIView {
         syncSwipeTyping()
         engine.configureForField()
         applyAppearance()
+        livePreview.attach(to: self)
         refreshFromModel()
     }
 
@@ -775,6 +778,7 @@ final class FullKeyboardView: UIView {
             menu.frame = bounds
             menu.anchor = hex.frame
         }
+        livePreview.layout()
         plane.setNeedsDisplay()
         updateCallout()
     }
@@ -803,6 +807,7 @@ final class FullKeyboardView: UIView {
         accentCallout.palette = next
         hexKey.palette = next
         recordingPanel?.palette = next
+        livePreview.palette = next
         styleMenu?.palette = next
         emojiPanel?.palette = next
         emojiSearchField?.palette = next
@@ -824,6 +829,7 @@ final class FullKeyboardView: UIView {
         let recording = model.stagePhase == .recording || model.stagePhase == .transcribing
         if recording != showsRecording {
             setRecording(recording)
+            livePreview.sync()
         }
         refreshRecordingPanel()
         // A language picked in the switch changes the layout at once when it follows dictation.
