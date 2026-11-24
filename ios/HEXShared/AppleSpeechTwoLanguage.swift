@@ -104,6 +104,7 @@ nonisolated enum AppleSpeechTwoLanguage {
             withExtendedLifetime(primaryAnalyzer) {}
             withExtendedLifetime(secondaryAnalyzer) {}
         }
+        guard !Task.isCancelled else { return nil }
 
         let primaryFile: AVAudioFile
         let secondaryFile: AVAudioFile
@@ -118,12 +119,14 @@ nonisolated enum AppleSpeechTwoLanguage {
         // that can't prepare leaves the primary reading alone.
         do {
             try await primaryAnalyzer.prepareToAnalyze(in: nil)
+            guard !Task.isCancelled else { return nil }
         } catch {
             return nil
         }
         var secondaryStarted = false
         do {
             try await secondaryAnalyzer.prepareToAnalyze(in: nil)
+            guard !Task.isCancelled else { return nil }
             secondaryStarted = true
         } catch {
             secondaryStarted = false
@@ -137,11 +140,13 @@ nonisolated enum AppleSpeechTwoLanguage {
             }
         }
 
+        guard !Task.isCancelled else { return nil }
         do {
             try await primaryAnalyzer.start(inputAudioFile: primaryFile, finishAfterFile: true)
         } catch {
             return nil
         }
+        guard !Task.isCancelled else { return nil }
         if secondaryStarted {
             do {
                 try await secondaryAnalyzer.start(inputAudioFile: secondaryFile, finishAfterFile: true)
@@ -150,12 +155,14 @@ nonisolated enum AppleSpeechTwoLanguage {
             }
         }
 
+        guard !Task.isCancelled else { return nil }
         async let primaryReading = reading(of: primaryTranscriber)
         async let secondaryReading = reading(of: secondaryStarted ? secondaryTranscriber : nil)
 
         let primary: Reading
         do {
             primary = try await primaryReading
+            guard !Task.isCancelled else { return nil }
         } catch {
             return nil
         }
@@ -169,6 +176,7 @@ nonisolated enum AppleSpeechTwoLanguage {
             )
         }
         let secondary = (try? await secondaryReading) ?? Reading()
+        guard !Task.isCancelled else { return nil }
         let fallback = Transcript(
             text: primary.text,
             winner: .primary,
