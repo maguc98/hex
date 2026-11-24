@@ -37,6 +37,10 @@ final class KeyboardLocalDictation {
         let id: String
         let document: UUID?
         var interrupted = false
+        /// The completed recording's file name and length, retained if iOS closes the keyboard.
+        var recording: (fileName: String, seconds: TimeInterval)?
+        /// The point at which the keyboard closed while recording, if it cut the recording short.
+        var stoppedAfter: TimeInterval?
 
         init(id: String, document: UUID?) {
             self.id = id
@@ -717,6 +721,7 @@ final class KeyboardLocalDictation {
             if let job, !job.interrupted {
                 job.interrupted = true
                 KeyboardProbeLog.shared.write("keyboard hidden while transcribing: holding its text for the next keyboard")
+                Self.leaveRecording(of: job)
             }
         case .finished(_, let resultID, let transcript, let heard, _, _):
             // Shown but not yet inserted: the next keyboard inserts it.
@@ -758,20 +763,100 @@ final class KeyboardLocalDictation {
             transcription = nil
             job = nil
             phase = .idle
+        case .idle:
+            recoverLeftRecording(now: now)
         default:
             break
         }
     }
 
-    private static func hold(resultID: String, text: String, heard: String?, document: UUID?) {
+    private static func hold(
+        resultID: String, text: String, heard: String?, document: UUID?, stoppedAfter: TimeInterval? = nil
+    ) {
         KeyboardBridge().heldDictation = KeyboardHeldDictation(
             id: resultID,
             text: text,
             heard: heard,
             document: document,
-            finishedAt: Date().timeIntervalSince1970
+            finishedAt: Date().timeIntervalSince1970,
+            stoppedAfter: stoppedAfter
         )
         KeyboardProbeLog.shared.write("held a dictation for the next keyboard: \(text.count) chars")
+    }
+
+    /// The jobs this keyboard process is currently transcribing; a poll must not start a second
+    /// transcription of the same recording while the first one is still alive.
+    private static var transcribingJobs: Set<String> = []
+
+    /// Keeps a recording for the next keyboard if iOS ends this keyboard before transcription
+    /// finishes (most commonly after the screen locks and the extension is frozen).
+    private static func leaveRecording(of job: Job) {
+        guard let recording = job.recording else { return }
+        KeyboardInterruptedRecording(
+            jobID: job.id,
+            fileName: recording.fileName,
+            document: job.document,
+            seconds: recording.seconds,
+            cutShort: job.stoppedAfter != nil,
+            at: Date().timeIntervalSince1970
+        ).save()
+    }
+
+    /// Transcribes a WAV file left by an earlier keyboard process and holds its words for the
+    /// next input field. The file stays in tmp until the transcript is held or expires.
+    private func recoverLeftRecording(now: TimeInterval) {
+        guard #available(iOS 26.0, *), let record = KeyboardInterruptedRecording.load(),
+              !Self.transcribingJobs.contains(record.jobID) else { return }
+        guard !record.isExpired(at: now), FileManager.default.fileExists(atPath: record.url.path) else {
+            KeyboardInterruptedRecording.clear(jobID: record.jobID)
+            return
+        }
+        Self.transcribingJobs.insert(record.jobID)
+        let vocabulary = CustomVocabularySettings().activeTerms
+        let fixes = corrections()
+        let hints = DictationCorrections.recognitionHints(vocabulary: vocabulary, corrections: fixes)
+        let style = KeyboardBridge().style
+        let lowercase = DictationLowercaseSettings().isEnabled
+        let formatLists = DictationListSettings().isEnabled
+        let spokenPunctuation = DictationPunctuationSettings().isEnabled
+        let hinglish = HinglishSettings().isEnabled
+        let greeklish = GreeklishSettings().isEnabled
+        let endsWithPeriod = DictationPeriodSettings().isEnabled
+        KeyboardProbeLog.shared.write("transcribing a recording an earlier keyboard left: \(String(format: "%.1f", record.seconds)) s")
+        Task {
+            defer {
+                Self.transcribingJobs.remove(record.jobID)
+                KeyboardInterruptedRecording.clear(jobID: record.jobID)
+            }
+            do {
+                let (heard, language, engine) = try await KeyboardTranscription.transcribe(
+                    record.url, hints: hints, audioSeconds: record.seconds
+                )
+                let steps = await DictationPipeline(
+                    style: style,
+                    language: language.identifier,
+                    vocabulary: vocabulary,
+                    corrections: fixes,
+                    lowercase: lowercase,
+                    formatLists: formatLists,
+                    spokenPunctuation: spokenPunctuation,
+                    hinglish: hinglish,
+                    greeklish: greeklish,
+                    endsWithPeriod: endsWithPeriod
+                ).run(heard, translationSource: language.locale.language)
+                guard !steps.formatted.isEmpty else { return }
+                Self.hold(
+                    resultID: UUID().uuidString,
+                    text: steps.formatted,
+                    heard: steps.translated == nil ? steps.heard : nil,
+                    document: record.document,
+                    stoppedAfter: record.cutShort ? record.seconds : nil
+                )
+                KeyboardProbeLog.shared.write("recovered interrupted keyboard dictation: \(steps.formatted.count) chars via \(engine)")
+            } catch {
+                KeyboardProbeLog.shared.write("a left recording didn't transcribe: \(Self.describe(error))")
+            }
+        }
     }
 
     private func finishRecording(jobID: String) {
@@ -800,14 +885,21 @@ final class KeyboardLocalDictation {
         phase = .transcribing(jobID: jobID)
         lastProgressAt = Date().timeIntervalSince1970
         let url = file.url
+        job?.recording = (url.lastPathComponent, seconds)
+        if let job, job.interrupted {
+            job.stoppedAfter = seconds
+            Self.leaveRecording(of: job)
+        }
         let fixes = activeCorrections
         let vocabulary = CustomVocabularySettings().activeTerms
         let hints = DictationCorrections.recognitionHints(vocabulary: vocabulary, corrections: fixes)
+        Self.transcribingJobs.insert(jobID)
         transcription = Task { [weak self] in
+            defer { Self.transcribingJobs.remove(jobID) }
             let started = Date()
             do {
                 let (heard, language, engine) = try await KeyboardTranscription.transcribe(url, hints: hints, audioSeconds: seconds)
-                try? FileManager.default.removeItem(at: url)
+                if !(job?.interrupted ?? false) { try? FileManager.default.removeItem(at: url) }
                 let locale = language.identifier
                 let style = KeyboardBridge().style
                 // The app's steps (but Apple Intelligence's cleanup), its style, Format lists,
@@ -838,8 +930,13 @@ final class KeyboardLocalDictation {
                 guard let self, !(job?.interrupted ?? false) else {
                     // The keyboard hid before it finished, or is gone: the next one delivers it.
                     if !text.isEmpty {
-                        Self.hold(resultID: resultID, text: text, heard: learnable, document: job?.document)
+                        Self.hold(
+                            resultID: resultID, text: text, heard: learnable,
+                            document: job?.document, stoppedAfter: job?.stoppedAfter
+                        )
                     }
+                    try? FileManager.default.removeItem(at: url)
+                    if let job { KeyboardInterruptedRecording.clear(jobID: job.id) }
                     if let self, self.job === job {
                         self.job = nil
                         self.phase = .idle
@@ -871,7 +968,10 @@ final class KeyboardLocalDictation {
                     translationFailure: steps.translationFailure
                 )
             } catch {
-                try? FileManager.default.removeItem(at: url)
+                if !(job?.interrupted == true && Task.isCancelled) {
+                    try? FileManager.default.removeItem(at: url)
+                    if let job { KeyboardInterruptedRecording.clear(jobID: job.id) }
+                }
                 guard let self, !Task.isCancelled,
                       case .transcribing(let current) = self.phase, current == jobID else { return }
                 if EmptyCapture.endsQuietly(error) {
