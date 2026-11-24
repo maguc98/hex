@@ -1080,6 +1080,9 @@ final class KeyboardViewController: UIInputViewController {
            let id = app.resultID, let text = app.transcript, bridge.lastInsertedResultID != id {
             offer = OfferedDictation(id: id, text: text, heard: app.heard, held: false)
         }
+        if offer?.id != offeredDictation?.id {
+            viewModel.showStoppedNote(offer?.held == true ? bridge.heldDictation?.stoppedAfter : nil)
+        }
         offeredDictation = offer
         if viewModel.offeredDictation != offer?.text {
             viewModel.offeredDictation = offer?.text
@@ -1092,6 +1095,7 @@ final class KeyboardViewController: UIInputViewController {
         insertDictation(offer.text, resultID: offer.id, heard: offer.heard, stages: nil, source: offer.held ? "keyboard" : "app")
         offeredDictation = nil
         viewModel.offeredDictation = nil
+        viewModel.showStoppedNote(nil)
     }
 
     private func insertDictation(

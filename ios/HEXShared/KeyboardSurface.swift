@@ -693,6 +693,7 @@ struct KeyboardSurfaceView: View {
         let showTranslationNote = model.hasFullAccess
             && model.translationNote != nil
             && !isStageActive
+        let showStoppedNote = model.stoppedNote != nil
         let showWarmStatus = model.hasFullAccess
             && model.isWarmAvailable
             && model.stagePhase != .recording
@@ -725,7 +726,7 @@ struct KeyboardSurfaceView: View {
             .hexTrayReveal(showRecordingClock, reduceMotion: reduceMotion, offsetY: 2)
 
             Group {
-                if let message = model.statusMessage {
+                if let message = model.statusMessage ?? model.stoppedNote.map({ "\($0.title). \($0.detail)" }) {
                     HStack(spacing: 6) {
                         if model.stagePhase == .failed {
                             HexStatusDot(color: HexTheme.danger, size: 6)
@@ -745,7 +746,7 @@ struct KeyboardSurfaceView: View {
                     }
                 }
             }
-            .hexTrayReveal(showWarmStatus, reduceMotion: reduceMotion, offsetY: 2)
+            .hexTrayReveal(showWarmStatus || showStoppedNote, reduceMotion: reduceMotion, offsetY: 2)
 
             Group {
                 if let note = model.translationNote {

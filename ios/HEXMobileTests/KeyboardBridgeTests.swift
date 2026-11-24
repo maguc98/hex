@@ -51,6 +51,32 @@ final class KeyboardBridgeTests: XCTestCase {
         XCTAssertTrue(starting.isAvailable(at: now), "starting is an active capture heartbeat")
     }
 
+    func testInterruptedRecordingPersistsUntilClearedOrExpires() throws {
+        let suite = "KeyboardInterruptedRecordingTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let fileName = "keyboard-interrupted-\(UUID().uuidString).wav"
+        let record = KeyboardInterruptedRecording(
+            jobID: "interrupted-job",
+            fileName: fileName,
+            document: UUID(),
+            seconds: 42.5,
+            cutShort: true,
+            at: 10_000
+        )
+        try Data("wav".utf8).write(to: record.url)
+        record.save(defaults: defaults)
+        XCTAssertEqual(KeyboardInterruptedRecording.load(defaults: defaults), record)
+        XCTAssertFalse(record.isExpired(at: 10_000 + 60))
+        XCTAssertTrue(record.isExpired(at: 10_000 + KeyboardInterruptedRecording.keptFor + 1))
+
+        KeyboardInterruptedRecording.clear(jobID: "another-job", defaults: defaults)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: record.url.path))
+        KeyboardInterruptedRecording.clear(jobID: record.jobID, defaults: defaults)
+        XCTAssertNil(KeyboardInterruptedRecording.load(defaults: defaults))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: record.url.path))
+    }
+
     func testCaptureWatchWaitsForInterruptedMicrophoneAndResetsOnResume() {
         var watch = KeyboardCaptureWatch(startedAt: 100)
         watch.heardAudio(at: 102)

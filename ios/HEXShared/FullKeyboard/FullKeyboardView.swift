@@ -189,6 +189,10 @@ final class FullKeyboardView: UIView {
         stripView.onOpenNotice = { [weak self] in
             guard let self else { return }
             self.keyFeedback()
+            if self.model.stoppedNote != nil {
+                self.model.onPasteDictation?()
+                return self.refreshStrip()
+            }
             if let word = self.vocabularyOffer {
                 self.addToVocabulary(word)
                 return
@@ -872,6 +876,8 @@ final class FullKeyboardView: UIView {
         // dictation needs shows only once the Hex key is tapped (`showFullAccessHint`).
         let status: String? = if model.hasFullAccess, model.stagePhase == .failed {
             model.statusMessage
+        } else if let note = model.stoppedNote {
+            "\(note.title). \(note.detail)"
         } else if showsAllowPasteHint {
             KeyboardClipboardTracker.allowPasteHint
         } else {
@@ -922,12 +928,17 @@ final class FullKeyboardView: UIView {
             statusText: status,
             clipboard: clipboardOffer,
             fullAccessHint: showsFullAccessHint && !model.hasFullAccess,
-            notice: vocabularyNotice ?? translationNotice
+            notice: vocabularyNotice ?? stoppedNotice ?? translationNotice
         )
     }
 
     /// The last dictation went in as spoken while Translate what I say was on: what happened,
     /// the fix, and Open Hex, which opens Settings › Dictation.
+    private var stoppedNotice: KeyboardStripNotice? {
+        guard let note = model.stoppedNote else { return nil }
+        return KeyboardStripNotice(title: note.title, detail: note.detail, button: String(localized: "Paste"))
+    }
+
     private var translationNotice: KeyboardStripNotice? {
         guard model.hasFullAccess, let note = model.translationNote else { return nil }
         return KeyboardStripNotice(title: TranslationFailure.note, detail: note.fix, button: String(localized: "Open Hex"))
@@ -1226,7 +1237,7 @@ final class FullKeyboardView: UIView {
         let m = engine.layout.metrics
         let bar = CGRect(x: 0, y: appliedLift, width: bounds.width, height: m.stripTop + m.stripHeight)
         guard bar.contains(point), !showsRecording, emojiPanel == nil, styleMenu == nil,
-              !(showsFullAccessHint && !model.hasFullAccess), vocabularyNotice == nil, translationNotice == nil
+              !(showsFullAccessHint && !model.hasFullAccess), vocabularyNotice == nil, stoppedNotice == nil, translationNotice == nil
         else { return false }
         return model.stagePhase == .idle || model.stagePhase == .failed
     }

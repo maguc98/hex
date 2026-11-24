@@ -82,6 +82,26 @@ final class KeyboardViewModel: ObservableObject {
     /// the keyboard came back in another field): the full keyboard's strip and the dictation
     /// bar's top row offer Paste dictation, which calls `onPasteDictation`.
     @Published var offeredDictation: String?
+    /// Duration shown beside Paste dictation when the keyboard closed during recording.
+    @Published private(set) var offeredDictationStoppedAfter: TimeInterval?
+    private var stoppedNoteWork: Task<Void, Never>?
+    static let stoppedNoteDuration: Duration = .seconds(8)
+
+    var stoppedNote: (title: String, detail: String)? {
+        guard hasFullAccess, offeredDictation != nil, let offeredDictationStoppedAfter else { return nil }
+        return KeyboardInterruptedRecording.note(stoppedAfter: offeredDictationStoppedAfter)
+    }
+
+    func showStoppedNote(_ stoppedAfter: TimeInterval?) {
+        stoppedNoteWork?.cancel()
+        offeredDictationStoppedAfter = stoppedAfter
+        guard stoppedAfter != nil else { return }
+        stoppedNoteWork = Task { [weak self] in
+            try? await Task.sleep(for: Self.stoppedNoteDuration)
+            guard !Task.isCancelled else { return }
+            self?.offeredDictationStoppedAfter = nil
+        }
+    }
 
     // Non-published live telemetry read directly by `DotScopeHostView` / button tap handlers
     // so 25–30 Hz polling never invalidates SwiftUI views mid-spring.
