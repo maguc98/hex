@@ -231,10 +231,11 @@ nonisolated enum TwoLanguageMerger {
         var ordered = reading.enumerated().filter { $0.element.midpoint.isFinite }
         var isChronological = true
         if ordered.count > 1 {
-            for index in 1..<ordered.count where
-                ordered[index].element.midpoint < ordered[index - 1].element.midpoint {
-                isChronological = false
-                break
+            for index in 1..<ordered.count {
+                if ordered[index].element.midpoint < ordered[index - 1].element.midpoint {
+                    isChronological = false
+                    break
+                }
             }
         }
         if !isChronological {
