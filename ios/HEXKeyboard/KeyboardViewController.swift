@@ -1208,8 +1208,8 @@ final class KeyboardViewController: UIInputViewController {
 
     /// In-keyboard dictation (iOS 26) needs memory for its capture web view and recording
     /// screen, and iOS ends a keyboard that passes its limit (older iPhones, many apps open).
-    /// While the keyboard is short of it, `onLocalDictateTap` is nil, so Dictate and the Hex
-    /// key take the cold start that opens Hex, as before iOS 26 (a hold stays a tap there).
+    /// Outside Quick wake, missing local prerequisites retain the existing cold-start handoff.
+    /// In Quick wake, the keyboard stays in place and reports why local capture cannot start.
     /// The same while the keyboard couldn't get its speech model ("Open Hex to download
     /// English."): Hex downloads it, and the keyboard dictates again once it installs.
     /// Without Full Access it is nil too, and the Hex key says dictation needs Full Access.
