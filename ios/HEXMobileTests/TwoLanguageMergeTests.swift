@@ -161,6 +161,36 @@ final class TwoLanguageMergeTests: XCTestCase {
         XCTAssertFalse(merged.usedSecondary)
     }
 
+    func testLanguageSwitchDoesNotInsertSpacesInsideChineseText() {
+        let primary = [
+            word("你", 0, 0.5, 1.0),
+            word("好", 0.5, 1.0, 0.0),
+        ]
+        let secondary = [
+            word("ni", 0, 0.5, 0.0),
+            word("世界", 0.5, 1.0, 1.0),
+        ]
+
+        let merged = TwoLanguageMerger.merge(primary: primary, secondary: secondary)
+        XCTAssertEqual(merged.text, "你世界")
+        XCTAssertTrue(merged.usedSecondary)
+    }
+
+    func testLanguageSwitchDoesNotAddSpaceAtChineseEnglishBoundary() {
+        let primary = [
+            word("你好", 0, 0.5, 1.0),
+            word("hello", 0.5, 1.0, 0.0),
+        ]
+        let secondary = [
+            word("ni hao", 0, 0.5, 0.0),
+            word("hello", 0.5, 1.0, 1.0),
+        ]
+
+        let merged = TwoLanguageMerger.merge(primary: primary, secondary: secondary)
+        XCTAssertEqual(merged.text, "你好hello")
+        XCTAssertTrue(merged.usedSecondary)
+    }
+
     func testMixedOutputKeepsTheWinningRunsPunctuation() {
         let primary = [
             word(" hallo", 0, 0.5, 0.9),
