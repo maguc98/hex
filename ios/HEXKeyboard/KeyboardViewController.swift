@@ -1008,6 +1008,12 @@ final class KeyboardViewController: UIInputViewController {
             animated: animated
         )
 
+        // Re-check the selected surface after applying the latest dictation phase. On
+        // appearance, mountSurface() can run before this bridge sync and see a stale
+        // recording phase; without this second check, the old keyboard can remain mounted
+        // until the next cold-start URL refresh even though the user chose the dictation bar.
+        mountSurface()
+
         if viewModel.stagePhase == .recording || viewModel.stagePhase == .transcribing {
             closeBarEmojiPanel()
         }
