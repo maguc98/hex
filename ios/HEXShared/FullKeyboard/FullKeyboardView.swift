@@ -1504,3 +1504,5 @@ final class FullKeyboardView: UIView {
         !(appleKeyboardSplits && phase == .ended && onKey && !leftKey)
     }
 }
+
+// Keep the iOS build workflow eligible when validating the deferred Pinyin startup fix.
