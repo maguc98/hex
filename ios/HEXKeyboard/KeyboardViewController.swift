@@ -14,6 +14,8 @@ final class KeyboardViewController: UIInputViewController {
     /// When this keyboard process started (its first load): its Full Access reports' generation.
     private static let processLaunchedAt = Date().timeIntervalSince1970
     private var surface: UIView?
+    /// Last logged surface-selection inputs, to diagnose signed App Group access without flooding the probe log.
+    private var lastSurfaceDecision: String?
     private var fullKeyboard: FullKeyboardView?
     /// The dictation bar's emoji panel, at the full keyboard's height while it's open, and
     /// the index it reads (kept while the keyboard runs, as the full keyboard's).
@@ -827,7 +829,24 @@ final class KeyboardViewController: UIInputViewController {
     /// dictation bar's setup prompt in that case instead of silently falling back to the full
     /// keyboard; once access is granted, respect the saved choice. Only switches while idle.
     private func mountSurface() {
-        let wantsFull = hasFullAccess && FullKeyboardSettings().isEnabled
+        let settings = FullKeyboardSettings()
+        // A UserDefaults suite object can be created even when the signed keyboard extension
+        // cannot access its App Group container. In that case its missing selection reads as
+        // the default (Full), which silently defeats the user's Dictation bar choice.
+        let hasSharedAppGroup = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: KeyboardBridge.appGroup
+        ) != nil
+        let selectedFullKeyboard = settings.isEnabled
+        let wantsFull = hasFullAccess && hasSharedAppGroup && selectedFullKeyboard
+
+        // Keep one concise record whenever any input changes. This makes signing/entitlement
+        // failures distinguishable from a saved Full selection in the keyboard's probe log.
+        let decision = "surface fullAccess=\(hasFullAccess) appGroup=\(hasSharedAppGroup) selectedFull=\(selectedFullKeyboard) mountedFull=\(wantsFull)"
+        if decision != lastSurfaceDecision {
+            KeyboardProbeLog.shared.write(decision)
+            lastSurfaceDecision = decision
+        }
+
         guard surface == nil || wantsFull != (fullKeyboard != nil) else { return }
         guard surface == nil || viewModel.stagePhase == .idle || viewModel.stagePhase == .failed else { return }
         closeBarEmojiPanel()
