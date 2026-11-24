@@ -669,6 +669,13 @@ final class DictationController {
         Task {
             let granted = await audio.requestPermission()
             guard self.jobGeneration == requestGen else { return }
+            guard !self.keyboardBridge.quickWakeEnabled else {
+                self.pendingHandoff = nil
+                self.phase = self.isModelReady ? .ready : .modelRequired
+                self.audio.deactivateSession()
+                self.publishKeyboardSnapshot()
+                return
+            }
             guard granted else {
                 phase = .failed(String(localized: "Allow microphone access in Settings to dictate."))
                 publishKeyboardSnapshot()
