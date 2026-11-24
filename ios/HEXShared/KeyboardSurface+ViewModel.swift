@@ -32,6 +32,7 @@ final class KeyboardViewModel: ObservableObject {
     let clock = KeyboardClockModel()
 
     @Published var hasFullAccess = true
+    @Published private(set) var quickWakeEnabled = false
     @Published var needsGlobeKey = true
     /// The bar's return key for the field's type, as the full keyboard's, and whether it's on.
     @Published var returnKey = ReturnKeyStyle(.default)
@@ -44,7 +45,12 @@ final class KeyboardViewModel: ObservableObject {
     /// dictation shows as failed: the keyboard's own failure keeps its snapshot live for a few
     /// seconds, which isn't a session, and the bar already dictates in the keyboard then.
     var dictatesThroughHex: Bool {
-        hasFullAccess && isWarmAvailable && stagePhase != .failed
+        hasFullAccess && !quickWakeEnabled && isWarmAvailable && stagePhase != .failed
+    }
+
+    func setQuickWakeEnabled(_ enabled: Bool) {
+        guard quickWakeEnabled != enabled else { return }
+        quickWakeEnabled = enabled
     }
     @Published var style: DictationStyle = .polished
     @Published var activeTray: PickerTray = .none
@@ -84,6 +90,8 @@ final class KeyboardViewModel: ObservableObject {
 
     var onDictateTap: (() -> Void)?
     var onLocalDictateTap: (() -> Void)?
+    /// Shown in the keyboard when Quick wake is selected but its local prerequisites are missing.
+    var onDictationUnavailable: (() -> Void)?
     /// The finger landed on the full keyboard's Hex key (wall clock), before it is a tap,
     /// a hold or a slide.
     var onHexKeyPress: ((TimeInterval) -> Void)?
