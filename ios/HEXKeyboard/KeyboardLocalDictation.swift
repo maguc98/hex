@@ -72,7 +72,7 @@ final class KeyboardLocalDictation {
     /// The words so far while recording (`KeyboardLiveDictation`), for the keyboard to show.
     var liveText: LiveDictationText?
     private var live: KeyboardLiveDictation?
-    /// True only after WebKit has delivered a real microphone buffer for this job.
+    /// Wall-clock time of the first real PCM buffer for this job; nil until audio arrives.
     private var firstAudioAt: TimeInterval?
     /// When the job last showed progress: its start, its capture's last audio, or the start of
     /// its transcription (`KeyboardJobWatchdog`).
@@ -621,6 +621,7 @@ final class KeyboardLocalDictation {
         case .stopped:
             finishRecording(jobID: jobID)
         case .failed(let message):
+            guard isCapturing(jobID) else { return }
             capture?.stop()
             pcmFile = nil
             fail(

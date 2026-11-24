@@ -830,7 +830,7 @@ final class FullKeyboardView: UIView {
         hexKey.isWarm = model.dictatesThroughHex
         hexKey.translatingTo = model.translatingTo
         syncGlobe()
-        let recording = model.stagePhase == .recording || model.stagePhase == .transcribing
+        let recording = model.stagePhase == .starting || model.stagePhase == .recording || model.stagePhase == .transcribing
         if recording != showsRecording {
             setRecording(recording)
             livePreview.sync()
@@ -947,7 +947,7 @@ final class FullKeyboardView: UIView {
     private func refreshRecordingPanel() {
         guard let panel = recordingPanel, showsRecording else { return }
         panel.update(
-            phase: model.stagePhase == .transcribing ? .processing : .recording,
+            phase: model.stagePhase == .starting || model.stagePhase == .transcribing ? .processing : .recording,
             style: model.style
         )
     }

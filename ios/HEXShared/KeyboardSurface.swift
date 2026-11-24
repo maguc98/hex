@@ -696,8 +696,7 @@ struct KeyboardSurfaceView: View {
         let showStoppedNote = model.stoppedNote != nil
         let showWarmStatus = model.hasFullAccess
             && model.isWarmAvailable
-            && model.stagePhase != .recording
-            && model.stagePhase != .transcribing
+            && !isStageActive
             && !showTranslationNote
 
         return ZStack(alignment: .leading) {

@@ -51,6 +51,41 @@ final class KeyboardBridgeTests: XCTestCase {
         XCTAssertTrue(starting.isAvailable(at: now), "starting is an active capture heartbeat")
     }
 
+
+    func testKeyboardShowsStartingUntilTheFirstAudioSnapshot() {
+        let now = 4_000.0
+        let model = KeyboardViewModel()
+        let starting = KeyboardSnapshot(state: .starting, heartbeat: now, expiresAt: now + 60, jobID: "startup")
+        model.applyBridgeState(
+            hasFullAccess: true,
+            snapshot: starting,
+            isModelInstalled: true,
+            style: .polished,
+            now: now,
+            animated: false
+        )
+        XCTAssertEqual(model.stagePhase, .starting)
+        XCTAssertEqual(model.dotScopePhase, .idle, "the visualizer stays calm before PCM audio arrives")
+
+        let recording = KeyboardSnapshot(
+            state: .recording,
+            heartbeat: now + 0.1,
+            expiresAt: now + 60,
+            recordingStartedAt: now + 0.1,
+            jobID: "startup"
+        )
+        model.applyBridgeState(
+            hasFullAccess: true,
+            snapshot: recording,
+            isModelInstalled: true,
+            style: .polished,
+            now: now + 0.1,
+            animated: false
+        )
+        XCTAssertEqual(model.stagePhase, .recording)
+        XCTAssertEqual(model.dotScopePhase, .recording)
+    }
+
     func testInterruptedRecordingPersistsUntilClearedOrExpires() throws {
         let suite = "KeyboardInterruptedRecordingTests.\(UUID().uuidString)"
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
