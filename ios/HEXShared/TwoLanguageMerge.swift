@@ -79,14 +79,10 @@ nonisolated enum TwoLanguageMerger {
         let segments = zip(cuts, cuts.dropFirst()).map {
             Segment(start: $0.0, end: $0.1)
         }
+        // Bucket each reading's words once. Re-filtering the full reading for every
+        // segment made long recordings pay O(words × segments) work.
         let held = readings.map { reading in
-            segments.enumerated().map { item in
-                words(
-                    in: reading,
-                    segment: item.element,
-                    isLast: item.offset == segments.count - 1
-                )
-            }
+            words(in: reading, across: segments)
         }
         // Each reading's confident seconds in each segment: a word's confidence times the
         // part of it the segment holds, so covering less of the audio never wins by itself.
@@ -181,32 +177,43 @@ nonisolated enum TwoLanguageMerger {
     /// Every time the two readings agree on where a word ends, plus the start and end of the
     /// audio, at the earlier of the two ends. A word belongs to the segment its midpoint
     /// falls in.
-    private static func cutPoints(
+    static func cutPoints(
         primary: [TwoLanguageTimedWord],
         secondary: [TwoLanguageTimedWord]
     ) -> [TimeInterval] {
         var cuts: [TimeInterval] = [0]
-        // Match sorted word ends with a two-pointer sweep. The former nested scan was
-        // quadratic in the number of words, which became noticeable on long recordings.
         let primaryEnds = primary.map(\.end).filter(\.isFinite).sorted()
         let secondaryEnds = secondary.map(\.end).filter(\.isFinite).sorted()
-        var left = 0
-        var right = 0
-        while left < primaryEnds.count, right < secondaryEnds.count {
-            let primaryEnd = primaryEnds[left]
-            let secondaryEnd = secondaryEnds[right]
-            let difference = primaryEnd - secondaryEnd
-            if abs(difference) <= cutTolerance {
-                cuts.append(min(primaryEnd, secondaryEnd))
-                left += 1
-                right += 1
-            } else if difference < 0 {
-                left += 1
-            } else {
-                right += 1
+
+        // Preserve the old all-matching-pairs semantics without materializing every pair.
+        // A pair contributes its earlier end: either a primary end with a later/equal
+        // secondary end, or a secondary end with a later primary end. Both sweeps are linear
+        // after sorting, even when many word ends fall inside the same tolerance window.
+        var primaryIndex = 0
+        for secondaryEnd in secondaryEnds {
+            while primaryIndex < primaryEnds.count,
+                  primaryEnds[primaryIndex] <= secondaryEnd {
+                primaryIndex += 1
+            }
+            if primaryIndex < primaryEnds.count,
+               primaryEnds[primaryIndex] - secondaryEnd <= cutTolerance {
+                cuts.append(secondaryEnd)
             }
         }
-        cuts.append(max((primary + secondary).map(\.end).max() ?? 0, 0))
+
+        var secondaryIndex = 0
+        for primaryEnd in primaryEnds {
+            while secondaryIndex < secondaryEnds.count,
+                  secondaryEnds[secondaryIndex] < primaryEnd {
+                secondaryIndex += 1
+            }
+            if secondaryIndex < secondaryEnds.count,
+               secondaryEnds[secondaryIndex] - primaryEnd <= cutTolerance {
+                cuts.append(primaryEnd)
+            }
+        }
+
+        cuts.append(max(max(primaryEnds.last ?? 0, secondaryEnds.last ?? 0), 0))
         cuts.sort()
         var unique: [TimeInterval] = []
         for cut in cuts where cut >= 0 && (unique.last.map { cut - $0 > 1e-6 } ?? true) {
@@ -215,18 +222,55 @@ nonisolated enum TwoLanguageMerger {
         return unique
     }
 
+    /// Places timed words into their midpoint segment in one chronological pass. Apple Speech
+    /// normally emits timed runs in order; only an out-of-order input pays for a stable sort.
     private static func words(
         in reading: [TwoLanguageTimedWord],
-        segment: Segment,
-        isLast: Bool
-    ) -> [TwoLanguageTimedWord] {
-        reading.filter { word in
-            let midpoint = word.midpoint
-            if isLast {
-                return midpoint >= segment.start && midpoint <= segment.end
+        across segments: [Segment]
+    ) -> [[TwoLanguageTimedWord]] {
+        var ordered = reading.enumerated().filter { $0.element.midpoint.isFinite }
+        var isChronological = true
+        if ordered.count > 1 {
+            for index in 1..<ordered.count where
+                ordered[index].element.midpoint < ordered[index - 1].element.midpoint {
+                isChronological = false
+                break
             }
-            return midpoint >= segment.start && midpoint < segment.end
         }
+        if !isChronological {
+            ordered.sort {
+                let left = $0.element.midpoint
+                let right = $1.element.midpoint
+                return left == right ? $0.offset < $1.offset : left < right
+            }
+        }
+
+        let timedWords = ordered.map(\.element)
+        var wordIndex = 0
+        var buckets: [[TwoLanguageTimedWord]] = []
+        buckets.reserveCapacity(segments.count)
+
+        for (segmentIndex, segment) in segments.enumerated() {
+            while wordIndex < timedWords.count,
+                  timedWords[wordIndex].midpoint < segment.start {
+                wordIndex += 1
+            }
+
+            var bucket: [TwoLanguageTimedWord] = []
+            while wordIndex < timedWords.count {
+                let midpoint = timedWords[wordIndex].midpoint
+                let belongsToSegment = segmentIndex == segments.count - 1
+                    ? midpoint <= segment.end
+                    : midpoint < segment.end
+                guard belongsToSegment else { break }
+                if midpoint >= segment.start {
+                    bucket.append(timedWords[wordIndex])
+                }
+                wordIndex += 1
+            }
+            buckets.append(bucket)
+        }
+        return buckets
     }
 
     /// A reading's confidence-weighted seconds in a segment: each word's confidence times the
