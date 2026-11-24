@@ -154,8 +154,12 @@ nonisolated enum TwoLanguageMerger {
         var previousPieceLanguage: TwoLanguageWinner?
         for piece in pieces {
             if previousPieceLanguage != nil, previousPieceLanguage != piece.language,
-               !(text.last?.isWhitespace ?? true),
-               !(piece.words.first?.text.first?.isWhitespace ?? true) {
+               let previousCharacter = text.last,
+               let nextCharacter = piece.words.first?.text.first,
+               !previousCharacter.isWhitespace,
+               !nextCharacter.isWhitespace,
+               !TranscriptFormatter.isUnspacedScript(previousCharacter),
+               !TranscriptFormatter.isUnspacedScript(nextCharacter) {
                 text += " "
             }
             text += piece.words.map(\.text).joined()
