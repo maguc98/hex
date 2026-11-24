@@ -257,7 +257,7 @@ final class HexKeyRecordingPanel: UIView {
         scope.tearDown()
     }
 
-    func update(phase: DotScopePhase, style: DictationStyle) {
+    func update(phase: DotScopePhase, style: DictationStyle, isStarting: Bool = false) {
         isTranscribing = phase == .processing
         scope.phase = phase
         // The scope, then two round buttons, ✕ and ✓; once the recording stops the ✓ turns into
@@ -265,7 +265,7 @@ final class HexKeyRecordingPanel: UIView {
         doneButton.symbol = isTranscribing ? nil : "checkmark"
         doneButton.isPrimary = true
         doneButton.isEnabled = !isTranscribing
-        doneButton.accessibilityLabel = isTranscribing ? "Transcribing" : "Done"
+        doneButton.accessibilityLabel = isStarting ? "Starting microphone" : (isTranscribing ? "Transcribing" : "Done")
         if isTranscribing { doneSpinner.startAnimating() } else { doneSpinner.stopAnimating() }
         let config = UIImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
         styleButton.setImage(

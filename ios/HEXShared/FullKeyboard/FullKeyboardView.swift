@@ -948,7 +948,8 @@ final class FullKeyboardView: UIView {
         guard let panel = recordingPanel, showsRecording else { return }
         panel.update(
             phase: model.stagePhase == .starting || model.stagePhase == .transcribing ? .processing : .recording,
-            style: model.style
+            style: model.style,
+            isStarting: model.stagePhase == .starting
         )
     }
 
