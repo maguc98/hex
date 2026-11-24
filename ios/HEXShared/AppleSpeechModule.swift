@@ -192,7 +192,7 @@ nonisolated enum AppleSpeechModule {
         case .speech:
             self = .speech(SpeechTranscriber(locale: language.locale, preset: .transcription))
         case .dictation:
-            // Punctuated, without the short-form hint: dictations run up to a minute.
+            // Punctuated long-form preset for recordings longer than a minute.
             self = .dictation(DictationTranscriber(locale: language.locale, preset: .longDictation))
         }
     }
