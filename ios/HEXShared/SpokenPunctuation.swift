@@ -350,7 +350,7 @@ nonisolated enum SpokenPunctuation {
                 String(after.drop { set.contains($0) })
             }
             func spaced(_ rest: String) -> String {
-                rest.isEmpty && wordAfter ? " " : rest
+                rest.isEmpty && wordAfter && !table.unspacedScript ? " " : rest
             }
 
             switch command.mark {
@@ -407,7 +407,7 @@ nonisolated enum SpokenPunctuation {
         /// An opening mark with a space before it, none after.
         private mutating func openWith(_ mark: String) {
             trimEnd(" \t")
-            if let last = out.last, !last.isNewline, !openers.contains(last) {
+            if !table.unspacedScript, let last = out.last, !last.isNewline, !openers.contains(last) {
                 out += " "
             }
             out += mark
@@ -495,6 +495,8 @@ nonisolated enum SpokenPunctuation {
         let adjectivesBeforeNouns: Bool
         /// English "Sarah's colon".
         let possessives: Bool
+        /// Chinese punctuation attaches without the spaces used by Latin-script dictation.
+        let unspacedScript: Bool
 
         init(
             commands: [(String, Mark, Family, Placement)],
@@ -511,7 +513,8 @@ nonisolated enum SpokenPunctuation {
             quotes: (open: Character, close: Character),
             capitalizesSentences: Bool = true,
             adjectivesBeforeNouns: Bool = false,
-            possessives: Bool = false
+            possessives: Bool = false,
+            unspacedScript: Bool = false
         ) {
             let fold = SpokenPunctuation.fold
             self.commands = commands
@@ -539,6 +542,7 @@ nonisolated enum SpokenPunctuation {
             self.capitalizesSentences = capitalizesSentences
             self.adjectivesBeforeNouns = adjectivesBeforeNouns
             self.possessives = possessives
+            self.unspacedScript = unspacedScript
         }
 
         static func forLanguage(_ language: String?) -> Table? {
@@ -550,6 +554,7 @@ nonisolated enum SpokenPunctuation {
             case "de": return german
             case "it": return italian
             case "pt": return portuguese
+            case "zh": return chinese
             default: return nil
             }
         }
@@ -558,6 +563,44 @@ nonisolated enum SpokenPunctuation {
     private enum Placement {
         case lenient, strict, following, strictFollowing
     }
+
+    private static let chinese = Table(
+        commands: [
+            ("逗号", .attach("，"), .comma, .lenient),
+            ("逗點", .attach("，"), .comma, .lenient),
+            ("句号", .attach("。"), .period, .lenient),
+            ("句點", .attach("。"), .period, .lenient),
+            ("问号", .attach("？"), .question, .lenient),
+            ("問號", .attach("？"), .question, .lenient),
+            ("感叹号", .attach("！"), .exclamation, .lenient),
+            ("感嘆號", .attach("！"), .exclamation, .lenient),
+            ("冒号", .attach("："), .colon, .lenient),
+            ("冒號", .attach("："), .colon, .lenient),
+            ("分号", .attach("；"), .semicolon, .lenient),
+            ("分號", .attach("；"), .semicolon, .lenient),
+            ("省略号", .attach("……"), .ellipsis, .lenient),
+            ("省略號", .attach("……"), .ellipsis, .lenient),
+            ("左括号", .open("（"), .paren, .lenient),
+            ("左括號", .open("（"), .paren, .lenient),
+            ("右括号", .close(.paren), .paren, .lenient),
+            ("右括號", .close(.paren), .paren, .lenient),
+            ("开引号", .open("“"), .quote, .lenient),
+            ("開引號", .open("“"), .quote, .lenient),
+            ("左引号", .open("“"), .quote, .lenient),
+            ("左引號", .open("“"), .quote, .lenient),
+            ("关引号", .close(.quote), .quote, .lenient),
+            ("關引號", .close(.quote), .quote, .lenient),
+            ("右引号", .close(.quote), .quote, .lenient),
+            ("右引號", .close(.quote), .quote, .lenient),
+        ],
+        blockers: [],
+        numbers: [],
+        prepositions: [],
+        followers: [],
+        starters: [],
+        quotes: ("“", "”"),
+        unspacedScript: true
+    )
 
     private static let english = Table(
         commands: [
