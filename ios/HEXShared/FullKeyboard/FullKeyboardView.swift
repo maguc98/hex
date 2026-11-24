@@ -490,14 +490,30 @@ final class FullKeyboardView: UIView {
         // Chinese and English in one sentence without switching the selected language.
         let pinyinEnabled = mixedPinyinEnabled || list.current == .chinese
         engine.chinesePinyinEnabled = pinyinEnabled
-        engine.setChinesePinyinMode(pinyinEnabled)
+        if pinyinEnabled, !engine.isChinesePinyinMode {
+            // Creating Inputx's native session is synchronous; its dictionary warmup is not.
+            // Let UIKit display the already-mounted keyboard before paying that cold-start cost.
+            // Text-entry controls stay gated during the short delay, while the globe remains live.
+            pinyinActivationGeneration += 1
+            let generation = pinyinActivationGeneration
+            setPinyinInputInteractionEnabled(false)
+            DispatchQueue.main.asyncAfter(deadline: .now() + KeyboardLaunchWork.afterFirstFrame) { [weak self] in
+                guard let self, self.pinyinActivationGeneration == generation,
+                      self.engine.chinesePinyinEnabled else { return }
+                self.engine.setChinesePinyinMode(true)
+                self.updatePinyinInteractionAvailability()
+            }
+        } else {
+            pinyinActivationGeneration += 1
+            engine.setChinesePinyinMode(pinyinEnabled)
+            updatePinyinInteractionAvailability()
+        }
         engine.switchesLanguage = list.switches
         let identifier = pinyinEnabled ? "zh-Hans" : list.current.inputModeLanguage
         if identifier != reportedInputModeLanguage {
             reportedInputModeLanguage = identifier
             hostController?.primaryLanguage = identifier
         }
-        updatePinyinInteractionAvailability()
         guard list != languages || engine.language != list.current || engine.letterLayout != letters else {
             refreshSpaceLabel()
             syncSwipeTyping()
