@@ -10,6 +10,7 @@ struct DictationSettingsPage: View {
     @State private var formatLists = DictationListSettings().isEnabled
     @State private var spokenPunctuation = DictationPunctuationSettings().isEnabled
     @State private var endsWithPeriod = DictationPeriodSettings().isEnabled
+    @State private var quickWake = KeyboardBridge().quickWakeEnabled
 
     var body: some View {
         SettingsPageScaffold(title: "Dictation") {
@@ -106,8 +107,19 @@ struct DictationSettingsPage: View {
             }
 
             SettingsCard {
+                SettingsToggleRow(
+                    title: String(localized: "Quick wake"),
+                    detail: String(localized: "Start voice input directly in the keyboard. The microphone is used only while you speak."),
+                    isOn: $quickWake
+                )
+
+                SettingsDivider()
+
                 HStack(spacing: 12) {
-                    SettingsRowLabel(title: String(localized: "Keep mic warm"))
+                    SettingsRowLabel(
+                        title: String(localized: "Keep mic warm"),
+                        detail: quickWake ? String(localized: "Turn off Quick wake to use microphone standby.") : nil
+                    )
                     Spacer(minLength: 8)
                     SettingsSegments(
                         items: WarmSessionDuration.allCases,
@@ -122,6 +134,7 @@ struct DictationSettingsPage: View {
                 }
                 .padding(.horizontal, 16)
                 .frame(minHeight: 50)
+                .disabled(quickWake)
 
                 SettingsDivider()
 
@@ -172,6 +185,9 @@ struct DictationSettingsPage: View {
         .onChange(of: endsWithPeriod) { _, enabled in
             DictationPeriodSettings().isEnabled = enabled
         }
+        .onChange(of: quickWake) { _, enabled in
+            dictation.setQuickWakeEnabled(enabled)
+        }
         .onAppear {
             cleanupTagger = CleanupTaggerSettings().isEnabled
             customVocabulary = CustomVocabularySettings().isEnabled
@@ -179,6 +195,7 @@ struct DictationSettingsPage: View {
             formatLists = DictationListSettings().isEnabled
             spokenPunctuation = DictationPunctuationSettings().isEnabled
             endsWithPeriod = DictationPeriodSettings().isEnabled
+            quickWake = KeyboardBridge().quickWakeEnabled
         }
     }
 }
