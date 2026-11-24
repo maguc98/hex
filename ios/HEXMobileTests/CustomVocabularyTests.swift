@@ -240,9 +240,7 @@ final class DictationRecognitionHintTests: XCTestCase {
         let hints = DictationCorrections.recognitionHints(vocabulary: vocabulary, corrections: corrections)
 
         XCTAssertEqual(hints.count, CustomVocabularySettings.maxTermCount)
-        XCTAssertEqual(Array(hints.prefix(2)), ["CustomTerm1", "CustomTerm2"])
-        XCTAssertTrue(hints.contains("LearnedOne"))
-        XCTAssertTrue(hints.contains("LearnedTwo"))
-        XCTAssertEqual(hints.last, "CustomTerm98")
+        XCTAssertEqual(Array(hints.prefix(98)), vocabulary.prefix(98))
+        XCTAssertEqual(Array(hints.suffix(2)), ["LearnedOne", "LearnedTwo"])
     }
 }
