@@ -5,7 +5,7 @@ import XCTest
 final class KeyboardLayoutTests: XCTestCase {
     private let portraitWidths: [CGFloat] = [320, 375, 393, 402, 430, 440]
     private let layers: [KeyboardLayer] = [.letters, .numbers, .symbols]
-    private let fields: [KeyboardFieldKind] = [.text, .url, .email]
+    private let fields: [KeyboardFieldKind] = [.text, .url, .email, .webSearch]
     /// Every layout here is Apple's iOS 27 keyboard, read on 27.0 and 27.2 simulators, while CI's
     /// newest simulator runtime is iOS 26.5. Pin the version the expectations describe
     /// (`KeyboardLanguage.systemMajorVersion` exists for this; the before-27 Ukrainian test sets
@@ -557,6 +557,14 @@ final class KeyboardLayoutTests: XCTestCase {
         XCTAssertEqual(
             bottomRow(KeyboardLayout(width: 393, field: .url)),
             [.layerSwitch(.numbers), .space, .character("."), .character("/"), .returnKey]
+        )
+        XCTAssertEqual(
+            bottomRow(KeyboardLayout(width: 393, field: .webSearch)),
+            [.layerSwitch(.numbers), .space, .character("."), .returnKey]
+        )
+        XCTAssertEqual(
+            bottomRow(KeyboardLayout(width: 393, field: .webSearch, showsEmoji: true)),
+            [.layerSwitch(.numbers), .emoji, .space, .character("."), .returnKey]
         )
     }
 
