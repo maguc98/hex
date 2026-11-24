@@ -181,7 +181,7 @@ final class FullKeyboardEngineTests: XCTestCase {
         engine.width = 402
         engine.letterLayout = .dvorak
         engine.dvorakPunctuation = true
-        for keyboardType in [UIKeyboardType.URL, .emailAddress] {
+        for keyboardType in [UIKeyboardType.URL, .emailAddress, .webSearch] {
             target.keyboardType = keyboardType
             engine.configureForField()
             XCTAssertNotEqual(engine.layout.field, .text, "\(keyboardType.rawValue)")
@@ -1550,6 +1550,15 @@ final class FullKeyboardEngineTests: XCTestCase {
         tap(.character("@"))
         tap(.character("."))
         XCTAssertEqual(target.text, "@.")
+    }
+
+    func testWebSearchFieldShowsApplesPeriodBesideSpace() {
+        target.keyboardType = .webSearch
+        engine.configureForField()
+        XCTAssertEqual(engine.field, .webSearch)
+        XCTAssertEqual(engine.layout.key(.character("."))?.row, 3)
+        tap(.character("."))
+        XCTAssertEqual(target.text, ".")
     }
 
     func testNumberPadOpensOnNumbers() {
@@ -3574,6 +3583,7 @@ extension FullKeyboardEngineTests {
         XCTAssertEqual(learnedTyping { $0.isSecureTextEntry = true }, 0)
         XCTAssertEqual(learnedTyping { $0.keyboardType = .URL }, 0)
         XCTAssertEqual(learnedTyping { $0.keyboardType = .emailAddress }, 0)
+        XCTAssertEqual(learnedTyping { $0.keyboardType = .webSearch }, 10, "web search learns like a text field")
         XCTAssertEqual(learnedTyping { $0.autocorrectionType = .no }, 0)
 
         let (field, plane) = try swipeKeyboard()
