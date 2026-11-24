@@ -232,6 +232,7 @@ actor OnDeviceSpeechTranscriber: LocalTranscribing {
         } onCancel: {
             once.cancel()
         }
+        try Task.checkCancellation()
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw TranscriberError.emptyTranscript }
         return trimmed
@@ -259,7 +260,17 @@ private nonisolated final class RecognitionResume: @unchecked Sendable {
         }
         guard !cancelled else { return finish(.failure(CancellationError())) }
         let task = make()
-        lock.withLock { self.task = task }
+        // Cancellation can race the task factory: cancel() may run after the first
+        // lock above but before this handle is installed. Recheck under the lock so
+        // the newly-created Speech task cannot outlive its already-cancelled request.
+        let shouldCancel = lock.withLock {
+            guard !cancelled else { return true }
+            self.task = task
+            return false
+        }
+        if shouldCancel {
+            task.cancel()
+        }
     }
 
     func finish(_ result: Result<String, Error>) {
