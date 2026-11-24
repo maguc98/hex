@@ -665,6 +665,24 @@ final class KeyboardViewController: UIInputViewController {
         localDictation.currentDocument = { [weak self] in self?.currentDocument }
         viewModel.onPasteDictation = { [weak self] in self?.pasteOfferedDictation() }
         viewModel.onDictateTap = { [weak self] in self?.startWarmDictation() }
+        viewModel.onDictationUnavailable = { [weak self] in
+            guard let self else { return }
+            let multilingual = MultilingualParakeetSettings()
+            let message: String
+            if !KeyboardLocalDictation.isSupported {
+                message = String(localized: "Quick wake requires iOS 26 or later.")
+            } else if multilingual.keyboardOpensHex(language: multilingual.language())
+                        && !KeyboardParakeet.shared.dictatesMultilingualHere {
+                message = String(localized: "Turn off the multilingual speech model to use Quick wake.")
+            } else if LanguageSettings().keyboardNeedsHex() {
+                message = String(localized: "Open Hex once to prepare this speech language, then return to the keyboard.")
+            } else if !self.localDictation.hasMemoryToStart {
+                message = String(localized: "Not enough available memory for voice input in the keyboard. Close unused apps and try again.")
+            } else {
+                message = String(localized: "Quick wake is temporarily unavailable. Try again in a moment.")
+            }
+            self.localDictation.reportUnavailable(message)
+        }
         viewModel.onHexKeyPress = { [weak self] at in self?.hexKeyPressed(at: at) }
         viewModel.onHexKeyAbandon = { [weak self] in self?.localDictation.discard() }
         viewModel.onKeyFeedback = { [weak self] in
@@ -902,6 +920,7 @@ final class KeyboardViewController: UIInputViewController {
     private func syncFromBridge(animated: Bool) {
         let now = Date().timeIntervalSince1970
         reportFullAccess(force: false)
+        viewModel.setQuickWakeEnabled(bridge.quickWakeEnabled)
         updateKeyboardTraits()
         hapticsSetting = FullKeyboardSettings().haptics
         hapticStrength = FullKeyboardSettings().hapticStrength
@@ -1236,7 +1255,7 @@ final class KeyboardViewController: UIInputViewController {
     /// microphone. Only with Full Access, which dictation needs, and not while a warm Hex
     /// session takes the Hex key instead; `prepare` checks memory.
     private func prepareLocalDictationIfNeeded() {
-        guard hasFullAccess, viewModel.onLocalDictateTap != nil, !viewModel.isWarmAvailable else { return }
+        guard hasFullAccess, viewModel.onLocalDictateTap != nil, !viewModel.dictatesThroughHex else { return }
         localDictation.prepare(in: view)
     }
 
