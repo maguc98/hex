@@ -128,7 +128,7 @@ extension KeyboardLayout {
         lead.append((.hex, small, "hex"))
         var trail: [(KeyKind, CGFloat, String)] = []
         switch field {
-        case .text: break
+        case .text, .webSearch: break
         case .url: trail += [(.character("."), lw, "."), (.character("/"), lw, "/")]
         case .email: trail += [(.character("@"), lw, "@"), (.character("."), lw, ".")]
         }
