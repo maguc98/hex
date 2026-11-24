@@ -323,6 +323,18 @@ final class DictationController {
 
     // MARK: - Settings
 
+    /// Quick wake records only while the user is speaking in the keyboard. If a warm session
+    /// is idle, enabling Quick wake releases it immediately; an active recording is allowed
+    /// to finish and will not restart the keepalive afterward.
+    func setQuickWakeEnabled(_ enabled: Bool) {
+        guard keyboardBridge.quickWakeEnabled != enabled else { return }
+        keyboardBridge.quickWakeEnabled = enabled
+        guard enabled, keyboardSessionEnabled else { return }
+        if phase != .recording {
+            endWarmSession()
+        }
+    }
+
     func setWarmDuration(_ duration: WarmSessionDuration) {
         warmDuration = duration
         keyboardBridge.warmDuration = duration
@@ -340,6 +352,7 @@ final class DictationController {
 
     /// Used by the settings segmented control: picking a duration warms immediately; picking Off ends it.
     func selectWarmDuration(_ duration: WarmSessionDuration) {
+        if duration != .off { setQuickWakeEnabled(false) }
         setWarmDuration(duration)
         if duration == .off {
             if keyboardSessionEnabled {
@@ -597,6 +610,7 @@ final class DictationController {
     }
 
     private func requestWarmSession() {
+        setQuickWakeEnabled(false)
         pendingHandoff = PendingKeyboardHandoff(
             jobID: nil,
             style: style,
@@ -980,6 +994,13 @@ final class DictationController {
     }
 
     private func restoreAudioAfterCapture() {
+        if keyboardBridge.quickWakeEnabled {
+            keyboardSessionEnabled = false
+            keyboardSessionRemaining = 0
+            keyboardSessionExpiresAt = 0
+            audio.deactivateSession()
+            return
+        }
         if keyboardSessionEnabled, let seconds = warmDuration.seconds, seconds > 0 {
             let remaining = keyboardSessionExpiresAt - now()
             if remaining <= 0 {
