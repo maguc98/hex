@@ -3,6 +3,39 @@ import XCTest
 
 @MainActor
 final class KeyboardBridgeTests: XCTestCase {
+    func testQuickWakePreferencePersistsAcrossBridgeInstances() {
+        let suiteName = "hex.tests.quickWake.\\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let bridge = KeyboardBridge(defaults: defaults)
+        XCTAssertFalse(bridge.quickWakeEnabled)
+        bridge.quickWakeEnabled = true
+        XCTAssertTrue(KeyboardBridge(defaults: defaults).quickWakeEnabled)
+        bridge.quickWakeEnabled = false
+        XCTAssertFalse(KeyboardBridge(defaults: defaults).quickWakeEnabled)
+    }
+
+    func testQuickWakePrefersKeyboardOverAnAvailableWarmSession() {
+        let now = 1_000.0
+        let model = KeyboardViewModel()
+        let warm = KeyboardSnapshot(state: .ready, heartbeat: now, expiresAt: now + 900)
+
+        model.setQuickWakeEnabled(true)
+        model.applyBridgeState(
+            hasFullAccess: true,
+            snapshot: warm,
+            isModelInstalled: true,
+            style: .polished,
+            now: now,
+            animated: false
+        )
+        XCTAssertTrue(model.isWarmAvailable)
+        XCTAssertFalse(model.dictatesThroughHex)
+
+        model.setQuickWakeEnabled(false)
+        XCTAssertTrue(model.dictatesThroughHex)
+    }
     func testSnapshotAvailabilityRequiresFreshHeartbeatAndActiveSession() {
         let now = 1_000.0
         let available = snapshot(state: .ready, heartbeat: now - 2.9, expiresAt: now + 1)
