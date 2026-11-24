@@ -1298,6 +1298,8 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
     private static let page = """
     <!doctype html><meta charset="utf-8"><script>
     let ctx, stream, source, node, running = false, generation = 0, revive = null;
+    // A stop waiting for the ScriptProcessor's final audio buffer, and its completion.
+    let flushed = null, stopping = null;
     // Reopening the microphone after iOS suspends or ends WebKit's capture track.
     let constraints = null, mutedAt = 0, reopening = false, nextReopen = 0, backoff = 1000, reported = "";
     const post = (m) => webkit.messageHandlers.hex.postMessage(m);
@@ -1368,6 +1370,7 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
       }
     }
     async function hexStart(label, builtIn) {
+      while (stopping) await stopping;
       if (running) return;
       running = true;
       // A hexStop while this start waits (a slide off the Hex key right after touch-down)
@@ -1405,7 +1408,7 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
         source = ctx.createMediaStreamSource(stream);
         node = ctx.createScriptProcessor(4096, 1, 1);
         node.onaudioprocess = (event) => {
-          if (!running) return;
+          if (!running && !flushed) return;
           const input = event.inputBuffer.getChannelData(0);
           const pcm = new Int16Array(input.length);
           let peak = 0;
@@ -1418,6 +1421,7 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
           let binary = "";
           for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
           post({ type: "pcm", data: btoa(binary), peak });
+          if (flushed) flushed();
         };
         source.connect(node);
         node.connect(ctx.destination);
@@ -1436,6 +1440,17 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
       const wasRunning = running;
       running = false;
       if (revive) { clearInterval(revive); revive = null; }
+      // The processor may still hold the last 4,096 samples (about 85 ms at 48 kHz).
+      // Let it post that buffer before disconnecting and releasing the microphone.
+      if (flushed) flushed();
+      let done = () => {};
+      if (wasRunning) stopping = new Promise((resolve) => (done = resolve));
+      if (wasRunning && node && ctx && ctx.state === "running") {
+        await new Promise((resolve) => {
+          const timer = setTimeout(() => flushed && flushed(), 250);
+          flushed = () => { clearTimeout(timer); flushed = null; resolve(); };
+        });
+      }
       try { node && node.disconnect(); source && source.disconnect(); } catch (e) {}
       if (stream) stream.getTracks().forEach((t) => t.stop());
       if (ctx) { try { await ctx.close(); } catch (e) {} }
@@ -1445,6 +1460,8 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
       backoff = 1000;
       reported = "";
       if (wasRunning) post({ type: "stopped" });
+      if (wasRunning) stopping = null;
+      done();
     }
     </script>
     """
