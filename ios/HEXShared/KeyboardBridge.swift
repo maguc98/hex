@@ -406,10 +406,20 @@ nonisolated enum KeyboardJobWatchdog {
     static let captureSilence: TimeInterval = 6
     /// Apple Speech takes seconds for a long dictation; this is far past any of them.
     static let transcription: TimeInterval = 120
+    /// How long a capture the page says another sound interrupted may wait to come back.
+    static let captureInterruption: TimeInterval = 15
 
-    /// `lastProgress`: the stage's start, or the capture's last audio.
-    static func isStalled(_ stage: Stage, lastProgress: TimeInterval, now: TimeInterval) -> Bool {
-        now - lastProgress > (stage == .recording ? captureSilence : transcription)
+    /// `interruptedSince` makes the silence watchdog pause while WebKit is waiting for iOS audio.
+    static func isStalled(
+        _ stage: Stage,
+        lastProgress: TimeInterval,
+        interruptedSince: TimeInterval? = nil,
+        now: TimeInterval
+    ) -> Bool {
+        if stage == .recording, let interruptedSince {
+            return now - interruptedSince > captureInterruption
+        }
+        return now - lastProgress > (stage == .recording ? captureSilence : transcription)
     }
 }
 

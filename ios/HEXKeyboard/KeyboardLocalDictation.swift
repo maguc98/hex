@@ -56,6 +56,8 @@ final class KeyboardLocalDictation {
     /// When the job last showed progress: its start, its capture's last audio, or the start of
     /// its transcription (`KeyboardJobWatchdog`).
     private var lastProgressAt: TimeInterval = 0
+    /// Audio progress and WebKit interruption state for the current capture.
+    private var watch = KeyboardCaptureWatch(startedAt: 0)
     /// One capture web view shared across presentations in this extension process: making a new
     /// `WKWebView` on every presentation and leaving it attached to the old `KeyboardInputView`
     /// kept every dismissed keyboard's view hierarchy alive through WebKit's layout and observer
@@ -442,6 +444,7 @@ final class KeyboardLocalDictation {
         let requestedAt = Date()
         job = Job(id: jobID, document: currentDocument())
         lastProgressAt = requestedAt.timeIntervalSince1970
+        watch = KeyboardCaptureWatch(startedAt: lastProgressAt)
         activeCorrections = corrections()
         loudness = -62
         armedFailure = nil
@@ -574,7 +577,21 @@ final class KeyboardLocalDictation {
             pcmFile?.append(data)
             live?.append(data)
             lastProgressAt = Date().timeIntervalSince1970
+            watch.heardAudio(at: lastProgressAt)
             loudness = peak > 0 ? max(-62, 20 * log10(peak)) : -62
+        case .state(let state):
+            guard isCapturing(jobID) else { return }
+            let now = Date().timeIntervalSince1970
+            let into = String(format: "%.1f", state.at - requestedAt.timeIntervalSince1970)
+            log.write("page \(state.cause) at +\(into) s: \(state.summary)")
+            switch watch.page(state, at: now) {
+            case .interrupted:
+                log.write("capture interrupted: waiting up to \(Int(KeyboardJobWatchdog.captureInterruption)) s for it to come back")
+            case .resumed(let after):
+                log.write("capture back after \(String(format: "%.1f", after)) s: the same dictation goes on")
+            case nil:
+                break
+            }
         case .stopped:
             finishRecording(jobID: jobID)
         case .failed(let message):
@@ -676,8 +693,13 @@ final class KeyboardLocalDictation {
     /// keyboard never stays in recording or transcribing with nothing behind it.
     func healIfStalled(now: TimeInterval) {
         switch phase {
-        case .starting(let jobID, _), .recording(let jobID, _) where KeyboardJobWatchdog.isStalled(.recording, lastProgress: lastProgressAt, now: now):
-            KeyboardProbeLog.shared.write("capture silent for \(Int(now - lastProgressAt)) s: finishing with what it heard")
+        case .starting(let jobID, _) where watch.isStalled(now: now),
+             .recording(let jobID, _) where watch.isStalled(now: now):
+            if let since = watch.interruptedSince {
+                KeyboardProbeLog.shared.write("capture interrupted for \(Int(now - since)) s: finishing with what it heard")
+            } else {
+                KeyboardProbeLog.shared.write("capture silent for \(Int(now - watch.lastAudio)) s: finishing with what it heard")
+            }
             if let capture {
                 listenWhileIdle(capture)
                 capture.stop()
@@ -981,6 +1003,8 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
     enum Event {
         case started(sampleRate: Double, device: String, steps: CaptureSteps)
         case samples(Data, peak: Float)
+        /// The page's AudioContext or microphone track changed.
+        case state(KeyboardCapturePageState)
         case stopped
         case loaded
         case failed(String)
@@ -1100,6 +1124,14 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
         case "pcm":
             guard let encoded = body["data"] as? String, let data = Data(base64Encoded: encoded) else { return }
             onEvent?(.samples(data, peak: Float((body["peak"] as? Double) ?? 0)))
+        case "state":
+            onEvent?(.state(KeyboardCapturePageState(
+                cause: (body["cause"] as? String) ?? "unknown",
+                context: (body["context"] as? String) ?? "unknown",
+                muted: (body["muted"] as? Bool) ?? false,
+                ended: (body["ended"] as? Bool) ?? false,
+                at: ((body["at"] as? Double) ?? 0) / 1000
+            )))
         case "stopped":
             onEvent?(.stopped)
         case "error":
@@ -1112,6 +1144,8 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
     private static let page = """
     <!doctype html><meta charset="utf-8"><script>
     let ctx, stream, source, node, running = false, generation = 0, revive = null;
+    // Reopening the microphone after iOS suspends or ends WebKit's capture track.
+    let constraints = null, mutedAt = 0, reopening = false, nextReopen = 0, backoff = 1000, reported = "";
     const post = (m) => webkit.messageHandlers.hex.postMessage(m);
     const release = (s, c) => {
       if (s) s.getTracks().forEach((t) => t.stop());
@@ -1125,6 +1159,59 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
       const found = (label && inputs.find((d) => d.label === label))
         || (builtIn && inputs.find((d) => /iphone|ipad|built-in/i.test(d.label)));
       return found ? found.deviceId : null;
+    }
+    const track = () => stream && stream.getAudioTracks()[0];
+    function report(cause) {
+      if (!running || !ctx) return;
+      const t = track();
+      const state = { context: ctx.state, muted: !!(t && t.muted), ended: !t || t.readyState === "ended" };
+      const key = state.context + state.muted + state.ended;
+      if (key === reported && cause === "check") return;
+      reported = key;
+      post({ type: "state", cause, ...state, at: Date.now() });
+    }
+    function listen(t) {
+      t.onmute = () => { if (t === track()) mutedAt = Date.now(); report("mute"); };
+      t.onunmute = () => report("unmute");
+      t.onended = () => report("ended");
+    }
+    function heal() {
+      if (!running || !ctx) return;
+      report("check");
+      if (ctx.state !== "running") {
+        if (ctx.state !== "closed") ctx.resume().catch(() => {});
+        return;
+      }
+      const t = track();
+      const ended = !t || t.readyState === "ended";
+      if (!ended && !(t.muted && Date.now() - mutedAt >= 3000)) return;
+      if (reopening || Date.now() < nextReopen) return;
+      reopen(ended ? "ended" : "muted");
+    }
+    async function reopen(why) {
+      reopening = true;
+      const start = generation;
+      report("opening the microphone again, track " + why);
+      try {
+        const s = await navigator.mediaDevices.getUserMedia(constraints);
+        if (start !== generation || !running) return release(s);
+        const old = stream;
+        try { source.disconnect(); } catch (e) {}
+        stream = s;
+        source = ctx.createMediaStreamSource(s);
+        source.connect(node);
+        listen(track());
+        mutedAt = Date.now();
+        if (!track().muted) backoff = 1000;
+        release(old);
+        report("microphone opened again");
+      } catch (error) {
+        report("opening the microphone again failed: " + ((error && error.name) || String(error)));
+      } finally {
+        reopening = false;
+        nextReopen = Date.now() + backoff;
+        backoff = Math.min(8000, backoff * 2);
+      }
     }
     async function hexStart(label, builtIn) {
       if (running) return;
@@ -1157,6 +1244,10 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
         if (stale()) return release(s, c);
         stream = s;
         ctx = c;
+        constraints = { audio: id ? { ...base, deviceId: { ideal: id } } : base };
+        mutedAt = Date.now();
+        listen(track());
+        c.onstatechange = () => report("statechange");
         source = ctx.createMediaStreamSource(stream);
         node = ctx.createScriptProcessor(4096, 1, 1);
         node.onaudioprocess = (event) => {
@@ -1176,12 +1267,7 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
         };
         source.connect(node);
         node.connect(ctx.destination);
-        // iOS may suspend or interrupt a running context for other audio (an alert, a call's
-        // ring, another app's session) without resuming it: the page then sends no audio and the
-        // keyboard's watchdog ends the dictation 6 s later. Resume it as soon as iOS allows.
-        revive = setInterval(() => {
-          if (running && ctx && ctx.state !== "running" && ctx.state !== "closed") ctx.resume().catch(() => {});
-        }, 250);
+        revive = setInterval(heal, 250);
         post({ type: "started", rate: ctx.sampleRate, device: stream.getAudioTracks()[0].label, listed, opened, mic, audio: Date.now() });
       } catch (error) {
         if (stale()) return release(s, c);
@@ -1199,7 +1285,11 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
       try { node && node.disconnect(); source && source.disconnect(); } catch (e) {}
       if (stream) stream.getTracks().forEach((t) => t.stop());
       if (ctx) { try { await ctx.close(); } catch (e) {} }
-      ctx = stream = source = node = null;
+      ctx = stream = source = node = constraints = null;
+      reopening = false;
+      nextReopen = 0;
+      backoff = 1000;
+      reported = "";
       if (wasRunning) post({ type: "stopped" });
     }
     </script>
