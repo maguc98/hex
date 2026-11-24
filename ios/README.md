@@ -1035,11 +1035,11 @@ never at a launch by itself.
   `UIInputViewController.primaryLanguage` to the language's BCP 47 identifier
   (`KeyboardLanguage.inputModeLanguage`) as the language changes (unit-tested), meant to
   make the host spell and autocorrect in the language typing; Apple documents it as
-  superseding the extension's Info.plist en-US, but whether the host follows it (Notes's red
+  superseding the extension's Info.plist `mul`, but whether the host follows it (Notes's red
   underlines, for one) is not verified on a device. Switching from the full keyboard to the
   dictation bar leaves the last reported language in place. A field gives a third-party
   keyboard nothing else to go on: before this change `documentInputMode` was observed as nil
-  in Messages and the plist's en-US in a field that asks for English; what it reports with
+  in Messages and the plist's `mul` in a field that asks for English; what it reports with
   the runtime language is unverified. **Dictation follows the keyboard:** with
   two or more languages and Dictation language on Automatic, dictation is in the language
   the space bar shows, in the iPhone's region where Apple Speech has it
