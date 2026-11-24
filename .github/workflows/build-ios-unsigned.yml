@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - dev
+      - 'sync/**'
     paths:
       - ".github/workflows/build-ios-unsigned.yml"
       - "ios/**"
