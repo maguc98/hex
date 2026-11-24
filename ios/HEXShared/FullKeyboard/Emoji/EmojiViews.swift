@@ -1,5 +1,11 @@
 import UIKit
 
+extension UIColor {
+    /// A nearly transparent fill: keyboard extensions only receive touches where their layers draw.
+    /// Without it, gaps between emoji and category icons cannot begin or catch a swipe.
+    static let keyboardTouchFill = UIColor(white: 0, alpha: 0.001)
+}
+
 extension UIScrollView {
     /// iOS 26 softens and blurs a scroll view's edges where it meets the keyboard's glass.
     /// On a real keyboard the top and bottom effects blurred every emoji in the 44 pt rows,
@@ -143,6 +149,8 @@ final class EmojiRowView: UIView, UICollectionViewDataSource, UICollectionViewDe
         layout.minimumInteritemSpacing = 0
         collection = UICollectionView(frame: .zero, collectionViewLayout: layout)
         super.init(frame: frame)
+        // Search results are outside the panel; their empty gaps must also receive touches.
+        backgroundColor = .keyboardTouchFill
         collection.backgroundColor = .clear
         collection.showsHorizontalScrollIndicator = false
         collection.delaysContentTouches = false

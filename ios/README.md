@@ -1585,7 +1585,11 @@ never at a launch by itself.
   Frequently used (eight columns: your emoji, then common ones) and the eight
   categories, at the system emoji keyboard's 46 pt pitch, with ABC, the categories and
   delete below, drawn without keycaps as the system's are; a tap anywhere under the
-  grid goes to the key under it, each category the full width of its slot. With
+  grid goes to the key under it, each category the full width of its slot. Every point
+  of the panel and the emoji search results takes touches, including gaps between emoji,
+  rows and category icons: keyboard extensions need a drawn layer under a touch, so both
+  areas use an invisible 0.1% fill (UIColor.keyboardTouchFill). Without it a swipe that
+  starts in a gap cannot be caught. With
   Settings › Experiments › ABC under the emoji key on (off by default,
   `experiments.emojiLettersUnderEmojiKey`, App Group), ABC sits exactly where the emoji
   key that opened the panel was, its x and width, so switching back to the letters needs
