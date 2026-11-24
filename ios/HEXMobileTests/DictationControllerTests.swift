@@ -41,6 +41,7 @@ private final class FakeAudioManager: AudioManaging {
     var keepaliveStarts = 0
     /// The Settings › Microphone choice each capture was asked to record from.
     var captureMicrophones: [MicrophoneChoice] = []
+    var captureMaxDurations: [TimeInterval] = []
     /// An engine that stops again by itself as soon as it starts.
     var keepaliveStopsRightAway = false
 
@@ -75,6 +76,7 @@ private final class FakeAudioManager: AudioManaging {
         microphone: MicrophoneChoice
     ) throws -> any ActiveAudioCapture {
         captureMicrophones.append(microphone)
+        captureMaxDurations.append(maxDuration)
         isKeepaliveRunning = false
         if captureShouldThrow {
             throw CocoaError(.fileWriteUnknown)
@@ -3466,4 +3468,27 @@ private final class DetailLog: @unchecked Sendable {
 
     func append(_ value: String) { lock.withLock { stored.append(value) } }
     var values: [String] { lock.withLock { stored } }
+    func testDictationAllowsThreeMinutesOfContinuousSpeech() async throws {
+        let audio = FakeAudioManager()
+        let transcriber = ControlledTranscriber()
+        let controller = DictationController(
+            audio: audio,
+            keyboardBridge: KeyboardBridge(defaults: defaults),
+            transcriber: transcriber,
+            transcriberFactory: { transcriber },
+            now: { 1_700 },
+            autoPrepareOnInit: false
+        )
+        controller.prepareModel()
+        try await settle()
+        XCTAssertEqual(controller.phase, .ready)
+
+        controller.startRecording(keyboardJobID: "long-speech")
+        try await settle()
+        XCTAssertEqual(controller.phase, .recording)
+        XCTAssertEqual(audio.captureMaxDurations, [180.0])
+
+        controller.cancelCurrentJob()
+    }
+
 }
