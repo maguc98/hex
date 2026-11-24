@@ -107,13 +107,15 @@ struct DictationSettingsPage: View {
             }
 
             SettingsCard {
-                SettingsToggleRow(
-                    title: String(localized: "Quick wake"),
-                    detail: String(localized: "Start voice input directly in the keyboard. The microphone is used only while you speak."),
-                    isOn: $quickWake
-                )
+                if #available(iOS 26.0, *) {
+                    SettingsToggleRow(
+                        title: String(localized: "Quick wake"),
+                        detail: String(localized: "Start voice input directly in the keyboard. The microphone is used only while you speak."),
+                        isOn: $quickWake
+                    )
 
-                SettingsDivider()
+                    SettingsDivider()
+                }
 
                 HStack(spacing: 12) {
                     SettingsRowLabel(
