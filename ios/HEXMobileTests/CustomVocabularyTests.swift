@@ -12,6 +12,20 @@ final class VocabularySpellingTests: XCTestCase {
         )
     }
 
+    func testMatchesLatinVocabularyInsideChineseWithoutAddingSpaces() {
+        XCTAssertEqual(
+            VocabularySpelling.apply(["OpenCode"], to: "我最近在用opencode写代码。"),
+            "我最近在用OpenCode写代码。"
+        )
+    }
+
+    func testMatchesLatinVocabularyInsideJapaneseWithoutAddingSpaces() {
+        XCTAssertEqual(
+            VocabularySpelling.apply(["iPhone"], to: "新しいiphoneを買いました。"),
+            "新しいiPhoneを買いました。"
+        )
+    }
+
     func testJoinsWordsAcrossASingleHyphen() {
         XCTAssertEqual(
             VocabularySpelling.apply(["OpenCode"], to: "Open-Code is great"),
