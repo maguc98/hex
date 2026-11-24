@@ -1187,6 +1187,9 @@ final class FullKeyboardView: UIView {
             typingLog?.ui(source, [TypingLogField("dictation", .string("keyboard"))])
             dictatingFromHexKey = true
             local()
+        } else if model.quickWakeEnabled {
+            dictatingFromHexKey = false
+            model.onDictationUnavailable?()
         } else {
             typingLog?.ui(source, [TypingLogField("dictation", .string("open_hex"))])
             dictatingFromHexKey = false
