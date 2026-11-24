@@ -593,6 +593,66 @@ final class DictationControllerTests: XCTestCase {
         XCTAssertFalse(audio.isKeepaliveRunning)
     }
 
+    func testQuickWakeReleasesAnIdleWarmSession() async throws {
+        let now = 13_000.0
+        let audio = FakeAudioManager()
+        let transcriber = ControlledTranscriber()
+        let bridge = KeyboardBridge(defaults: defaults)
+        let controller = DictationController(
+            audio: audio,
+            keyboardBridge: bridge,
+            transcriber: transcriber,
+            transcriberFactory: { transcriber },
+            now: { now },
+            autoPrepareOnInit: false
+        )
+        controller.prepareModel()
+        try await settle()
+        controller.selectWarmDuration(.fifteenMinutes)
+        try await settle()
+
+        XCTAssertTrue(controller.keyboardSessionEnabled)
+        XCTAssertTrue(audio.isKeepaliveRunning)
+        controller.setQuickWakeEnabled(true)
+
+        XCTAssertTrue(bridge.quickWakeEnabled)
+        XCTAssertFalse(controller.keyboardSessionEnabled)
+        XCTAssertFalse(audio.isKeepaliveRunning, "Quick wake must not leave the mic open while idle")
+        XCTAssertGreaterThan(audio.deactivateCount, 0)
+    }
+
+    func testQuickWakeDoesNotRestartKeepaliveAfterAnActiveRecordingFinishes() async throws {
+        let now = 14_000.0
+        let audio = FakeAudioManager()
+        let transcriber = ControlledTranscriber()
+        let bridge = KeyboardBridge(defaults: defaults)
+        let controller = DictationController(
+            audio: audio,
+            keyboardBridge: bridge,
+            transcriber: transcriber,
+            transcriberFactory: { transcriber },
+            now: { now },
+            autoPrepareOnInit: false
+        )
+        controller.prepareModel()
+        try await settle()
+        controller.selectWarmDuration(.fifteenMinutes)
+        try await settle()
+        controller.startRecording(keyboardJobID: "quick-wake-transition")
+        try await settle()
+        XCTAssertEqual(controller.phase, .recording)
+
+        controller.setQuickWakeEnabled(true)
+        XCTAssertTrue(bridge.quickWakeEnabled)
+        XCTAssertTrue(controller.keyboardSessionEnabled, "the recording already in progress is allowed to finish")
+        controller.finishRecording()
+        try await settle(twice: true)
+
+        XCTAssertFalse(controller.keyboardSessionEnabled)
+        XCTAssertFalse(audio.isKeepaliveRunning, "finishing the old recording must release the mic")
+        XCTAssertGreaterThan(audio.deactivateCount, 0)
+    }
+
     func testMeterRecoversAfterCaptureStartsTemporarilyNotRecording() async throws {
         try await checkMeterRecovery(initiallyRecording: false)
     }
