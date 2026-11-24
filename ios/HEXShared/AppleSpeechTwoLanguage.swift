@@ -105,86 +105,86 @@ nonisolated enum AppleSpeechTwoLanguage {
             withExtendedLifetime(secondaryAnalyzer) {}
         }
 
-            let primaryFile: AVAudioFile
-            let secondaryFile: AVAudioFile
-            do {
-                primaryFile = try AVAudioFile(forReading: audioURL)
-                secondaryFile = try AVAudioFile(forReading: audioURL)
-            } catch {
-                return nil
+        let primaryFile: AVAudioFile
+        let secondaryFile: AVAudioFile
+        do {
+            primaryFile = try AVAudioFile(forReading: audioURL)
+            secondaryFile = try AVAudioFile(forReading: audioURL)
+        } catch {
+            return nil
+        }
+
+        // Prepare both before starting, as the app prepares its analyzer. A second language
+        // that can't prepare leaves the primary reading alone.
+        do {
+            try await primaryAnalyzer.prepareToAnalyze(in: nil)
+        } catch {
+            return nil
+        }
+        var secondaryStarted = false
+        do {
+            try await secondaryAnalyzer.prepareToAnalyze(in: nil)
+            secondaryStarted = true
+        } catch {
+            secondaryStarted = false
+        }
+
+        // The same recognition hints on both readings, each with its own context.
+        if !vocabulary.isEmpty {
+            await setContext(vocabulary, on: primaryAnalyzer)
+            if secondaryStarted {
+                await setContext(vocabulary, on: secondaryAnalyzer)
             }
-    
-            // Prepare both before starting, as the app prepares its analyzer. A second language
-            // that can't prepare leaves the primary reading alone.
+        }
+
+        do {
+            try await primaryAnalyzer.start(inputAudioFile: primaryFile, finishAfterFile: true)
+        } catch {
+            return nil
+        }
+        if secondaryStarted {
             do {
-                try await primaryAnalyzer.prepareToAnalyze(in: nil)
-            } catch {
-                return nil
-            }
-            var secondaryStarted = false
-            do {
-                try await secondaryAnalyzer.prepareToAnalyze(in: nil)
-                secondaryStarted = true
+                try await secondaryAnalyzer.start(inputAudioFile: secondaryFile, finishAfterFile: true)
             } catch {
                 secondaryStarted = false
             }
-    
-            // The same recognition hints on both readings, each with its own context.
-            if !vocabulary.isEmpty {
-                await setContext(vocabulary, on: primaryAnalyzer)
-                if secondaryStarted {
-                    await setContext(vocabulary, on: secondaryAnalyzer)
-                }
-            }
-    
-            do {
-                try await primaryAnalyzer.start(inputAudioFile: primaryFile, finishAfterFile: true)
-            } catch {
-                return nil
-            }
-            if secondaryStarted {
-                do {
-                    try await secondaryAnalyzer.start(inputAudioFile: secondaryFile, finishAfterFile: true)
-                } catch {
-                    secondaryStarted = false
-                }
-            }
-    
-            async let primaryReading = reading(of: primaryTranscriber)
-            async let secondaryReading = reading(of: secondaryStarted ? secondaryTranscriber : nil)
-    
-            let primary: Reading
-            do {
-                primary = try await primaryReading
-            } catch {
-                return nil
-            }
-            // The primary finished but heard nothing: say so instead of making the caller run
-            // the whole single-language path again.
-            guard !primary.text.isEmpty else {
-                return Transcript(
-                    text: "",
-                    winner: .primary,
-                    secondaryLanguage: pair.secondary.identifier(.bcp47)
-                )
-            }
-            let secondary = (try? await secondaryReading) ?? Reading()
-            let fallback = Transcript(
-                text: primary.text,
+        }
+
+        async let primaryReading = reading(of: primaryTranscriber)
+        async let secondaryReading = reading(of: secondaryStarted ? secondaryTranscriber : nil)
+
+        let primary: Reading
+        do {
+            primary = try await primaryReading
+        } catch {
+            return nil
+        }
+        // The primary finished but heard nothing: say so instead of making the caller run
+        // the whole single-language path again.
+        guard !primary.text.isEmpty else {
+            return Transcript(
+                text: "",
                 winner: .primary,
                 secondaryLanguage: pair.secondary.identifier(.bcp47)
             )
-            // Nothing usable from the second or from either reading's timed words: the primary's
-            // own text, exactly as dictation would have given it alone.
-            guard !secondary.words.isEmpty, !primary.words.isEmpty else { return fallback }
-            let merged = TwoLanguageMerger.merge(primary: primary.words, secondary: secondary.words)
-            guard merged.usedSecondary, !merged.text.isEmpty else { return fallback }
-            return Transcript(
-                text: merged.text,
-                winner: merged.winner,
-                secondaryLanguage: pair.secondary.identifier(.bcp47)
-            )
-    }
+        }
+        let secondary = (try? await secondaryReading) ?? Reading()
+        let fallback = Transcript(
+            text: primary.text,
+            winner: .primary,
+            secondaryLanguage: pair.secondary.identifier(.bcp47)
+        )
+        // Nothing usable from the second or from either reading's timed words: the primary's
+        // own text, exactly as dictation would have given it alone.
+        guard !secondary.words.isEmpty, !primary.words.isEmpty else { return fallback }
+        let merged = TwoLanguageMerger.merge(primary: primary.words, secondary: secondary.words)
+        guard merged.usedSecondary, !merged.text.isEmpty else { return fallback }
+        return Transcript(
+            text: merged.text,
+            winner: merged.winner,
+            secondaryLanguage: pair.secondary.identifier(.bcp47)
+        )
+}
 
     /// The words of one Apple Speech result: one per timed run, with the run's raw characters
     /// (its leading whitespace included) and its audio time range and transcription
