@@ -483,6 +483,7 @@ struct KeyboardBridge {
         static let fullAccessOn = "keyboard.fullAccessOn"
         static let fullAccessOff = "keyboard.fullAccessOff"
         static let appMicrophoneAllowed = "app.microphoneAllowed"
+        static let quickWakeEnabled = "settings.quickWakeEnabled"
         static let lastEmptyDictationAt = "keyboard.lastEmptyDictationAt"
         static let heldDictation = "keyboard.heldDictation"
         static let shownAt = "keyboard.shownAt"
@@ -649,6 +650,13 @@ struct KeyboardBridge {
             .deliverImmediately
         )
     }()
+
+    /// Whether keyboard-first quick wake is enabled. The keyboard then prefers its in-keyboard
+    /// capture path and does not rely on a resident Hex microphone session.
+    var quickWakeEnabled: Bool {
+        get { defaults?.bool(forKey: Key.quickWakeEnabled) ?? false }
+        nonmutating set { defaults?.set(newValue, forKey: Key.quickWakeEnabled) }
+    }
 
     /// Whether Hex has the microphone, as the app last read it. Only the app sets this. A
     /// keyboard process keeps the permission it read when it started (iOS doesn't update it
