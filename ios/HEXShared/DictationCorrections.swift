@@ -65,17 +65,29 @@ nonisolated enum DictationCorrections {
         return output
     }
 
-    /// The custom vocabulary terms, then the meant words of learned fixes, without
-    /// duplicates and within Apple's contextual-string limit.
+    /// Custom vocabulary remains first, but learned corrections always get a share of
+    /// Apple's contextual-string budget. Otherwise 100 saved vocabulary terms silently
+    /// crowd out every correction the person has repeatedly made.
     static func recognitionHints(vocabulary: [String], corrections: [DictationCorrection]) -> [String] {
+        let limit = CustomVocabularySettings.maxTermCount
+        let correctionTerms = corrections.map(\.meant)
+        let correctionSlots = min(20, correctionTerms.count, limit)
+        let vocabularySlots = limit - correctionSlots
         var seen = Set<String>()
         var hints: [String] = []
-        for term in vocabulary + corrections.map(\.meant) {
-            let key = VocabularySpelling.normalizedKey(term)
-            guard key.count >= 2, seen.insert(key).inserted else { continue }
-            hints.append(term)
-            if hints.count == CustomVocabularySettings.maxTermCount { break }
+
+        func append(_ terms: [String], upTo count: Int) {
+            for term in terms where hints.count < count {
+                let key = VocabularySpelling.normalizedKey(term)
+                guard key.count >= 2, seen.insert(key).inserted else { continue }
+                hints.append(term)
+            }
         }
+
+        append(vocabulary, upTo: vocabularySlots)
+        append(correctionTerms, upTo: limit)
+        // If duplicate or invalid corrections left slots unused, fill them with more vocabulary.
+        append(vocabulary, upTo: limit)
         return hints
     }
 
