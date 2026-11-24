@@ -4331,6 +4331,16 @@
         }
       }
     },
+    "Only for English dictation." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅支持英语听写。"
+          }
+        }
+      }
+    },
     "The keyboard can't use it right now, so it uses Apple's speech recognition." : {
       "localizations" : {
         "zh-Hans" : {
@@ -4347,6 +4357,66 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已下载。键盘下次打开时会准备好它。"
+          }
+        }
+      }
+    },
+    "Listening…" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在聆听…"
+          }
+        }
+      }
+    },
+    "Show what I say" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "显示我说的话"
+          }
+        }
+      }
+    },
+    "Type as I speak" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "边说边输入"
+          }
+        }
+      }
+    },
+    "Words can change until you stop" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停下前文字可能会变"
+          }
+        }
+      }
+    },
+    "Stopped at %@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在 %@ 处停止"
+          }
+        }
+      }
+    },
+    "The screen locked or you left the app" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "屏幕已锁定，或你离开了该应用"
           }
         }
       }

@@ -13,6 +13,13 @@ nonisolated enum KeyboardFieldKind: Equatable, Sendable {
     case url
     /// Adds `@` and `.` right of space, matching Apple's iOS 26 email layout.
     case email
+    /// Safari's address bar: words, with Apple's `.` beside the space bar.
+    case webSearch
+}
+
+nonisolated extension KeyboardFieldKind {
+    /// Fields that take words; URL and email fields are for addresses.
+    var takesWords: Bool { self == .text || self == .webSearch }
 }
 
 nonisolated enum KeyboardOrientation: Equatable, Sendable {
@@ -1087,6 +1094,8 @@ nonisolated struct KeyboardLayout: Equatable, Sendable {
         case .email:
             trailing.append((.character("@"), referenceW, "@"))
             trailing.append((.character("."), referenceW, "."))
+        case .webSearch:
+            trailing.append((.character("."), referenceW, "."))
         }
         if placement == .rightOfSpace {
             trailing.append((.hex, modW, "hex"))
@@ -1124,7 +1133,9 @@ nonisolated struct KeyboardLayout: Equatable, Sendable {
             }
             add(.space, row: 3, x: spaceStart, w: max(lw, spaceEnd - spaceStart), label: "space")
             add(.returnKey, row: 3, x: returnStart, w: right - returnStart, label: "return")
-        } else if field == .text, m.keyHeight >= 40 || m.pad == .floating || joinedUnfoldedWide {
+        } else if (field == .text || field == .webSearch),
+                  m.bottomRowReturnColumn == nil,
+                  (m.keyHeight >= 40 || m.pad == .floating || joinedUnfoldedWide) {
             // Apple's portrait bottom row stands on row 3's letter columns: 123 (and emoji, or
             // the globe on a Home-button iPhone) share the width from the edge to z's right edge,
             // the space bar runs from x to n, and return from m to the edge. With no emoji key
@@ -1132,7 +1143,7 @@ nonisolated struct KeyboardLayout: Equatable, Sendable {
             // key, left or right of space, comes out of the space bar.
             let pitch = referenceW + m.gap
             let blockEnd = left + 2.5 * pitch - m.gap
-            let returnStart = left + 7.5 * pitch
+            let returnStart = left + (field == .webSearch ? 8.25 : 7.5) * pitch
             // Docked on an iPad, Apple's hide-keyboard key ends the row: one letter wide, after return.
             let dismissW = m.pad?.isDocked == true ? referenceW : 0
             let returnEnd = dismissW > 0 ? right - dismissW - m.gap : right
@@ -1152,6 +1163,10 @@ nonisolated struct KeyboardLayout: Equatable, Sendable {
                 x += referenceW + m.gap
             }
             var spaceEnd = returnStart - m.gap
+            if field == .webSearch {
+                spaceEnd -= pitch
+                add(.character("."), row: 3, x: spaceEnd + m.gap, w: referenceW, label: ".")
+            }
             if placement == .leftOfSpace {
                 add(.hex, row: 3, x: x, w: modW, label: "hex")
                 x += modW + m.gap
@@ -1415,6 +1430,8 @@ extension KeyboardLayout {
             trailing.append((.character("/"), G.smallKeyWidth, "/"))
         case .email:
             trailing.append((.character("@"), G.smallKeyWidth, "@"))
+            trailing.append((.character("."), G.smallKeyWidth, "."))
+        case .webSearch:
             trailing.append((.character("."), G.smallKeyWidth, "."))
         }
         if !placement.isInStrip {

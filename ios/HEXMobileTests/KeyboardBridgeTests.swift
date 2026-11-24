@@ -42,11 +42,96 @@ final class KeyboardBridgeTests: XCTestCase {
         let stale = snapshot(state: .ready, heartbeat: now - 3.0, expiresAt: now + 1)
         let expired = snapshot(state: .ready, heartbeat: now, expiresAt: now)
         let transcribingAfterSessionEnd = snapshot(state: .transcribing, heartbeat: now - 0.5, expiresAt: 0)
+        let starting = snapshot(state: .starting, heartbeat: now - 0.5, expiresAt: 0)
 
         XCTAssertTrue(available.isAvailable(at: now))
         XCTAssertFalse(stale.isAvailable(at: now))
         XCTAssertFalse(expired.isAvailable(at: now))
         XCTAssertTrue(transcribingAfterSessionEnd.isAvailable(at: now))
+        XCTAssertTrue(starting.isAvailable(at: now), "starting is an active capture heartbeat")
+    }
+
+
+    func testKeyboardShowsStartingUntilTheFirstAudioSnapshot() {
+        let now = 4_000.0
+        let model = KeyboardViewModel()
+        let starting = KeyboardSnapshot(state: .starting, heartbeat: now, expiresAt: now + 60, jobID: "startup")
+        model.applyBridgeState(
+            hasFullAccess: true,
+            snapshot: starting,
+            isModelInstalled: true,
+            style: .polished,
+            now: now,
+            animated: false
+        )
+        XCTAssertEqual(model.stagePhase, .starting)
+        XCTAssertEqual(model.dotScopePhase, .idle, "the visualizer stays calm before PCM audio arrives")
+
+        let recording = KeyboardSnapshot(
+            state: .recording,
+            heartbeat: now + 0.1,
+            expiresAt: now + 60,
+            recordingStartedAt: now + 0.1,
+            jobID: "startup"
+        )
+        model.applyBridgeState(
+            hasFullAccess: true,
+            snapshot: recording,
+            isModelInstalled: true,
+            style: .polished,
+            now: now + 0.1,
+            animated: false
+        )
+        XCTAssertEqual(model.stagePhase, .recording)
+        XCTAssertEqual(model.dotScopePhase, .recording)
+    }
+
+    func testInterruptedRecordingPersistsUntilClearedOrExpires() throws {
+        let suite = "KeyboardInterruptedRecordingTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let fileName = "keyboard-interrupted-\(UUID().uuidString).wav"
+        let record = KeyboardInterruptedRecording(
+            jobID: "interrupted-job",
+            fileName: fileName,
+            document: UUID(),
+            seconds: 42.5,
+            cutShort: true,
+            at: 10_000
+        )
+        try Data("wav".utf8).write(to: record.url)
+        record.save(defaults: defaults)
+        XCTAssertEqual(KeyboardInterruptedRecording.load(defaults: defaults), record)
+        XCTAssertFalse(record.isExpired(at: 10_000 + 60))
+        XCTAssertTrue(record.isExpired(at: 10_000 + KeyboardInterruptedRecording.keptFor + 1))
+
+        KeyboardInterruptedRecording.clear(jobID: "another-job", defaults: defaults)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: record.url.path))
+        KeyboardInterruptedRecording.clear(jobID: record.jobID, defaults: defaults)
+        XCTAssertNil(KeyboardInterruptedRecording.load(defaults: defaults))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: record.url.path))
+    }
+
+    func testCaptureWatchWaitsForInterruptedMicrophoneAndResetsOnResume() {
+        var watch = KeyboardCaptureWatch(startedAt: 100)
+        watch.heardAudio(at: 102)
+        XCTAssertFalse(watch.isStalled(now: 107))
+
+        let interrupted = KeyboardCapturePageState(
+            cause: "mute", context: "interrupted", muted: true, ended: false, at: 108
+        )
+        XCTAssertEqual(watch.page(interrupted, at: 108), .interrupted)
+        XCTAssertEqual(watch.interruptedSince, 108)
+        XCTAssertFalse(watch.isStalled(now: 122), "a notification gets up to 15 seconds to release the audio session")
+        XCTAssertTrue(watch.isStalled(now: 124), "a call or alarm that outlasts the recovery window finishes with what was heard")
+
+        let resumed = KeyboardCapturePageState(
+            cause: "unmute", context: "running", muted: false, ended: false, at: 120
+        )
+        XCTAssertEqual(watch.page(resumed, at: 120), .resumed(after: 12))
+        XCTAssertNil(watch.interruptedSince)
+        XCTAssertFalse(watch.isStalled(now: 125), "silence is counted again from when the microphone came back")
+        XCTAssertTrue(watch.isStalled(now: 127))
     }
 
     func testDeliverableResultSurvivesWarmSessionShutdownUntilTTL() {
@@ -120,6 +205,10 @@ final class KeyboardBridgeTests: XCTestCase {
         XCTAssertTrue(
             KeyboardSnapshot(state: .recording, heartbeat: 0, expiresAt: 0, jobID: "handoff").isOrphanedJob(at: t0),
             "never heartbeated"
+        )
+        XCTAssertTrue(
+            KeyboardSnapshot(state: .starting, heartbeat: 0, expiresAt: 0, jobID: "handoff").isOrphanedJob(at: t0),
+            "an abandoned startup must not hold another keyboard open"
         )
 
         // A result the snapshot carries still arrives, and a Hex heartbeating again is live again.

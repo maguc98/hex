@@ -103,7 +103,8 @@ final class EmojiPanelView: UIView, UICollectionViewDataSource, UICollectionView
         grid = UICollectionView(frame: .zero, collectionViewLayout: UICollectionViewFlowLayout())
         categoryBar = EmojiCategoryBar(items: [("clock", "Frequently used")] + EmojiCategory.allCases.map { ($0.symbol, $0.title) })
         super.init(frame: .zero)
-        backgroundColor = .clear
+        // Invisible to the eye, but lets every point of the panel receive keyboard touches.
+        backgroundColor = .keyboardTouchFill
         isOpaque = false
 
         searchButton.setImage(

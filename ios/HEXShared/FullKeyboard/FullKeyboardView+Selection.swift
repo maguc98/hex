@@ -51,6 +51,9 @@ extension FullKeyboardView {
         lastStagePhase = phase
         guard engine.hasPendingSelectionDictation else { return }
         switch phase {
+        case .starting:
+            // Keep the pending selection while dictation is preparing to record.
+            break
         case .recording, .transcribing:
             selectionDictationStarted = true
             selectionDictationClear?.cancel()

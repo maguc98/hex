@@ -181,7 +181,7 @@ final class FullKeyboardEngineTests: XCTestCase {
         engine.width = 402
         engine.letterLayout = .dvorak
         engine.dvorakPunctuation = true
-        for keyboardType in [UIKeyboardType.URL, .emailAddress] {
+        for keyboardType in [UIKeyboardType.URL, .emailAddress, .webSearch] {
             target.keyboardType = keyboardType
             engine.configureForField()
             XCTAssertNotEqual(engine.layout.field, .text, "\(keyboardType.rawValue)")
@@ -1552,6 +1552,52 @@ final class FullKeyboardEngineTests: XCTestCase {
         XCTAssertEqual(target.text, "@.")
     }
 
+    func testWebSearchFieldShowsApplesPeriodBesideSpace() {
+        target.keyboardType = .webSearch
+        engine.configureForField()
+        XCTAssertEqual(engine.field, .webSearch)
+        XCTAssertEqual(engine.layout.key(.character("."))?.row, 3)
+        tap(.character("."))
+        XCTAssertEqual(target.text, ".")
+    }
+
+    func testKeyboardSpeechModelStatusReflectsDictationLanguage() {
+        XCTAssertTrue(KeyboardParakeetStatus.onlyForEnglish(
+            enabled: true, twoLanguageDictation: false, multilingualModelReady: false, language: "fr-FR"
+        ))
+        XCTAssertTrue(KeyboardParakeetStatus.onlyForEnglish(
+            enabled: true, twoLanguageDictation: false, multilingualModelReady: false, language: "hi-IN"
+        ))
+        XCTAssertFalse(KeyboardParakeetStatus.onlyForEnglish(
+            enabled: true, twoLanguageDictation: false, multilingualModelReady: false, language: "en-US"
+        ))
+        XCTAssertFalse(KeyboardParakeetStatus.onlyForEnglish(
+            enabled: true, twoLanguageDictation: true, multilingualModelReady: false, language: "fr-FR"
+        ))
+        XCTAssertFalse(KeyboardParakeetStatus.onlyForEnglish(
+            enabled: true, twoLanguageDictation: false, multilingualModelReady: true, language: "fr-FR"
+        ))
+        XCTAssertFalse(KeyboardParakeetStatus.onlyForEnglish(
+            enabled: false, twoLanguageDictation: false, multilingualModelReady: false, language: "fr-FR"
+        ))
+    }
+
+    func testKeyHapticStrengthIsLightUntilChosen() throws {
+        let suite = "FullKeyboardEngineTests-Haptics-\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { store.removePersistentDomain(forName: suite) }
+        let settings = FullKeyboardSettings(defaults: store)
+
+        XCTAssertEqual(settings.hapticStrength, .light)
+        XCTAssertEqual(FullKeyboardSettings(defaults: nil).hapticStrength, .light, "without the App Group")
+        for strength in KeyHapticStrength.allCases {
+            settings.hapticStrength = strength
+            XCTAssertEqual(FullKeyboardSettings(defaults: store).hapticStrength, strength)
+        }
+        store.set("medium", forKey: "settings.keyboardHapticStrength")
+        XCTAssertEqual(settings.hapticStrength, .medium, "an existing stored choice is preserved")
+    }
+
     func testNumberPadOpensOnNumbers() {
         target.keyboardType = .numberPad
         engine.configureForField()
@@ -2390,6 +2436,28 @@ final class FullKeyboardEngineTests: XCTestCase {
 
     /// A 390 pt keyboard with Swipe typing on: its key plane, typing into a field holding
     /// `text` (or the given one, for a host that does something particular).
+    /// Safari's address bar types words like a text field, including swipe, autocorrection and suggestions.
+    func testAWebSearchFieldTypesWordsAsATextFieldDoes() throws {
+        func typing(in keyboardType: UIKeyboardType) throws -> (swipes: Bool, text: String, suggestions: [String]) {
+            let field = FixtureTextTarget()
+            field.keyboardType = keyboardType
+            let (_, plane) = try swipeKeyboard(target: field)
+            plane.engine.letterOdds = try XCTUnwrap(TypingDecoderModel.bundled("en"))
+            let swipes = plane.engine.allowsSwipes
+            swipe("hello", on: plane)
+            for letter in "teh" { tap(.character(String(letter)), on: plane) }
+            tap(.space, on: plane)
+            return (swipes, field.text, plane.engine.suggestions.map(\.replacement))
+        }
+        let text = try typing(in: .default)
+        let search = try typing(in: .webSearch)
+        XCTAssertTrue(search.swipes)
+        XCTAssertEqual(search.text, "hello the ", "swiped, then autocorrected on space")
+        XCTAssertEqual(search.text, text.text)
+        XCTAssertFalse(search.suggestions.isEmpty)
+        XCTAssertEqual(search.suggestions, text.suggestions)
+    }
+
     private func swipeKeyboard(
         _ text: String = "", language: KeyboardLanguage = .english, target: FixtureTextTarget? = nil
     ) throws -> (FixtureTextTarget, KeyboardKeyPlaneView) {
@@ -3574,6 +3642,7 @@ extension FullKeyboardEngineTests {
         XCTAssertEqual(learnedTyping { $0.isSecureTextEntry = true }, 0)
         XCTAssertEqual(learnedTyping { $0.keyboardType = .URL }, 0)
         XCTAssertEqual(learnedTyping { $0.keyboardType = .emailAddress }, 0)
+        XCTAssertEqual(learnedTyping { $0.keyboardType = .webSearch }, 10, "web search learns like a text field")
         XCTAssertEqual(learnedTyping { $0.autocorrectionType = .no }, 0)
 
         let (field, plane) = try swipeKeyboard()

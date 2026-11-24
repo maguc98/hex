@@ -131,7 +131,46 @@ struct KeyboardParakeetStatus: View {
     }
 
     private func line(now: Date) -> String? {
-        switch download.state {
+        let languages = LanguageSettings()
+        let wantedLanguage = languages.dictationLanguage
+            ?? languages.keyboardDictationLanguage()
+            ?? Locale.preferredLanguages.first
+        let multilingualReady = MultilingualParakeetSettings().language() != nil
+            && SpeechModelStore.isComplete(SpeechModelStore.parakeetUltra)
+        return Self.line(
+            state: download.state,
+            isDownloaded: download.isDownloaded,
+            onlyForEnglish: Self.onlyForEnglish(
+                enabled: KeyboardParakeetSettings().isEnabled,
+                twoLanguageDictation: TwoLanguageDictationSettings().isEnabled,
+                multilingualModelReady: multilingualReady,
+                language: wantedLanguage
+            ),
+            keyboardState: KeyboardParakeetSettings().keyboardState,
+            now: now
+        )
+    }
+
+    /// The V2 keyboard model is English-only. Don't leave a stale "Ready in the keyboard"
+    /// message after the selected dictation language has moved to French, Hinglish, etc.
+    static func onlyForEnglish(
+        enabled: Bool,
+        twoLanguageDictation: Bool,
+        multilingualModelReady: Bool,
+        language: String?
+    ) -> Bool {
+        guard enabled, !twoLanguageDictation, !multilingualModelReady, let language else { return false }
+        return Locale(identifier: language).language.languageCode?.identifier != "en"
+    }
+
+    static func line(
+        state: KeyboardParakeetDownload.State,
+        isDownloaded: Bool,
+        onlyForEnglish: Bool,
+        keyboardState: (state: KeyboardParakeetSettings.KeyboardState, at: Date)?,
+        now: Date
+    ) -> String? {
+        switch state {
         case .downloading:
             return String(localized: "Downloading the speech model")
         case .failed(let message):
@@ -139,8 +178,9 @@ struct KeyboardParakeetStatus: View {
         case .idle:
             break
         }
-        guard download.isDownloaded else { return nil }
-        switch KeyboardParakeetSettings().keyboardState {
+        if onlyForEnglish { return String(localized: "Only for English dictation.") }
+        guard isDownloaded else { return nil }
+        switch keyboardState {
         case (.preparing, let at)? where now.timeIntervalSince(at) < 180:
             return String(localized: "Getting ready in the keyboard")
         case (.ready, _)?:

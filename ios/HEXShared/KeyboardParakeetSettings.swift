@@ -76,9 +76,9 @@ nonisolated struct KeyboardParakeetSettings {
 ///   idle keyboard (probe keyboard, `~/dev/experiments/2026-11-22-hex-keyboard-asr/native`).
 /// - Ultra, in the probe keyboard at the same footprint, peaked 19 MB above V2 and its first load
 ///   rose 48 MB; not yet measured in Hex's keyboard.
-/// So a keyboard needs a limit of the recording footprint, the transcription's rise and `margin`
-/// (96 MB for V2, 115 MB for Ultra), as much left (`os_proc_available_memory`) as the load's rise
-/// plus 16 MB before it loads, and the transcription's rise plus 8 MB before each transcription.
+/// FluidAudio holds the recording and resampled audio while transcribing, so the budget grows
+/// by about 0.5 MB per second. More than 90 seconds, or too little remaining room, falls back
+/// to Apple's streaming speech recognition.
 nonisolated enum KeyboardParakeetBudget {
     static let megabyte = 1_048_576
     static let recordingFootprint = 56 * megabyte
@@ -100,8 +100,14 @@ nonisolated enum KeyboardParakeetBudget {
         loadRise(multilingual: multilingual) + 16 * megabyte
     }
 
-    static func transcribeHeadroom(multilingual: Bool) -> Int {
+    /// FluidAudio resamples the entire audio file in memory: roughly 0.42 MB per second.
+    static let audioCostPerSecond = megabyte / 2
+    /// Beyond this duration, stream through Apple Speech instead of buffering the recording.
+    static let longestAudio: TimeInterval = 90
+
+    static func transcribeHeadroom(multilingual: Bool, audioSeconds: Double = 0) -> Int {
         transcriptionRise(multilingual: multilingual) + 8 * megabyte
+            + Int(max(0, audioSeconds) * Double(audioCostPerSecond))
     }
 
     /// Whether a keyboard with `footprint` and `available` (bytes) may load the model.
@@ -112,9 +118,12 @@ nonisolated enum KeyboardParakeetBudget {
             && available >= loadHeadroom(multilingual: multilingual)
     }
 
-    static func allowsTranscription(multilingual: Bool, footprint: Int, available: Int) -> Bool {
+    static func allowsTranscription(
+        multilingual: Bool, footprint: Int, available: Int, audioSeconds: Double = 0
+    ) -> Bool {
+        guard audioSeconds <= longestAudio else { return false }
         guard available > 0 else { return true }
         return footprint + available >= requiredLimit(multilingual: multilingual)
-            && available >= transcribeHeadroom(multilingual: multilingual)
+            && available >= transcribeHeadroom(multilingual: multilingual, audioSeconds: audioSeconds)
     }
 }
