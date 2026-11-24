@@ -1915,6 +1915,9 @@ final class KeyboardLayoutTests: XCTestCase {
         XCTAssertEqual(automatic("pl-PL", modes: ["en-US"]), .polish)
         XCTAssertEqual(automatic("pl_PL"), .polish)
         XCTAssertEqual(automatic(nil, modes: ["emoji", "pl_PL", "en-US"]), .polish)
+        // Hex declares itself multilingual in Info.plist, not as an extra English keyboard.
+        XCTAssertEqual(automatic(nil, modes: ["mul", "fr_FR", "emoji"], preferred: ["fr-FR"]), .french)
+        XCTAssertEqual(automatic(nil, modes: ["mul", "emoji"], preferred: ["fr-FR"]), .french)
         XCTAssertEqual(automatic(nil, preferred: ["pl-PL", "en-US"]), .polish)
         XCTAssertEqual(automatic("ro-RO", modes: ["en-US"]), .romanian)
         XCTAssertEqual(automatic("ro_RO"), .romanian)
@@ -2094,6 +2097,11 @@ final class KeyboardLayoutTests: XCTestCase {
         XCTAssertEqual(
             KeyboardLanguage.suggested(inputModes: ["en-GB", "emoji", "fr-FR", "en-US"], preferred: ["ru-RU", "fr-CA", "he-IL"]),
             [.english, .french, .russian, .frenchCanadian]
+        XCTAssertEqual(
+            KeyboardLanguage.suggested(inputModes: ["fr_FR", "emoji", "mul"], preferred: ["fr-FR"]),
+            [.french],
+            "Hex multilingual mode must not appear as English"
+        )
         )
         let supported = ["en-US", "en-GB", "fr-FR", "fr-CA", "ru-RU", "nb-NO", "pt-BR", "pt-PT"]
         XCTAssertEqual(KeyboardLanguage.english.dictationLanguage(supported: supported, preferred: ["en-GB", "fr-FR"]), "en-GB")
