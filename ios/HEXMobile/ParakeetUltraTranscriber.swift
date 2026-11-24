@@ -133,9 +133,11 @@ actor ParakeetUltraTranscriber: LocalTranscribing {
         guard let manager else {
             throw TranscriberError.notPrepared
         }
+        try Task.checkCancellation()
         let decoderLayers = await manager.decoderLayerCount
         var decoderState = TdtDecoderState.make(decoderLayers: decoderLayers)
         let result = try await manager.transcribe(audioURL, decoderState: &decoderState)
+        try Task.checkCancellation()
         let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
             throw TranscriberError.emptyTranscript
