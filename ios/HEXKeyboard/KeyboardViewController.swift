@@ -823,10 +823,11 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     /// The full keyboard, or the dictation bar once it was chosen, on an iPhone and an iPad alike.
-    /// Without Full Access always the full keyboard: the bar types nothing but spaces and line
-    /// breaks, and its Dictate needs Full Access. Only switches while idle.
+    /// The bar remains visible when Full Access is off so its own setup prompt can explain what
+    /// is missing; its Dictate action routes to setup until access is granted. If the App Group
+    /// cannot be read, FullKeyboardSettings defaults to the full keyboard. Only switches while idle.
     private func mountSurface() {
-        let wantsFull = FullKeyboardSettings().isEnabled || !hasFullAccess
+        let wantsFull = FullKeyboardSettings().isEnabled
         guard surface == nil || wantsFull != (fullKeyboard != nil) else { return }
         guard surface == nil || viewModel.stagePhase == .idle || viewModel.stagePhase == .failed else { return }
         closeBarEmojiPanel()
