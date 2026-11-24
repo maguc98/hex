@@ -185,8 +185,8 @@ struct FullKeyboardSettings {
         nonmutating set { defaults?.set(newValue, forKey: Key.haptics) }
     }
 
-    /// Settings › Keyboard › Strength, under Haptics: how hard each key's tap is. Medium, the
-    /// default, is meant to feel like Apple's keyboard.
+    /// Settings › Keyboard › Strength, under Haptics: how hard each key's tap is. Light until
+    /// you choose one; a choice is kept, whichever it is.
     var hapticStrength: KeyHapticStrength {
         get { defaults?.string(forKey: Key.hapticStrength).flatMap(KeyHapticStrength.init(rawValue:)) ?? .light }
         nonmutating set { defaults?.set(newValue.rawValue, forKey: Key.hapticStrength) }
