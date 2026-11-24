@@ -1601,6 +1601,86 @@
         }
       }
     },
+    "Quick wake" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快捷唤起"
+          }
+        }
+      }
+    },
+    "Start voice input directly in the keyboard. The microphone is used only while you speak." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "直接在键盘中启动语音输入。仅在说话时使用麦克风。"
+          }
+        }
+      }
+    },
+    "Turn off Quick wake to use microphone standby." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭快捷唤起后才能启用麦克风待命。"
+          }
+        }
+      }
+    },
+    "Quick wake requires iOS 26 or later." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快捷唤起需要 iOS 26 或更高版本。"
+          }
+        }
+      }
+    },
+    "Turn off the multilingual speech model to use Quick wake." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭多语言语音模型后才能使用快捷唤起。"
+          }
+        }
+      }
+    },
+    "Open Hex once to prepare this speech language, then return to the keyboard." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请先打开 Hex 完成当前语音语言的准备，然后返回键盘。"
+          }
+        }
+      }
+    },
+    "Not enough available memory for voice input in the keyboard. Close unused apps and try again." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "键盘可用内存不足，暂时无法进行语音输入。请关闭不使用的应用后重试。"
+          }
+        }
+      }
+    },
+    "Quick wake is temporarily unavailable. Try again in a moment." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快捷唤起暂时不可用，请稍后重试。"
+          }
+        }
+      }
+    },
     "Keep mic warm" : {
       "localizations" : {
         "zh-Hans" : {
