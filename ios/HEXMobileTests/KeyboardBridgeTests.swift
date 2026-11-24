@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class KeyboardBridgeTests: XCTestCase {
     func testQuickWakePreferencePersistsAcrossBridgeInstances() {
-        let suiteName = "hex.tests.quickWake.\\(UUID().uuidString)"
+        let suiteName = "hex.tests.quickWake.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
