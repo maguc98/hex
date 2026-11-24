@@ -15,13 +15,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-intel
+  group: ${{ github.workflow }}-${{ github.ref }}-macos26
   queue: max
 
 jobs:
   build:
     name: Archive iOS app and package unsigned IPA
-    runs-on: macos-15-intel
+    runs-on: macos-26-intel
     timeout-minutes: 90
     steps:
       - name: Check out source
