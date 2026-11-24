@@ -220,7 +220,7 @@ final class DictationRecognitionHintTests: XCTestCase {
     func testLearnedCorrectionsKeepHintSlotsWhenVocabularyIsFull() {
         let vocabulary = (1...100).map { "CustomTerm\($0)" }
         let corrections = (1...25).map {
-            DictationCorrection(heard: "heard\\($0)", meant: "LearnedFix\($0)")
+            DictationCorrection(heard: "heard\($0)", meant: "LearnedFix\($0)")
         }
 
         let hints = DictationCorrections.recognitionHints(vocabulary: vocabulary, corrections: corrections)
