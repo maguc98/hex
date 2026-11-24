@@ -569,6 +569,12 @@ final class KeyboardLocalDictation {
         }
     }
 
+    /// Reports why Quick wake could not start without handing the user off to the containing app.
+    func reportUnavailable(_ message: String) {
+        guard !isActive else { return }
+        fail(message, detail: "Quick wake unavailable")
+    }
+
     func cancel() {
         transcription?.cancel()
         transcription = nil
