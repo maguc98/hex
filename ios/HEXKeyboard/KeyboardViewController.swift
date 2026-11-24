@@ -823,11 +823,11 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     /// The full keyboard, or the dictation bar once it was chosen, on an iPhone and an iPad alike.
-    /// The bar remains visible when Full Access is off so its own setup prompt can explain what
-    /// is missing; its Dictate action routes to setup until access is granted. If the App Group
-    /// cannot be read, FullKeyboardSettings defaults to the full keyboard. Only switches while idle.
+    /// Without Full Access, iOS may withhold the App Group that stores the selection. Show the
+    /// dictation bar's setup prompt in that case instead of silently falling back to the full
+    /// keyboard; once access is granted, respect the saved choice. Only switches while idle.
     private func mountSurface() {
-        let wantsFull = FullKeyboardSettings().isEnabled
+        let wantsFull = hasFullAccess && FullKeyboardSettings().isEnabled
         guard surface == nil || wantsFull != (fullKeyboard != nil) else { return }
         guard surface == nil || viewModel.stagePhase == .idle || viewModel.stagePhase == .failed else { return }
         closeBarEmojiPanel()
@@ -960,6 +960,9 @@ final class KeyboardViewController: UIInputViewController {
                 clearPending: true,
                 animated: animated
             )
+            // The bridge is unavailable without Full Access, but the dictation bar itself
+            // can still render its setup prompt and lets the user open Hex's setup screen.
+            mountSurface()
             return
         }
 
