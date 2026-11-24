@@ -1163,7 +1163,13 @@ never at a launch by itself.
   press or caps lock (auto-capitalization leaves the comma); on the split Duo the two
   punctuation keys join only the left half, on a pitch narrowed so it keeps its right edge (its
   top-row keys are narrower), and `;` takes from the left space bar. A URL or email field keeps its
-  own `.` key instead of row 1's. Off, every layout is key for key the one it was. Kept per
+  own `.` key instead of row 1's. A `.webSearch` field (Safari's address bar) keeps
+  text-field behavior—autocorrect, swipe typing, suggestions, smart punctuation, emoji and
+  Adaptive touch—but places Apple's single `.` between space and return. Upright on iPhone,
+  the space bar ends one quarter pitch earlier and return starts at 8.25 pitches; landscape,
+  split and floating layouts use the field's trailing dot, while a docked iPad keeps its text row.
+  It never gets a second dot from the comma-and-period or Dvorak punctuation experiments.
+  Off, every layout is key for key the one it was. Kept per
   language in the App Group
   (`settings.keyboardLanguages.layouts`, `LanguageSettings.letterLayout(for:)`); unset,
   not offered, or unreadable (an iPhone that keeps the App Group from a keyboard without
