@@ -114,3 +114,4 @@ jobs:
           retention-days: 14
 
 # Triggered by updates to this workflow on the dev branch.
+# Build refresh: validate the deferred native Pinyin startup fix.
