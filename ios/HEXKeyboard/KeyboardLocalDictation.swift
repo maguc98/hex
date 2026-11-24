@@ -490,7 +490,7 @@ final class KeyboardLocalDictation {
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.resumeOtherAudioDelay) { [weak self] in
             guard let self else { return }
             switch self.phase {
-            case .armed, .recording:
+            case .armed, .starting, .recording:
                 // Another capture started: its end asks instead.
                 self.otherAudioAtStart = true
                 return

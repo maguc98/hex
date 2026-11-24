@@ -339,7 +339,7 @@ final class KeyboardViewModel: ObservableObject {
             case .start where snap.state == .starting:
                 return .starting
             case .start where snap.state != .recording:
-                return .recording
+                return .starting
             default:
                 break
             }

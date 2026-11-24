@@ -42,11 +42,13 @@ final class KeyboardBridgeTests: XCTestCase {
         let stale = snapshot(state: .ready, heartbeat: now - 3.0, expiresAt: now + 1)
         let expired = snapshot(state: .ready, heartbeat: now, expiresAt: now)
         let transcribingAfterSessionEnd = snapshot(state: .transcribing, heartbeat: now - 0.5, expiresAt: 0)
+        let starting = snapshot(state: .starting, heartbeat: now - 0.5, expiresAt: 0)
 
         XCTAssertTrue(available.isAvailable(at: now))
         XCTAssertFalse(stale.isAvailable(at: now))
         XCTAssertFalse(expired.isAvailable(at: now))
         XCTAssertTrue(transcribingAfterSessionEnd.isAvailable(at: now))
+        XCTAssertTrue(starting.isAvailable(at: now), "starting is an active capture heartbeat")
     }
 
     func testDeliverableResultSurvivesWarmSessionShutdownUntilTTL() {
@@ -120,6 +122,10 @@ final class KeyboardBridgeTests: XCTestCase {
         XCTAssertTrue(
             KeyboardSnapshot(state: .recording, heartbeat: 0, expiresAt: 0, jobID: "handoff").isOrphanedJob(at: t0),
             "never heartbeated"
+        )
+        XCTAssertTrue(
+            KeyboardSnapshot(state: .starting, heartbeat: 0, expiresAt: 0, jobID: "handoff").isOrphanedJob(at: t0),
+            "an abandoned startup must not hold another keyboard open"
         )
 
         // A result the snapshot carries still arrives, and a Hex heartbeating again is live again.

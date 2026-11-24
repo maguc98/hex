@@ -292,7 +292,7 @@ nonisolated struct KeyboardSnapshot: Codable, Equatable, Sendable {
     /// A recording or transcription Hex stopped heartbeating for. Nothing will finish it, and
     /// a new keyboard process reads it the same way: the heartbeat is wall-clock time.
     func isOrphanedJob(at now: TimeInterval) -> Bool {
-        guard state == .recording || state == .transcribing else { return false }
+        guard state == .starting || state == .recording || state == .transcribing else { return false }
         return heartbeat <= 0 || now - heartbeat > Self.orphanedJobTimeout
     }
 
