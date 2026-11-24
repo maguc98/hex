@@ -245,7 +245,7 @@ nonisolated enum TwoLanguageMerger {
             }
         }
 
-        let timedWords = ordered.map(\.element)
+        let timedWords = ordered.map { $0.element }
         var wordIndex = 0
         var buckets: [[TwoLanguageTimedWord]] = []
         buckets.reserveCapacity(segments.count)
