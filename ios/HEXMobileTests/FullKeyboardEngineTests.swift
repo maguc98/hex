@@ -1561,6 +1561,27 @@ final class FullKeyboardEngineTests: XCTestCase {
         XCTAssertEqual(target.text, ".")
     }
 
+    func testKeyboardSpeechModelStatusReflectsDictationLanguage() {
+        XCTAssertTrue(KeyboardParakeetStatus.onlyForEnglish(
+            enabled: true, twoLanguageDictation: false, multilingualModelReady: false, language: "fr-FR"
+        ))
+        XCTAssertTrue(KeyboardParakeetStatus.onlyForEnglish(
+            enabled: true, twoLanguageDictation: false, multilingualModelReady: false, language: "hi-IN"
+        ))
+        XCTAssertFalse(KeyboardParakeetStatus.onlyForEnglish(
+            enabled: true, twoLanguageDictation: false, multilingualModelReady: false, language: "en-US"
+        ))
+        XCTAssertFalse(KeyboardParakeetStatus.onlyForEnglish(
+            enabled: true, twoLanguageDictation: true, multilingualModelReady: false, language: "fr-FR"
+        ))
+        XCTAssertFalse(KeyboardParakeetStatus.onlyForEnglish(
+            enabled: true, twoLanguageDictation: false, multilingualModelReady: true, language: "fr-FR"
+        ))
+        XCTAssertFalse(KeyboardParakeetStatus.onlyForEnglish(
+            enabled: false, twoLanguageDictation: false, multilingualModelReady: false, language: "fr-FR"
+        ))
+    }
+
     func testKeyHapticStrengthIsLightUntilChosen() throws {
         let suite = "FullKeyboardEngineTests-Haptics-\(UUID().uuidString)"
         let store = try XCTUnwrap(UserDefaults(suiteName: suite))
