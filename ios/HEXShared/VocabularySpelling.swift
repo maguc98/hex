@@ -219,16 +219,25 @@ nonisolated enum VocabularySpelling {
     private static func words(in text: String) -> [Word] {
         var words: [Word] = []
         var wordStart: String.Index?
+        var previousWasCJK: Bool?
 
         for index in text.indices {
             let character = text[index]
             if isWordCharacter(character) {
-                if wordStart == nil {
+                let isCJK = isCJKLetter(character)
+                if let start = wordStart, let previousWasCJK, previousWasCJK != isCJK {
+                    appendWord(text[start..<index], to: &words)
+                    wordStart = index
+                } else if wordStart == nil {
                     wordStart = index
                 }
-            } else if let start = wordStart {
-                appendWord(text[start..<index], to: &words)
-                wordStart = nil
+                previousWasCJK = isApostrophe(character) ? previousWasCJK : isCJK
+            } else {
+                if let start = wordStart {
+                    appendWord(text[start..<index], to: &words)
+                    wordStart = nil
+                }
+                previousWasCJK = nil
             }
         }
 
@@ -236,6 +245,25 @@ nonisolated enum VocabularySpelling {
             appendWord(text[start...], to: &words)
         }
         return words
+    }
+
+    /// Chinese and Japanese text has no spaces between words. Split at script changes so
+    /// a Latin product or person name inside a CJK sentence remains independently matchable
+    /// by custom vocabulary (for example, "我在用OpenCode写代码").
+    private static func isCJKLetter(_ character: Character) -> Bool {
+        guard let scalar = character.unicodeScalars.first?.value else { return false }
+        switch scalar {
+        case 0x3040...0x30FF, // Hiragana and Katakana
+             0x3100...0x312F, // Bopomofo
+             0x31A0...0x31BF, // Bopomofo Extended
+             0x3400...0x4DBF, // CJK Extension A
+             0x4E00...0x9FFF, // CJK Unified Ideographs
+             0xF900...0xFAFF, // CJK Compatibility Ideographs
+             0x20000...0x2FA1F: // CJK Extensions B–F and compatibility supplement
+            return true
+        default:
+            return false
+        }
     }
 
     private static func appendWord(_ substring: Substring, to words: inout [Word]) {
