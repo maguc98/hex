@@ -10,6 +10,8 @@ struct DictationSettingsPage: View {
     @State private var formatLists = DictationListSettings().isEnabled
     @State private var spokenPunctuation = DictationPunctuationSettings().isEnabled
     @State private var endsWithPeriod = DictationPeriodSettings().isEnabled
+    @State private var showsWhatISay = LiveDictationSettings().showsPreview
+    @State private var typesAsISpeak = LiveDictationSettings().typesIntoField
     @State private var quickWake = KeyboardBridge().quickWakeEnabled
 
     var body: some View {
@@ -202,6 +204,12 @@ struct DictationSettingsPage: View {
         .onChange(of: endsWithPeriod) { _, enabled in
             DictationPeriodSettings().isEnabled = enabled
         }
+        .onChange(of: showsWhatISay) { _, enabled in
+            LiveDictationSettings().showsPreview = enabled
+        }
+        .onChange(of: typesAsISpeak) { _, enabled in
+            LiveDictationSettings().typesIntoField = enabled
+        }
         .onChange(of: quickWake) { _, enabled in
             dictation.setQuickWakeEnabled(enabled)
         }
@@ -212,6 +220,8 @@ struct DictationSettingsPage: View {
             formatLists = DictationListSettings().isEnabled
             spokenPunctuation = DictationPunctuationSettings().isEnabled
             endsWithPeriod = DictationPeriodSettings().isEnabled
+            showsWhatISay = LiveDictationSettings().showsPreview
+            typesAsISpeak = LiveDictationSettings().typesIntoField
             quickWake = KeyboardBridge().quickWakeEnabled
         }
     }
