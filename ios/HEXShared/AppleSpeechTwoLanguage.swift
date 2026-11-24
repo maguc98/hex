@@ -192,7 +192,7 @@ nonisolated enum AppleSpeechTwoLanguage {
             winner: merged.winner,
             secondaryLanguage: pair.secondary.identifier(.bcp47)
         )
-}
+    }
 
     /// The words of one Apple Speech result: one per timed run, with the run's raw characters
     /// (its leading whitespace included) and its audio time range and transcription
