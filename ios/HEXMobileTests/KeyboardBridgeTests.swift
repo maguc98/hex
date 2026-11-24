@@ -51,6 +51,28 @@ final class KeyboardBridgeTests: XCTestCase {
         XCTAssertTrue(starting.isAvailable(at: now), "starting is an active capture heartbeat")
     }
 
+    func testCaptureWatchWaitsForInterruptedMicrophoneAndResetsOnResume() {
+        var watch = KeyboardCaptureWatch(startedAt: 100)
+        watch.heardAudio(at: 102)
+        XCTAssertFalse(watch.isStalled(now: 107))
+
+        let interrupted = KeyboardCapturePageState(
+            cause: "mute", context: "interrupted", muted: true, ended: false, at: 108
+        )
+        XCTAssertEqual(watch.page(interrupted, at: 108), .interrupted)
+        XCTAssertEqual(watch.interruptedSince, 108)
+        XCTAssertFalse(watch.isStalled(now: 122), "a notification gets up to 15 seconds to release the audio session")
+        XCTAssertTrue(watch.isStalled(now: 124), "a call or alarm that outlasts the recovery window finishes with what was heard")
+
+        let resumed = KeyboardCapturePageState(
+            cause: "unmute", context: "running", muted: false, ended: false, at: 120
+        )
+        XCTAssertEqual(watch.page(resumed, at: 120), .resumed(after: 12))
+        XCTAssertNil(watch.interruptedSince)
+        XCTAssertFalse(watch.isStalled(now: 125), "silence is counted again from when the microphone came back")
+        XCTAssertTrue(watch.isStalled(now: 127))
+    }
+
     func testDeliverableResultSurvivesWarmSessionShutdownUntilTTL() {
         let now = 5_000.0
         let closedWithResult = KeyboardSnapshot(
