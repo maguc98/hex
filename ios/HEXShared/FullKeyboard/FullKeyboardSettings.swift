@@ -1,7 +1,7 @@
 import Foundation
 
-/// How hard the keys' haptic tap is (Settings › Keyboard › Strength). Medium is meant to match
-/// Apple's keyboard (testers found Hex's, a 0.65 light impact, too weak beside it).
+/// How hard the keys' haptic tap is (Settings › Keyboard › Strength). Light by default: testers
+/// found Medium, the default until TestFlight in November 2026, too strong.
 nonisolated enum KeyHapticStrength: String, CaseIterable, Sendable {
     case light
     case medium
@@ -188,7 +188,7 @@ struct FullKeyboardSettings {
     /// Settings › Keyboard › Strength, under Haptics: how hard each key's tap is. Medium, the
     /// default, is meant to feel like Apple's keyboard.
     var hapticStrength: KeyHapticStrength {
-        get { defaults?.string(forKey: Key.hapticStrength).flatMap(KeyHapticStrength.init(rawValue:)) ?? .medium }
+        get { defaults?.string(forKey: Key.hapticStrength).flatMap(KeyHapticStrength.init(rawValue:)) ?? .light }
         nonmutating set { defaults?.set(newValue.rawValue, forKey: Key.hapticStrength) }
     }
 
