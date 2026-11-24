@@ -21,7 +21,7 @@ concurrency:
 jobs:
   build:
     name: Archive iOS app and package unsigned IPA
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 90
     steps:
       - name: Check out source
