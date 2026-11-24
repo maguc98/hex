@@ -15,6 +15,8 @@ final class KeyboardLocalDictation {
         /// The Hex key's touch-down, before the touch is a tap, a hold or a slide: capturing,
         /// unseen (no snapshot), until `start` keeps it or `discard` drops it.
         case armed(jobID: String, startedAt: TimeInterval)
+        /// The microphone was requested; recording is shown only after its first audio buffer.
+        case starting(jobID: String, startedAt: TimeInterval)
         case recording(jobID: String, startedAt: TimeInterval)
         case transcribing(jobID: String)
         case finished(
@@ -49,6 +51,8 @@ final class KeyboardLocalDictation {
     /// The words so far while recording (`KeyboardLiveDictation`), for the keyboard to show.
     var liveText: LiveDictationText?
     private var live: KeyboardLiveDictation?
+    /// True only after WebKit has delivered a real microphone buffer for this job.
+    private var hasReceivedAudio = false
     /// When the job last showed progress: its start, its capture's last audio, or the start of
     /// its transcription (`KeyboardJobWatchdog`).
     private var lastProgressAt: TimeInterval = 0
@@ -132,7 +136,7 @@ final class KeyboardLocalDictation {
 
     var isActive: Bool {
         switch phase {
-        case .armed, .recording, .transcribing: true
+        case .armed, .starting, .recording, .transcribing: true
         default: false
         }
     }
@@ -140,7 +144,7 @@ final class KeyboardLocalDictation {
     /// The capture for `jobID` is the one running, armed or recording.
     private func isCapturing(_ jobID: String) -> Bool {
         switch phase {
-        case .armed(let current, _), .recording(let current, _): current == jobID
+        case .armed(let current, _), .starting(let current, _), .recording(let current, _): current == jobID
         default: false
         }
     }
@@ -149,6 +153,14 @@ final class KeyboardLocalDictation {
         switch phase {
         case .idle, .armed:
             return nil
+        case .starting(let jobID, let startedAt):
+            return KeyboardSnapshot(
+                state: .starting,
+                heartbeat: now,
+                expiresAt: now + 60,
+                recordingStartedAt: startedAt,
+                jobID: jobID
+            )
         case .recording(let jobID, let startedAt):
             return KeyboardSnapshot(
                 state: .recording,
@@ -399,7 +411,9 @@ final class KeyboardLocalDictation {
     }
 
     private func keepArmed(jobID: String, startedAt: TimeInterval) {
-        phase = .recording(jobID: jobID, startedAt: startedAt)
+        phase = hasReceivedAudio
+            ? .recording(jobID: jobID, startedAt: startedAt)
+            : .starting(jobID: jobID, startedAt: startedAt)
         KeyboardProbeLog.shared.write("touch-down capture kept after \(Int((Date().timeIntervalSince1970 - startedAt) * 1000)) ms")
         if let failure = armedFailure {
             armedFailure = nil
@@ -431,9 +445,10 @@ final class KeyboardLocalDictation {
         activeCorrections = corrections()
         loudness = -62
         armedFailure = nil
+        hasReceivedAudio = false
         phase = armed
             ? .armed(jobID: jobID, startedAt: requestedAt.timeIntervalSince1970)
-            : .recording(jobID: jobID, startedAt: requestedAt.timeIntervalSince1970)
+            : .starting(jobID: jobID, startedAt: requestedAt.timeIntervalSince1970)
         timeline = CaptureTimeline(
             pressedAt: min(pressedAt ?? requestedAt.timeIntervalSince1970, requestedAt.timeIntervalSince1970),
             requestedAt: requestedAt.timeIntervalSince1970
@@ -546,6 +561,12 @@ final class KeyboardLocalDictation {
                 fail(UserFacingError.Context.microphone.fallback, detail: "Could not create audio file: \(Self.describe(error))")
             }
         case .samples(let data, let peak):
+            if !hasReceivedAudio {
+                hasReceivedAudio = true
+                if case .starting(let current, let startedAt) = phase, current == jobID {
+                    phase = .recording(jobID: jobID, startedAt: startedAt)
+                }
+            }
             if let line = timeline?.firstBuffer(at: Date().timeIntervalSince1970) {
                 log.write("\(line) \(KeyboardProbeLog.memory())")
                 timeline = nil
@@ -604,7 +625,11 @@ final class KeyboardLocalDictation {
     }
 
     func stop() {
-        guard case .recording(let jobID, _) = phase else { return }
+        let jobID: String
+        switch phase {
+        case .starting(let current, _), .recording(let current, _): jobID = current
+        default: return
+        }
         guard startPending != jobID else {
             // Done before the page was even asked to start: nothing was recorded.
             startPending = nil
@@ -622,7 +647,7 @@ final class KeyboardLocalDictation {
         switch phase {
         case .armed:
             discard(reason: "keyboard hidden")
-        case .recording(let jobID, _):
+        case .starting(let jobID, _), .recording(let jobID, _):
             job?.interrupted = true
             KeyboardProbeLog.shared.write("keyboard hidden while recording: finishing with what was said")
             if let capture, capture !== Self.sharedCapture || Self.ownership.owner == ownerID {
@@ -651,7 +676,7 @@ final class KeyboardLocalDictation {
     /// keyboard never stays in recording or transcribing with nothing behind it.
     func healIfStalled(now: TimeInterval) {
         switch phase {
-        case .recording(let jobID, _) where KeyboardJobWatchdog.isStalled(.recording, lastProgress: lastProgressAt, now: now):
+        case .starting(let jobID, _), .recording(let jobID, _) where KeyboardJobWatchdog.isStalled(.recording, lastProgress: lastProgressAt, now: now):
             KeyboardProbeLog.shared.write("capture silent for \(Int(now - lastProgressAt)) s: finishing with what it heard")
             if let capture {
                 listenWhileIdle(capture)
@@ -681,7 +706,11 @@ final class KeyboardLocalDictation {
     }
 
     private func finishRecording(jobID: String) {
-        guard case .recording(_, let startedAt) = phase else { return }
+        let startedAt: TimeInterval
+        switch phase {
+        case .starting(_, let at), .recording(_, let at): startedAt = at
+        default: return
+        }
         noteCaptureStopped()
         guard let file = pcmFile else {
             endQuietly("stopped before the microphone started")

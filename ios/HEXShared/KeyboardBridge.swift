@@ -3,6 +3,7 @@ import Foundation
 nonisolated enum KeyboardDictationState: String, Codable, Sendable {
     case offline
     case ready
+    case starting
     case recording
     case transcribing
     case failed
@@ -257,7 +258,7 @@ nonisolated struct KeyboardSnapshot: Codable, Equatable, Sendable {
     func isAvailable(at now: TimeInterval) -> Bool {
         let heartbeatFresh = now - heartbeat < 3.0 && heartbeat > 0
         guard heartbeatFresh else { return false }
-        if state == .recording || state == .transcribing {
+        if state == .starting || state == .recording || state == .transcribing {
             return true
         }
         return expiresAt > now

@@ -16,6 +16,7 @@ final class KeyboardViewModel: ObservableObject {
 
     enum StagePhase: Equatable {
         case idle
+        case starting
         case recording
         case transcribing
         case failed
@@ -177,6 +178,8 @@ final class KeyboardViewModel: ObservableObject {
         switch stagePhase {
         case .idle:
             return .idle
+        case .starting:
+            return .idle // Keep the scope calm until the first real microphone buffer.
         case .recording:
             return .recording
         case .transcribing:
@@ -229,7 +232,7 @@ final class KeyboardViewModel: ObservableObject {
             pendingCommand = nil
         } else if let pending = pendingCommand {
             let expired = now - pending.sentAt >= Self.commandAckTimeout
-            let acknowledged = (pending.kind == .start && newSnapshot.state == .recording)
+            let acknowledged = (pending.kind == .start && (newSnapshot.state == .starting || newSnapshot.state == .recording))
                 || (pending.kind == .stop && newSnapshot.state != .recording)
                 || (pending.kind == .cancel && newSnapshot.state != .recording)
             if expired || acknowledged {
@@ -333,6 +336,8 @@ final class KeyboardViewModel: ObservableObject {
                 return .idle
             case .stop where snap.state == .recording:
                 return .transcribing
+            case .start where snap.state == .starting:
+                return .starting
             case .start where snap.state != .recording:
                 return .recording
             default:
@@ -341,6 +346,8 @@ final class KeyboardViewModel: ObservableObject {
         }
 
         switch snap.state {
+        case .starting:
+            return .starting
         case .recording:
             return .recording
         case .transcribing:
