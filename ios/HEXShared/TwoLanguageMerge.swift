@@ -182,9 +182,24 @@ nonisolated enum TwoLanguageMerger {
         secondary: [TwoLanguageTimedWord]
     ) -> [TimeInterval] {
         var cuts: [TimeInterval] = [0]
-        for left in primary {
-            for right in secondary where abs(left.end - right.end) <= cutTolerance {
-                cuts.append(min(left.end, right.end))
+        // Match sorted word ends with a two-pointer sweep. The former nested scan was
+        // quadratic in the number of words, which became noticeable on long recordings.
+        let primaryEnds = primary.map(\.end).filter(\.isFinite).sorted()
+        let secondaryEnds = secondary.map(\.end).filter(\.isFinite).sorted()
+        var left = 0
+        var right = 0
+        while left < primaryEnds.count, right < secondaryEnds.count {
+            let primaryEnd = primaryEnds[left]
+            let secondaryEnd = secondaryEnds[right]
+            let difference = primaryEnd - secondaryEnd
+            if abs(difference) <= cutTolerance {
+                cuts.append(min(primaryEnd, secondaryEnd))
+                left += 1
+                right += 1
+            } else if difference < 0 {
+                left += 1
+            } else {
+                right += 1
             }
         }
         cuts.append(max((primary + secondary).map(\.end).max() ?? 0, 0))
