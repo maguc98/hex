@@ -1206,7 +1206,7 @@ struct KeyboardSurfaceView: View {
     /// hold there can be push to talk; opening Hex or setup stays a tap.
     private var canHoldToTalk: Bool {
         guard model.hasFullAccess, model.stagePhase == .idle || model.stagePhase == .failed else { return false }
-        return (model.isWarmAvailable && model.stagePhase != .failed) || model.onLocalDictateTap != nil
+        return model.dictatesThroughHex || model.onLocalDictateTap != nil
     }
 
     /// Hold still on Dictate for `HexKeyGesture.holdDuration`: dictation starts with a light
