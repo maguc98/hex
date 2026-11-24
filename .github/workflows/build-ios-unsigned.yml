@@ -15,8 +15,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: hex-ios-unsigned-${{ github.ref }}
-  cancel-in-progress: false
+  group: ${{ github.workflow }}-${{ github.ref }}
+  queue: max
 
 jobs:
   build:
