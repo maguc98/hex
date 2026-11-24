@@ -167,9 +167,16 @@ final class KeyboardParakeet {
             return fallback(loadTask != nil ? "\(choice.label) still loading" : "\(choice.label) not loaded")
         }
         guard !isTranscribing else { return fallback("another transcription running") }
+        // FluidAudio buffers the full recording; Apple's recognizer streams it.
+        guard audioSeconds <= KeyboardParakeetBudget.longestAudio else {
+            return fallback("longer than \(Int(KeyboardParakeetBudget.longestAudio)) s")
+        }
         guard KeyboardParakeetBudget.allowsTranscription(
-            multilingual: choice.multilingual, footprint: before.footprint, available: before.available
-        ) else { return fallback("short of memory") }
+            multilingual: choice.multilingual, footprint: before.footprint,
+            available: before.available, audioSeconds: audioSeconds
+        ) else {
+            return fallback("short of memory for \(String(format: "%.0f", audioSeconds)) s of audio")
+        }
         isTranscribing = true
         defer {
             isTranscribing = false

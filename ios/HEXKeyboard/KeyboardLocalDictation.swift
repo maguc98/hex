@@ -703,7 +703,8 @@ final class KeyboardLocalDictation {
         lastProgressAt = Date().timeIntervalSince1970
         let url = file.url
         let fixes = activeCorrections
-        let hints = DictationCorrections.recognitionHints(vocabulary: [], corrections: fixes)
+        let vocabulary = CustomVocabularySettings().activeTerms
+        let hints = DictationCorrections.recognitionHints(vocabulary: vocabulary, corrections: fixes)
         transcription = Task { [weak self] in
             let started = Date()
             do {
@@ -711,7 +712,6 @@ final class KeyboardLocalDictation {
                 try? FileManager.default.removeItem(at: url)
                 let locale = language.identifier
                 let style = KeyboardBridge().style
-                let vocabulary = CustomVocabularySettings().activeTerms
                 // The app's steps (but Apple Intelligence's cleanup), its style, Format lists,
                 // Spoken punctuation, End with a period and Lowercase included.
                 let pipeline = DictationPipeline(
