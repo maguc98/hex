@@ -217,15 +217,20 @@ actor AppleSpeechTranscriber: LocalTranscribing {
         // single-language path below runs exactly as before.
         let twoLanguage = TwoLanguageDictationSettings()
         if twoLanguage.isEnabled,
-           let pair = await AppleSpeechTwoLanguage.usablePair(for: language),
-           let merged = await AppleSpeechTwoLanguage.transcribe(
-               audioURL,
-               pair: pair,
-               vocabulary: vocabulary,
-               lingeringModels: true
-           ) {
-            guard !merged.text.isEmpty else { throw TranscriberError.emptyTranscript }
-            return merged.text
+           let pair = await AppleSpeechTwoLanguage.usablePair(for: language) {
+            let merged = await AppleSpeechTwoLanguage.transcribe(
+                audioURL,
+                pair: pair,
+                vocabulary: vocabulary,
+                lingeringModels: true
+            )
+            // A cancelled two-language run must not fall through and start a fresh
+            // single-language analyzer for the same recording.
+            try Task.checkCancellation()
+            if let merged {
+                guard !merged.text.isEmpty else { throw TranscriberError.emptyTranscript }
+                return merged.text
+            }
         }
 
         let speech: AppleSpeechModule
@@ -250,9 +255,17 @@ actor AppleSpeechTranscriber: LocalTranscribing {
             try? await analyzer.setContext(context)
         }
 
-        try await analyzer.start(inputAudioFile: audioFile, finishAfterFile: true)
-
-        let text = try await speech.finalText()
+        // Cancelling the caller must stop SpeechAnalyzer too; otherwise its autonomous
+        // file analysis can continue consuming resources after Hex has returned to Ready.
+        let text = try await withTaskCancellationHandler {
+            try await analyzer.start(inputAudioFile: audioFile, finishAfterFile: true)
+            try Task.checkCancellation()
+            return try await speech.finalText()
+        } onCancel: {
+            Task {
+                await analyzer.cancelAndFinishNow()
+            }
+        }
         guard !text.isEmpty else {
             throw TranscriberError.emptyTranscript
         }
