@@ -2399,6 +2399,28 @@ final class FullKeyboardEngineTests: XCTestCase {
 
     /// A 390 pt keyboard with Swipe typing on: its key plane, typing into a field holding
     /// `text` (or the given one, for a host that does something particular).
+    /// Safari's address bar types words like a text field, including swipe, autocorrection and suggestions.
+    func testAWebSearchFieldTypesWordsAsATextFieldDoes() throws {
+        func typing(in keyboardType: UIKeyboardType) throws -> (swipes: Bool, text: String, suggestions: [String]) {
+            let field = FixtureTextTarget()
+            field.keyboardType = keyboardType
+            let (_, plane) = try swipeKeyboard(target: field)
+            plane.engine.letterOdds = try XCTUnwrap(TypingDecoderModel.bundled("en"))
+            let swipes = plane.engine.allowsSwipes
+            swipe("hello", on: plane)
+            for letter in "teh" { tap(.character(String(letter)), on: plane) }
+            tap(.space, on: plane)
+            return (swipes, field.text, plane.engine.suggestions.map(\.replacement))
+        }
+        let text = try typing(in: .default)
+        let search = try typing(in: .webSearch)
+        XCTAssertTrue(search.swipes)
+        XCTAssertEqual(search.text, "hello the ", "swiped, then autocorrected on space")
+        XCTAssertEqual(search.text, text.text)
+        XCTAssertFalse(search.suggestions.isEmpty)
+        XCTAssertEqual(search.suggestions, text.suggestions)
+    }
+
     private func swipeKeyboard(
         _ text: String = "", language: KeyboardLanguage = .english, target: FixtureTextTarget? = nil
     ) throws -> (FixtureTextTarget, KeyboardKeyPlaneView) {
