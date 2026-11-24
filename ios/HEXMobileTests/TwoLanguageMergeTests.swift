@@ -126,6 +126,39 @@ final class TwoLanguageMergeTests: XCTestCase {
         XCTAssertTrue(merged.usedSecondary)
     }
 
+    func testDenseNearbyWordEndsKeepEveryDistinctMatchingBoundary() {
+        let primary = [
+            word(" first", 0.5, 1.0, 0.9),
+            word(" second", 1.0, 1.1, 0.9),
+        ]
+        let secondary = [
+            word(" earlier", 0.4, 0.95, 0.8),
+            word(" later", 0.95, 1.05, 0.8),
+        ]
+
+        // Both primary ends are within 150 ms of more than one secondary boundary.
+        // The unique earlier ends from every matching pair must survive.
+        XCTAssertEqual(
+            TwoLanguageMerger.cutPoints(primary: primary, secondary: secondary),
+            [0, 0.95, 1.0, 1.05, 1.1]
+        )
+    }
+
+    func testUnsortedTimedRunsAreRestoredToChronologicalOrder() {
+        let primary = [
+            word(" world", 0.5, 1.0, 0.95),
+            word(" hello", 0.0, 0.5, 0.95),
+        ]
+        let secondary = [
+            word(" unrelated", 0.0, 2.0, 0.1),
+        ]
+
+        let merged = TwoLanguageMerger.merge(primary: primary, secondary: secondary)
+        XCTAssertEqual(merged.text, "hello world")
+        XCTAssertEqual(merged.winner, .primary)
+        XCTAssertFalse(merged.usedSecondary)
+    }
+
     func testEmptySecondaryReturnsThePrimaryText() {
         let primary = [
             word(" hello", 0, 0.5, 0.9),
