@@ -59,6 +59,27 @@ final class FullKeyboardEngineTests: XCTestCase {
         XCTAssertEqual(settings.hexKeyPlacement, .rightOfSpace, "the Hex key belongs beside the space bar")
     }
 
+    func testFullKeyboardDefersNativePinyinUntilAfterItsFirstFrame() {
+        let view = FullKeyboardView(model: KeyboardViewModel(), target: target)
+
+        // The first frame must be available before creating Inputx's synchronous native session.
+        XCTAssertFalse(view.engine.isChinesePinyinMode)
+        XCTAssertFalse(view.plane.isUserInteractionEnabled)
+        XCTAssertTrue(view.globeButton.isUserInteractionEnabled)
+
+        let activated = expectation(description: "Pinyin activates after the first frame")
+        DispatchQueue.main.asyncAfter(deadline: .now() + KeyboardLaunchWork.afterFirstFrame + 0.05) {
+            XCTAssertTrue(view.engine.isChinesePinyinMode)
+            activated.fulfill()
+        }
+        wait(for: [activated], timeout: 2)
+
+        let warmed = expectation(description: "Pinyin warmup completes")
+        view.engine.whenChinesePinyinReady { warmed.fulfill() }
+        wait(for: [warmed], timeout: 3)
+        XCTAssertTrue(view.plane.isUserInteractionEnabled)
+    }
+
     func testOfflinePinyinSessionWarmupCompletesWithoutBlockingTheCaller() {
         let session = ChinesePinyinSession()
         XCTAssertTrue(session.isAvailable, "the Inputx native Pinyin core must be linked into the keyboard")
