@@ -233,8 +233,8 @@ final class KeyboardViewModel: ObservableObject {
         } else if let pending = pendingCommand {
             let expired = now - pending.sentAt >= Self.commandAckTimeout
             let acknowledged = (pending.kind == .start && (newSnapshot.state == .starting || newSnapshot.state == .recording))
-                || (pending.kind == .stop && newSnapshot.state != .recording)
-                || (pending.kind == .cancel && newSnapshot.state != .recording)
+                || (pending.kind == .stop && newSnapshot.state != .starting && newSnapshot.state != .recording)
+                || (pending.kind == .cancel && newSnapshot.state != .starting && newSnapshot.state != .recording)
             if expired || acknowledged {
                 pendingCommand = nil
             }
@@ -242,8 +242,6 @@ final class KeyboardViewModel: ObservableObject {
 
         let recordingElapsed: TimeInterval? = if newSnapshot.state == .recording {
             newSnapshot.recordingElapsed(at: now)
-        } else if let pending = pendingCommand, pending.kind == .start {
-            max(0, now - pending.sentAt)
         } else {
             nil
         }
