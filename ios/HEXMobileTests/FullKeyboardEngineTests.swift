@@ -1561,6 +1561,22 @@ final class FullKeyboardEngineTests: XCTestCase {
         XCTAssertEqual(target.text, ".")
     }
 
+    func testKeyHapticStrengthIsLightUntilChosen() throws {
+        let suite = "FullKeyboardEngineTests-Haptics-\\(UUID().uuidString)"
+        let store = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { store.removePersistentDomain(forName: suite) }
+        let settings = FullKeyboardSettings(defaults: store)
+
+        XCTAssertEqual(settings.hapticStrength, .light)
+        XCTAssertEqual(FullKeyboardSettings(defaults: nil).hapticStrength, .light, "without the App Group")
+        for strength in KeyHapticStrength.allCases {
+            settings.hapticStrength = strength
+            XCTAssertEqual(FullKeyboardSettings(defaults: store).hapticStrength, strength)
+        }
+        store.set("medium", forKey: "settings.keyboardHapticStrength")
+        XCTAssertEqual(settings.hapticStrength, .medium, "an existing stored choice is preserved")
+    }
+
     func testNumberPadOpensOnNumbers() {
         target.keyboardType = .numberPad
         engine.configureForField()
