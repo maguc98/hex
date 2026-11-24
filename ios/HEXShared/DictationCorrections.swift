@@ -71,7 +71,7 @@ nonisolated enum DictationCorrections {
     static func recognitionHints(vocabulary: [String], corrections: [DictationCorrection]) -> [String] {
         let limit = CustomVocabularySettings.maxTermCount
         let correctionTerms = corrections.map(\.meant)
-        let correctionSlots = min(20, correctionTerms.count, limit)
+        let correctionSlots = min(20, min(correctionTerms.count, limit))
         let vocabularySlots = limit - correctionSlots
         var seen = Set<String>()
         var hints: [String] = []
