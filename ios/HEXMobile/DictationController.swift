@@ -13,7 +13,8 @@ final class DictationController {
     )
 
     private static let minCaptureDuration: TimeInterval = 0.30
-    private static let maxCaptureDuration: TimeInterval = 60.0
+    /// Three minutes accommodates longer spoken notes while keeping mono 16 kHz PCM under 6 MB.
+    private static let maxCaptureDuration: TimeInterval = 180.0
     private static let resultDeliveryTTL: TimeInterval = 30.0
 
     enum Phase: Equatable {
