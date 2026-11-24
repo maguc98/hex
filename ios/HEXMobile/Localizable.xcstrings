@@ -4331,6 +4331,16 @@
         }
       }
     },
+    "Only for English dictation." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "仅支持英语听写。"
+          }
+        }
+      }
+    },
     "The keyboard can't use it right now, so it uses Apple's speech recognition." : {
       "localizations" : {
         "zh-Hans" : {
