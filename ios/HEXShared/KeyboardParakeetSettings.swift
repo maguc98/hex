@@ -53,9 +53,11 @@ nonisolated struct KeyboardParakeetSettings {
         defaults?.set(now.timeIntervalSince1970, forKey: Self.keyboardStateAtKey)
     }
 
-    /// As the app's Parakeet: 6 GB iPhones report about 5.5 GB.
+    /// The keyboard model is no longer gated by the iPhone's total physical memory.
+    /// Actual loading and transcription remain guarded by KeyboardParakeetBudget using
+    /// this keyboard process's live footprint and available memory.
     static func fits(physicalMemory: UInt64 = ProcessInfo.processInfo.physicalMemory) -> Bool {
-        physicalMemory >= MultilingualParakeetSettings.minimumPhysicalMemory
+        true
     }
 
     /// Simulator scenes pass `--experiment-keyboard-parakeet` to turn the experiment on.
