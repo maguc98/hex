@@ -215,3 +215,34 @@ final class CustomVocabularySettingsTests: XCTestCase {
         XCTAssertEqual(saved.last, "Term 97")
     }
 }
+
+final class DictationRecognitionHintTests: XCTestCase {
+    func testLearnedCorrectionsKeepHintSlotsWhenVocabularyIsFull() {
+        let vocabulary = (1...100).map { "CustomTerm\\($0)" }
+        let corrections = (1...25).map {
+            DictationCorrection(heard: "heard\\($0)", meant: "LearnedFix\\($0)")
+        }
+
+        let hints = DictationCorrections.recognitionHints(vocabulary: vocabulary, corrections: corrections)
+
+        XCTAssertEqual(hints.count, CustomVocabularySettings.maxTermCount)
+        XCTAssertEqual(hints.prefix(80), vocabulary.prefix(80))
+        XCTAssertEqual(hints.suffix(20), corrections.prefix(20).map(\\.meant))
+    }
+
+    func testUnusedCorrectionSlotsAreFilledByVocabulary() {
+        let vocabulary = (1...100).map { "CustomTerm\\($0)" }
+        let corrections = [
+            DictationCorrection(heard: "heard one", meant: "LearnedOne"),
+            DictationCorrection(heard: "heard two", meant: "LearnedTwo"),
+        ]
+
+        let hints = DictationCorrections.recognitionHints(vocabulary: vocabulary, corrections: corrections)
+
+        XCTAssertEqual(hints.count, CustomVocabularySettings.maxTermCount)
+        XCTAssertEqual(Array(hints.prefix(2)), ["CustomTerm1", "CustomTerm2"])
+        XCTAssertTrue(hints.contains("LearnedOne"))
+        XCTAssertTrue(hints.contains("LearnedTwo"))
+        XCTAssertEqual(hints.last, "CustomTerm98")
+    }
+}
