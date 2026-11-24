@@ -261,7 +261,6 @@ final class KeyboardViewController: UIInputViewController {
         closeBarEmojiPanel()
         // A dictation under way finishes without the keyboard, and the next one delivers it.
         liveTyping.keyboardWillHide()
-        liveTyping.keyboardWillHide()
         localDictation.keyboardWillHide()
         endTypingLogSession(reason: "disappear", settleDictation: editContext)
         pollTimer?.invalidate()
@@ -626,7 +625,6 @@ final class KeyboardViewController: UIInputViewController {
         isRetired = true
         launchWork.forEach { $0.cancel() }
         launchWork = []
-        liveTyping.keyboardWillHide()
         liveTyping.keyboardWillHide()
         localDictation.keyboardWillHide()
         endTypingLogSession(reason: "superseded", settleDictation: nil)
