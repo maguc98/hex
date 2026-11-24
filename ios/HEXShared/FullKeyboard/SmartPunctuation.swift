@@ -123,11 +123,11 @@ extension FullKeyboardEngine {
 
     /// Smart quotes in this field: a text field that doesn't turn them off.
     var smartQuotes: Bool {
-        field == .text && target.isSecureTextEntry != true && SmartPunctuation.isOn(target.smartQuotesType)
+        field.takesWords && target.isSecureTextEntry != true && SmartPunctuation.isOn(target.smartQuotesType)
     }
 
     var smartDashes: Bool {
-        field == .text && target.isSecureTextEntry != true && SmartPunctuation.isOn(target.smartDashesType)
+        field.takesWords && target.isSecureTextEntry != true && SmartPunctuation.isOn(target.smartDashesType)
     }
 
     /// `text` as it goes into the field, after `previous` (the field's character before the
