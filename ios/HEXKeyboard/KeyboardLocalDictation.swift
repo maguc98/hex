@@ -1226,16 +1226,20 @@ enum KeyboardSpeech {
         // language too, merged word by word; the pipeline still runs as the primary language.
         let twoLanguage = TwoLanguageDictationSettings()
         if twoLanguage.isEnabled,
-           let pair = await AppleSpeechTwoLanguage.usablePair(for: language),
-           let merged = await AppleSpeechTwoLanguage.transcribe(
-               url,
-               pair: pair,
-               vocabulary: hints,
-               lingeringModels: false
-           ) {
-            guard !merged.text.isEmpty else { throw Failure.empty }
-            log.write("two-language \(pair.secondary.identifier(.bcp47)) won=\(merged.winner.rawValue) \(KeyboardProbeLog.memory())")
-            return (merged.text, language)
+           let pair = await AppleSpeechTwoLanguage.usablePair(for: language) {
+            let merged = await AppleSpeechTwoLanguage.transcribe(
+                url,
+                pair: pair,
+                vocabulary: hints,
+                lingeringModels: false
+            )
+            // Don't launch a single-language fallback after the user cancelled both readings.
+            try Task.checkCancellation()
+            if let merged {
+                guard !merged.text.isEmpty else { throw Failure.empty }
+                log.write("two-language \(pair.secondary.identifier(.bcp47)) won=\(merged.winner.rawValue) \(KeyboardProbeLog.memory())")
+                return (merged.text, language)
+            }
         }
 
         let analyzer = SpeechAnalyzer(
@@ -1249,10 +1253,16 @@ enum KeyboardSpeech {
             context.contextualStrings[.general] = hints
             try? await analyzer.setContext(context)
         }
-        try await analyzer.start(inputAudioFile: file, finishAfterFile: true)
-        log.write("analyzer started \(KeyboardProbeLog.memory())")
-
-        let text = try await speech.finalText()
+        let text = try await withTaskCancellationHandler {
+            try await analyzer.start(inputAudioFile: file, finishAfterFile: true)
+            try Task.checkCancellation()
+            log.write("analyzer started \(KeyboardProbeLog.memory())")
+            return try await speech.finalText()
+        } onCancel: {
+            Task {
+                await analyzer.cancelAndFinishNow()
+            }
+        }
         guard !text.isEmpty else { throw Failure.empty }
         return (text, language)
     }
