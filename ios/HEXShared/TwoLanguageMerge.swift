@@ -213,6 +213,17 @@ nonisolated enum TwoLanguageMerger {
             }
         }
 
+        // At a language change, the readings may never end a word together: one can hear
+        // long words where the other hears none. A boundary not spanned by a word in the
+        // other reading is safe to cut at and keeps both stretches of speech.
+        for (reading, other) in [(primary, secondary), (secondary, primary)] {
+            for word in reading where word.end.isFinite && !other.contains(where: {
+                $0.start < word.end - cutTolerance && $0.end > word.end + cutTolerance
+            }) {
+                cuts.append(word.end)
+            }
+        }
+
         cuts.append(max(max(primaryEnds.last ?? 0, secondaryEnds.last ?? 0), 0))
         cuts.sort()
         var unique: [TimeInterval] = []
