@@ -1562,7 +1562,7 @@ final class FullKeyboardEngineTests: XCTestCase {
     }
 
     func testKeyHapticStrengthIsLightUntilChosen() throws {
-        let suite = "FullKeyboardEngineTests-Haptics-\\(UUID().uuidString)"
+        let suite = "FullKeyboardEngineTests-Haptics-\(UUID().uuidString)"
         let store = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { store.removePersistentDomain(forName: suite) }
         let settings = FullKeyboardSettings(defaults: store)
