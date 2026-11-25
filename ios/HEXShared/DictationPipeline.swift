@@ -265,8 +265,8 @@ nonisolated enum DictationRecognitionMode: String, CaseIterable, Sendable {
 
     var detail: String {
         switch self {
-        case .precise: String(localized: "Prioritizes recognition accuracy")
-        case .fast: String(localized: "Prioritizes faster, more responsive recognition")
+        case .precise: String(localized: "Apple Speech prioritizes recognition accuracy")
+        case .fast: String(localized: "Apple Speech prioritizes faster, more responsive recognition")
         }
     }
 }
