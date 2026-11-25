@@ -16,7 +16,9 @@ extension DictationController {
             prepareBeforeAppleSpeechAtLaunch(hasCachedModel: hasCachedModel)
             return
         }
-        if hasCachedModel && !parakeetInterrupted {
+        if hasCachedModel && !parakeetInterrupted
+            && DictationRecognitionModeSettings().mode == .fast
+            && SpeechLanguagePicker.isEnglish(Self.wantedLanguage()) {
             engineName = "Parakeet V2"
             prepareModel()
             return
