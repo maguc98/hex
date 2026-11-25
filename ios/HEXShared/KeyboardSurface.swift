@@ -692,7 +692,8 @@ struct KeyboardSurfaceView: View {
         let showTranslationNote = model.hasFullAccess
             && model.translationNote != nil
             && !isStageActive
-        let showStoppedNote = model.stoppedNote != nil
+        // Stale stopped-note status must never overlay the live recording clock.
+        let showStoppedNote = model.stoppedNote != nil && !isStageActive
         let showWarmStatus = model.hasFullAccess
             && model.isWarmAvailable
             && !isStageActive
@@ -724,7 +725,7 @@ struct KeyboardSurfaceView: View {
             .hexTrayReveal(showRecordingClock, reduceMotion: reduceMotion, offsetY: 2)
 
             Group {
-                if let message = model.statusMessage ?? model.stoppedNote.map({ "\($0.title). \($0.detail)" }) {
+                if let message = model.statusMessage ?? (showStoppedNote ? model.stoppedNote.map({ "\($0.title). \($0.detail)" }) : nil) {
                     HStack(spacing: 6) {
                         if model.stagePhase == .failed {
                             HexStatusDot(color: HexTheme.danger, size: 6)
