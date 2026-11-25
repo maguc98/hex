@@ -39,8 +39,9 @@ final class KeyboardLiveDictation {
     static let headroomNeeded = 32 * 1_048_576
     /// Below this while recording, the recogniser goes and the dictation goes on without it.
     static let floor = 24 * 1_048_576
-    /// Audio held while the language is looked up; past it the live words give up.
-    static let maximumHeldSeconds: Double = 4
+    /// Audio held while language/model readiness is resolved. Four seconds was too short on
+    /// a cold SpeechAnalyzer start and could silently disable live words on later dictations.
+    static let maximumHeldSeconds: Double = 8
 
     private let settings: LiveDictationSettings
 
@@ -60,11 +61,14 @@ final class KeyboardLiveDictation {
         // Translation needs live recognition even when the ordinary "Show what I say"
         // and "Type as I speak" previews are both disabled.
         guard settings.wantsLiveWords || DictationTranslationSettings().isEnabled else { return nil }
+        text.prepare()
         let available = os_proc_available_memory()
         guard available == 0 || available >= headroomNeeded else {
             KeyboardProbeLog.shared.write("live: skipped, short of memory \(KeyboardProbeLog.memory())")
+            text.fail("内存不足，实时预览已暂停")
             return nil
         }
+        KeyboardProbeLog.shared.write("live: requested (preview=\(settings.showsPreview), typing=\(settings.typesIntoField), translation=\(DictationTranslationSettings().isEnabled))")
         let live = KeyboardLiveDictation(text: text, sampleRate: sampleRate, settings: settings)
         live.resolve()
         return live
@@ -106,6 +110,7 @@ final class KeyboardLiveDictation {
         guard !stopped else { return }
         KeyboardProbeLog.shared.write("live: stopped for a memory warning")
         stop()
+        text.fail("内存不足，实时预览已暂停")
     }
 
     /// Finds the language the dictation will be transcribed in and starts Apple's recogniser
@@ -116,6 +121,8 @@ final class KeyboardLiveDictation {
             return
         }
         let rate = sampleRate
+        let resolvingAt = Date()
+        KeyboardProbeLog.shared.write("live: resolving speech language")
         resolving = Task { [weak self] in
             let settings = LanguageSettings()
             let picked = await AppleSpeechLanguages.resolve(settings: settings)
@@ -124,6 +131,8 @@ final class KeyboardLiveDictation {
                 installed = await AssetInventory.status(forModules: [AppleSpeechModule(picked).module]) == .installed
             }
             guard let self, !self.stopped else { return }
+            let resolveMilliseconds = Int(Date().timeIntervalSince(resolvingAt) * 1000)
+            KeyboardProbeLog.shared.write("live: language lookup finished in \(resolveMilliseconds) ms (\(picked?.identifier ?? "none"), installed=\(installed))")
             if let picked { self.sourceLanguage = picked.locale.language }
             guard let picked, installed else {
                 if let replay = LiveTranscriptReplay.load(log: { KeyboardProbeLog.shared.write($0) }) {
@@ -157,6 +166,8 @@ final class KeyboardLiveDictation {
         source.onUpdate = { [weak self] transcript in self?.received(transcript) }
         source.onFailure = { [weak self] reason in self?.giveUp(reason) }
         self.source = source
+        let bufferedSeconds = Double(heldBytes / 2) / sampleRate
+        KeyboardProbeLog.shared.write("live: source attached; replaying \(String(format: "%.1f", bufferedSeconds)) s of held audio")
         let audio = held
         held = []
         heldBytes = 0
@@ -169,6 +180,7 @@ final class KeyboardLiveDictation {
         if available > 0, available < Self.floor {
             KeyboardProbeLog.shared.write("live: stopped, short of memory \(KeyboardProbeLog.memory())")
             stop()
+            text.fail("内存不足，实时预览已暂停")
             return
         }
         if firstWordsAt == nil, !transcript.isEmpty { firstWordsAt = Date() }
@@ -251,6 +263,15 @@ final class KeyboardLiveDictation {
         stop()
         // Without words, the keys come back as they are without the preview.
         if text.transcript?.isEmpty ?? true { text.end() }
+        let message: String
+        if reason.localizedCaseInsensitiveContains("memory") {
+            message = "内存不足，实时预览已暂停"
+        } else if reason.localizedCaseInsensitiveContains("after") || reason.localizedCaseInsensitiveContains("not ready") {
+            message = "实时识别启动超时"
+        } else {
+            message = "实时识别暂不可用"
+        }
+        text.fail(message)
     }
 }
 
