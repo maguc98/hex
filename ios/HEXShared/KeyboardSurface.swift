@@ -643,6 +643,21 @@ struct KeyboardSurfaceView: View {
 
             moreLanguagesBar(palette: p)
                 .hexTrayReveal(model.activeTray == .moreLanguages, reduceMotion: reduceMotion, offsetY: 3.5)
+
+            // The capsule appears in the empty status-row space above the waveform;
+            // the waveform itself remains visible and is still the tap target below.
+            if showsLiveCapsule && model.stagePhase == .recording && model.activeTray == .none {
+                LiveTranslationCapsule(
+                    liveText: model.liveText,
+                    isTranslating: model.isTranslating,
+                    isDark: p.isDark
+                )
+                .frame(width: 178, height: 34)
+                .frame(maxWidth: .infinity)
+                .allowsHitTesting(false)
+                .transition(.scale(scale: 0.94, anchor: .center).combined(with: .opacity))
+                .zIndex(2)
+            }
         }
         .frame(height: TopBarMetrics.height)
     }
@@ -1251,19 +1266,6 @@ struct KeyboardSurfaceView: View {
                 }
             }
             .padding(.horizontal, Self.wellInset)
-
-            if showsLiveCapsule && showRecordingControls {
-                LiveTranslationCapsule(
-                    liveText: model.liveText,
-                    isTranslating: model.isTranslating,
-                    isDark: p.isDark
-                )
-                .frame(width: 210, height: 36)
-                .frame(maxWidth: .infinity)
-                .allowsHitTesting(false)
-                .transition(.scale(scale: 0.94, anchor: .center).combined(with: .opacity))
-                .zIndex(2)
-            }
 
             // Single permanently mounted idle trigger (never swapped across 3 Button branches).
             Button {
