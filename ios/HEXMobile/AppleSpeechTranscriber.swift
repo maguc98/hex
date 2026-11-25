@@ -110,6 +110,7 @@ actor AppleSpeechTranscriber: LocalTranscribing {
 
     private var preparedAnalyzer: SpeechAnalyzer?
     private var preparedModule: AppleSpeechModule?
+    private var preparedMode: DictationRecognitionMode?
     private var isPrepared = false
     private var reservedLocale: Locale?
 
@@ -161,7 +162,15 @@ actor AppleSpeechTranscriber: LocalTranscribing {
     func prepare(
         progressHandler: @escaping @Sendable (ModelPreparationProgress) -> Void
     ) async throws {
-        guard !isPrepared else { return }
+        let mode = DictationRecognitionSettings().mode
+        if isPrepared, preparedMode == mode { return }
+        if let preparedAnalyzer {
+            await preparedAnalyzer.cancelAndFinishNow()
+        }
+        preparedAnalyzer = nil
+        preparedModule = nil
+        preparedMode = nil
+        isPrepared = false
         let locale = language.locale
 
         // Best effort: a reservation Hex can't get (over Apple's limit) doesn't stop the download.
@@ -177,7 +186,7 @@ actor AppleSpeechTranscriber: LocalTranscribing {
                     ModelPreparationProgress(fractionCompleted: min(0.85, fraction * 0.85), detail: detail)
                 )
             })
-            let speech = AppleSpeechModule(language)
+            let speech = AppleSpeechModule(language, mode: mode)
             progressHandler(
                 ModelPreparationProgress(
                     fractionCompleted: 0.9,
@@ -191,6 +200,7 @@ actor AppleSpeechTranscriber: LocalTranscribing {
             isPrepared = true
             preparedModule = speech
             preparedAnalyzer = analyzer
+            preparedMode = mode
             progressHandler(
                 ModelPreparationProgress(
                     fractionCompleted: 1,
@@ -233,15 +243,23 @@ actor AppleSpeechTranscriber: LocalTranscribing {
             }
         }
 
+        let mode = DictationRecognitionSettings().mode
         let speech: AppleSpeechModule
         let analyzer: SpeechAnalyzer
-        if let preparedModule, let preparedAnalyzer {
+        if let preparedModule, let preparedAnalyzer, preparedMode == mode {
             speech = preparedModule
             analyzer = preparedAnalyzer
             self.preparedModule = nil
             self.preparedAnalyzer = nil
+            self.preparedMode = nil
         } else {
-            speech = AppleSpeechModule(language)
+            if let preparedAnalyzer {
+                await preparedAnalyzer.cancelAndFinishNow()
+            }
+            self.preparedModule = nil
+            self.preparedAnalyzer = nil
+            self.preparedMode = nil
+            speech = AppleSpeechModule(language, mode: mode)
             analyzer = makeAnalyzer(module: speech)
         }
 
