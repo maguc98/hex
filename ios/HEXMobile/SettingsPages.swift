@@ -1,4 +1,40 @@
 import SwiftUI
+import Speech
+
+/// The speed of the settings navigation transition. This changes page pushes only, not
+/// key animations or accessibility's Reduce Motion setting.
+enum PageTransitionSpeed: String, CaseIterable, Identifiable {
+    case smooth
+    case quick
+    case off
+
+    static let key = "settings.pageTransitionSpeed"
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .smooth: String(localized: "Smooth")
+        case .quick: String(localized: "Fast")
+        case .off: String(localized: "Off")
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .smooth: String(localized: "Gentle page movement")
+        case .quick: String(localized: "Shorter page transition")
+        case .off: String(localized: "Switch pages without animation")
+        }
+    }
+
+    var animation: Animation? {
+        switch self {
+        case .smooth: .spring(duration: 0.38, bounce: 0.04)
+        case .quick: .easeInOut(duration: 0.16)
+        case .off: nil
+        }
+    }
+}
 
 /// Settings › Dictation: how Hex writes what you say, and the microphone.
 struct DictationSettingsPage: View {
@@ -11,6 +47,9 @@ struct DictationSettingsPage: View {
     @State private var spokenPunctuation = DictationPunctuationSettings().isEnabled
     @State private var endsWithPeriod = DictationPeriodSettings().isEnabled
     @State private var quickWake = KeyboardBridge().quickWakeEnabled
+    @State private var recognitionMode = DictationRecognitionSettings().mode
+    @State private var realtimeInsertion = RealtimeInsertionSettings().isEnabled
+    @AppStorage(PageTransitionSpeed.key) private var pageTransitionSpeedRaw = PageTransitionSpeed.smooth.rawValue
 
     var body: some View {
         SettingsPageScaffold(title: "Dictation") {
@@ -74,6 +113,60 @@ struct DictationSettingsPage: View {
                 )
 
                 DictationLanguageRow(dictation: dictation)
+
+                SettingsDivider()
+
+                HStack(spacing: 12) {
+                    SettingsRowLabel(
+                        title: String(localized: "Recognition mode"),
+                        detail: recognitionMode.detail
+                    )
+                    Spacer(minLength: 8)
+                    SettingsSegments(
+                        items: DictationRecognitionMode.allCases,
+                        selected: recognitionMode,
+                        label: \.label,
+                        onSelect: { mode in
+                            withAnimation(HexMotion.settleAnimation(reduceMotion: reduceMotion)) {
+                                recognitionMode = mode
+                            }
+                        }
+                    )
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(minHeight: 50)
+
+                SettingsDivider()
+
+                SettingsToggleRow(
+                    title: String(localized: "Live insertion"),
+                    detail: String(localized: "Shows words as you speak when the language and text field support on-device partial recognition"),
+                    isOn: $realtimeInsertion
+                )
+
+                SettingsDivider()
+
+                HStack(spacing: 12) {
+                    SettingsRowLabel(
+                        title: String(localized: "Page transitions"),
+                        detail: (PageTransitionSpeed(rawValue: pageTransitionSpeedRaw) ?? .smooth).detail
+                    )
+                    Spacer(minLength: 8)
+                    SettingsSegments(
+                        items: PageTransitionSpeed.allCases,
+                        selected: PageTransitionSpeed(rawValue: pageTransitionSpeedRaw) ?? .smooth,
+                        label: \.label,
+                        onSelect: { speed in
+                            withAnimation(HexMotion.settleAnimation(reduceMotion: reduceMotion)) {
+                                pageTransitionSpeedRaw = speed.rawValue
+                            }
+                        }
+                    )
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(minHeight: 50)
             }
 
             SettingsCard {
@@ -190,6 +283,30 @@ struct DictationSettingsPage: View {
         .onChange(of: quickWake) { _, enabled in
             dictation.setQuickWakeEnabled(enabled)
         }
+        .onChange(of: recognitionMode) { _, mode in
+            DictationRecognitionSettings().mode = mode
+        }
+        .onChange(of: realtimeInsertion) { _, enabled in
+            guard enabled else {
+                RealtimeInsertionSettings().isEnabled = false
+                return
+            }
+            switch SFSpeechRecognizer.authorizationStatus() {
+            case .authorized:
+                RealtimeInsertionSettings().isEnabled = true
+            case .notDetermined:
+                SFSpeechRecognizer.requestAuthorization { status in
+                    Task { @MainActor in
+                        let granted = status == .authorized
+                        realtimeInsertion = granted
+                        RealtimeInsertionSettings().isEnabled = granted
+                    }
+                }
+            default:
+                realtimeInsertion = false
+                RealtimeInsertionSettings().isEnabled = false
+            }
+        }
         .onAppear {
             cleanupTagger = CleanupTaggerSettings().isEnabled
             customVocabulary = CustomVocabularySettings().isEnabled
@@ -198,6 +315,8 @@ struct DictationSettingsPage: View {
             spokenPunctuation = DictationPunctuationSettings().isEnabled
             endsWithPeriod = DictationPeriodSettings().isEnabled
             quickWake = KeyboardBridge().quickWakeEnabled
+            recognitionMode = DictationRecognitionSettings().mode
+            realtimeInsertion = RealtimeInsertionSettings().isEnabled
         }
     }
 }

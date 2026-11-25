@@ -46,6 +46,7 @@ struct ContentView: View {
     @State private var onboardingPage = OnboardingProgress.launchPage
     @State private var settingsPath = SettingsSnapshotFixture.initialPath
     @State private var showAcknowledgements = false
+    @AppStorage(PageTransitionSpeed.key) private var pageTransitionSpeedRaw = PageTransitionSpeed.smooth.rawValue
 
     private static let stageWellHeight: CGFloat = 48
     private static let stageControlHeight: CGFloat = 36
@@ -156,6 +157,7 @@ struct ContentView: View {
                     settingsPage(page)
                 }
         }
+        .animation((PageTransitionSpeed(rawValue: pageTransitionSpeedRaw) ?? .smooth).animation, value: settingsPath)
         .onChange(of: openPage.wrappedValue, initial: true) { _, page in
             guard let page else { return }
             settingsPath = [page]

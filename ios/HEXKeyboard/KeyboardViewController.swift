@@ -7,6 +7,11 @@ final class KeyboardViewController: UIInputViewController {
     private let bridge = KeyboardBridge()
     private let viewModel = KeyboardViewModel()
     private let localDictation = KeyboardLocalDictation()
+    /// The provisional text currently at the insertion point, kept separate from final dictation.
+    private var livePreviewText = ""
+    private var livePreviewDocument: UUID?
+    private var livePreviewAfterContext: String?
+    private var livePreviewAbandoned = false
     private var pollTimer: Timer?
     private var coldStartJobID = UUID().uuidString
     private var lastURLRefreshBucket: Int = 0
@@ -665,6 +670,7 @@ final class KeyboardViewController: UIInputViewController {
             return TypingJournal.sharedIfEnabled()?.dictationCorrections(language: language) ?? []
         }
         localDictation.currentDocument = { [weak self] in self?.currentDocument }
+        localDictation.onLivePreview = { [weak self] event in self?.applyLivePreview(event) ?? false }
         viewModel.onPasteDictation = { [weak self] in self?.pasteOfferedDictation() }
         viewModel.onDictateTap = { [weak self] in self?.startWarmDictation() }
         viewModel.onDictationUnavailable = { [weak self] in
@@ -672,16 +678,16 @@ final class KeyboardViewController: UIInputViewController {
             let multilingual = MultilingualParakeetSettings()
             let message: String
             if !KeyboardLocalDictation.isSupported {
-                message = String(localized: "Quick wake requires iOS 26 or later.")
+                message = String(localized: "In-keyboard dictation requires iOS 26 or later.")
             } else if multilingual.keyboardOpensHex(language: multilingual.language())
                         && !KeyboardParakeet.shared.dictatesMultilingualHere {
-                message = String(localized: "Turn off the multilingual speech model to use Quick wake.")
+                message = String(localized: "The multilingual speech model requires Hex to prepare dictation for this language.")
             } else if LanguageSettings().keyboardNeedsHex() {
                 message = String(localized: "Open Hex once to prepare this speech language, then return to the keyboard.")
             } else if !self.localDictation.hasMemoryToStart {
                 message = String(localized: "Not enough available memory for voice input in the keyboard. Close unused apps and try again.")
             } else {
-                message = String(localized: "Quick wake is temporarily unavailable. Try again in a moment.")
+                message = String(localized: "Voice input is temporarily unavailable in the keyboard. Try again in a moment.")
             }
             self.localDictation.reportUnavailable(message)
         }
@@ -990,6 +996,12 @@ final class KeyboardViewController: UIInputViewController {
             animated: animated
         )
 
+        // Settings may change while this keyboard remains on screen. Syncing the preference
+        // alone does not replace the mounted surface, so switch Full ↔ Dictation Bar here.
+        // `mountSurface()` keeps its idle/failed guard to avoid replacing the keyboard during
+        // an active recording or transcription; the next poll switches once it settles.
+        mountSurface()
+
         if viewModel.stagePhase == .recording || viewModel.stagePhase == .transcribing {
             closeBarEmojiPanel()
         }
@@ -1076,6 +1088,137 @@ final class KeyboardViewController: UIInputViewController {
         viewModel.offeredDictation = nil
     }
 
+
+    /// Applies streaming recognition in place. Revisions replace only the provisional suffix,
+    /// so previously recognized words are not appended repeatedly.
+    @discardableResult
+    private func applyLivePreview(_ event: KeyboardLivePreviewEvent) -> Bool {
+        switch event {
+        case .update(let text):
+            guard !livePreviewAbandoned else { return false }
+            guard !text.isEmpty else {
+                return removeLivePreviewFromDocument()
+            }
+            guard !livePreviewText.isEmpty else {
+                // Without a readable before-input context, we cannot later prove that a
+                // deletion still targets our own preview (secure fields commonly return nil).
+                guard textDocumentProxy.documentContextBeforeInput != nil,
+                      let document = currentDocument else { return false }
+                livePreviewDocument = document
+                livePreviewAfterContext = textDocumentProxy.documentContextAfterInput.map { String($0.prefix(12)) }
+                textDocumentProxy.insertText(text)
+                livePreviewText = text
+                return true
+            }
+            guard livePreviewDocument == currentDocument,
+                  previewStillAtCursor() else {
+                abandonLivePreview(reason: "text cursor moved during recognition")
+                return false
+            }
+            let oldCharacters = Array(livePreviewText)
+            let newCharacters = Array(text)
+            var commonPrefix = 0
+            while commonPrefix < min(oldCharacters.count, newCharacters.count),
+                  oldCharacters[commonPrefix] == newCharacters[commonPrefix] {
+                commonPrefix += 1
+            }
+            let changedSuffix = String(oldCharacters.dropFirst(commonPrefix))
+            guard deletePreviewSuffix(changedSuffix) else {
+                abandonLivePreview(reason: "could not safely replace the previous partial result")
+                return false
+            }
+            textDocumentProxy.insertText(String(newCharacters.dropFirst(commonPrefix)))
+            livePreviewText = text
+            return true
+
+        case .remove:
+            return removeLivePreviewFromDocument()
+
+        case .keep:
+            // A failed final pass must not erase words already shown to the person.
+            livePreviewText = ""
+            livePreviewDocument = nil
+            livePreviewAfterContext = nil
+            livePreviewAbandoned = false
+            return true
+
+        case .reset:
+            // A new recording starts after any earlier preview was either finalized or kept.
+            livePreviewText = ""
+            livePreviewDocument = nil
+            livePreviewAfterContext = nil
+            livePreviewAbandoned = false
+            return true
+        }
+    }
+
+    /// Removes only text that is still immediately before the same field cursor. If the person
+    /// moved the cursor or changed the field, leave their text alone and suppress final duplicate
+    /// insertion for this job.
+    @discardableResult
+    private func removeLivePreviewFromDocument() -> Bool {
+        guard !livePreviewAbandoned else { return false }
+        guard !livePreviewText.isEmpty else {
+            livePreviewDocument = nil
+            livePreviewAfterContext = nil
+            return true
+        }
+        guard livePreviewDocument == currentDocument,
+              deletePreviewSuffix(livePreviewText) else {
+            abandonLivePreview(reason: "could not safely roll back live preview; retained current field text")
+            return false
+        }
+        livePreviewText = ""
+        livePreviewDocument = nil
+        livePreviewAfterContext = nil
+        return true
+    }
+
+    private func previewStillAtCursor() -> Bool {
+        guard livePreviewDocument == currentDocument,
+              let context = textDocumentProxy.documentContextBeforeInput,
+              context.hasSuffix(String(livePreviewText.suffix(min(12, livePreviewText.count)))) else {
+            return false
+        }
+        if let expectedAfter = livePreviewAfterContext {
+            guard let after = textDocumentProxy.documentContextAfterInput,
+                  after.hasPrefix(expectedAfter) else { return false }
+        }
+        return true
+    }
+
+    /// Deletes from the cursor backwards in small verified chunks. UIKit only exposes a bounded
+    /// documentContextBeforeInput; checking once and deleting a long transcript could otherwise
+    /// run past the visible context and erase text that Hex did not insert.
+    private func deletePreviewSuffix(_ text: String) -> Bool {
+        var remaining = Array(text)
+        while !remaining.isEmpty {
+            guard livePreviewDocument == currentDocument,
+                  let context = textDocumentProxy.documentContextBeforeInput else { return false }
+            if let expectedAfter = livePreviewAfterContext {
+                guard let after = textDocumentProxy.documentContextAfterInput,
+                      after.hasPrefix(expectedAfter) else { return false }
+            }
+            let count = min(12, remaining.count)
+            let expected = String(remaining.suffix(count))
+            guard context.hasSuffix(expected) else { return false }
+            for _ in 0..<count {
+                textDocumentProxy.deleteBackward()
+            }
+            remaining.removeLast(count)
+            livePreviewText = String(remaining)
+        }
+        return true
+    }
+
+    private func abandonLivePreview(reason: String) {
+        livePreviewAbandoned = true
+        livePreviewText = ""
+        livePreviewDocument = nil
+        livePreviewAfterContext = nil
+        KeyboardProbeLog.shared.write("\(reason); leaving field text untouched")
+    }
+
     private func insertDictation(
         _ transcript: String,
         resultID: String,
@@ -1084,6 +1227,11 @@ final class KeyboardViewController: UIInputViewController {
         translationFailure: TranslationFailure? = nil,
         source: String
     ) {
+        guard removeLivePreviewFromDocument() else {
+            livePreviewAbandoned = false
+            KeyboardProbeLog.shared.write("final dictation not reinserted because the live preview no longer owns the cursor")
+            return
+        }
         // A two-thumb Dictate's words replace the range it picked, if the field still shows
         // it; either way, the context below is read after that, so spacing sees the result.
         fullKeyboard?.engine.commitHangulComposition()

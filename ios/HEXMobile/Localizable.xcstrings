@@ -4350,6 +4350,126 @@
           }
         }
       }
+    },
+    "Recognition mode" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "识别模式"
+          }
+        }
+      }
+    },
+    "Precise" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "精确"
+          }
+        }
+      }
+    },
+    "Fast" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速"
+          }
+        }
+      }
+    },
+    "Apple Speech prioritizes recognition accuracy" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 语音识别优先保证准确率"
+          }
+        }
+      }
+    },
+    "Apple Speech prioritizes faster, more responsive recognition" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apple 语音识别优先响应速度"
+          }
+        }
+      }
+    },
+    "Live insertion" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "实时插入"
+          }
+        }
+      }
+    },
+    "Shows words as you speak when the language and text field support on-device partial recognition" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前语言和输入框支持设备端实时识别时，说话内容会同步插入输入框"
+          }
+        }
+      }
+    },
+    "Page transitions" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面切换动画"
+          }
+        }
+      }
+    },
+    "Smooth" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "柔和"
+          }
+        }
+      }
+    },
+    "Gentle page movement" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "平滑柔和的页面过渡"
+          }
+        }
+      }
+    },
+    "Shorter page transition" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "更快速的页面过渡"
+          }
+        }
+      }
+    },
+    "Switch pages without animation" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "切换页面时不播放动画"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
