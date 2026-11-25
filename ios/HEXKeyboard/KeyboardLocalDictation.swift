@@ -896,8 +896,8 @@ final class KeyboardLocalDictation {
             if error != nil {
                 Task { @MainActor [weak self] in
                     guard let self, self.job?.id == jobID, self.livePreviewActive else { return }
-                    self.stopLiveRecognition(preview: .keep)
-                    KeyboardProbeLog.shared.write("live partial recognition ended; keeping inserted words")
+                    self.stopLiveRecognition()
+                    KeyboardProbeLog.shared.write("live partial recognition ended; keeping provisional text for final replacement")
                 }
             }
         }
