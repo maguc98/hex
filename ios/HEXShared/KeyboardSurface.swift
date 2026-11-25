@@ -361,7 +361,7 @@ private struct KeyboardRecordingClockText: View {
     }
 }
 
-/// The tap-to-expand transcript pill floating over the recording scope.
+/// The live transcript lives in the top status row, not in a separate floating window.
 /// Settled words are muted; the recognizer/translator's changing tail is blue.
 private struct LiveTranslationCapsule: View {
     @ObservedObject var liveText: LiveDictationText
@@ -369,13 +369,32 @@ private struct LiveTranslationCapsule: View {
     let isDark: Bool
 
     private var displayedTranscript: LiveTranscript? {
-        isTranslating ? liveText.translatedTranscript : liveText.transcript
+        // Keep the spoken words visible while a translated preview is still being prepared.
+        isTranslating ? (liveText.translatedTranscript ?? liveText.transcript) : liveText.transcript
+    }
+
+    private var placeholderText: String {
+        switch liveText.status {
+        case .idle:
+            "实时预览未启用"
+        case .preparing:
+            "正在准备识别…"
+        case .listening:
+            isTranslating ? "正在聆听并翻译…" : "正在聆听…"
+        case .failed(let message):
+            message
+        }
+    }
+
+    private var isFailed: Bool {
+        if case .failed = liveText.status { return true }
+        return false
     }
 
     private var attributedText: AttributedString {
         guard let displayedTranscript else { return AttributedString("") }
         var settled = AttributedString(displayedTranscript.settled)
-        settled.foregroundColor = Color.white.opacity(isDark ? 0.72 : 0.58)
+        settled.foregroundColor = (isDark ? Color.white : Color.black).opacity(isDark ? 0.72 : 0.62)
         var tentative = AttributedString(displayedTranscript.tentativeJoined)
         tentative.foregroundColor = Color(red: 0.25, green: 0.58, blue: 1.0)
         settled.append(tentative)
@@ -383,40 +402,44 @@ private struct LiveTranslationCapsule: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 5) {
             Group {
                 if let displayedTranscript, !displayedTranscript.isEmpty {
                     Text(attributedText)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    Text(isTranslating ? "正在翻译…" : "正在聆听…")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.white.opacity(0.58))
+                    Text(placeholderText)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(isFailed
+                            ? Color.orange.opacity(0.92)
+                            : (isDark ? Color.white : Color.black).opacity(0.52))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 
-            Text("▏")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundStyle(Color(red: 0.25, green: 0.58, blue: 1.0))
-                .accessibilityHidden(true)
+            if isFailed {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Color.orange.opacity(0.92))
+                    .accessibilityHidden(true)
+            } else if liveText.status != .idle {
+                Text("▏")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(Color(red: 0.25, green: 0.58, blue: 1.0))
+                    .accessibilityHidden(true)
+            }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 5)
-        .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 40)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
         .background {
             Capsule(style: .continuous)
-                .fill(Color.black.opacity(isDark ? 0.55 : 0.68))
-                .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+                .fill(isDark ? Color.white.opacity(0.055) : Color.black.opacity(0.045))
         }
-        .overlay {
-            Capsule(style: .continuous)
-                .stroke(Color.white.opacity(isDark ? 0.13 : 0.20), lineWidth: 0.7)
-        }
-        .shadow(color: .black.opacity(0.20), radius: 8, x: 0, y: 3)
         .accessibilityElement(children: .combine)
     }
 }
@@ -644,20 +667,6 @@ struct KeyboardSurfaceView: View {
             moreLanguagesBar(palette: p)
                 .hexTrayReveal(model.activeTray == .moreLanguages, reduceMotion: reduceMotion, offsetY: 3.5)
 
-            // The capsule appears in the empty status-row space above the waveform;
-            // the waveform itself remains visible and is still the tap target below.
-            if showsLiveCapsule && model.stagePhase == .recording && model.activeTray == .none {
-                LiveTranslationCapsule(
-                    liveText: model.liveText,
-                    isTranslating: model.isTranslating,
-                    isDark: p.isDark
-                )
-                .frame(width: 178, height: 34)
-                .frame(maxWidth: .infinity)
-                .allowsHitTesting(false)
-                .transition(.scale(scale: 0.94, anchor: .center).combined(with: .opacity))
-                .zIndex(2)
-            }
         }
         .frame(height: TopBarMetrics.height)
     }
@@ -701,16 +710,27 @@ struct KeyboardSurfaceView: View {
             }
             .padding(.leading, -TopBarMetrics.hexMarkOverlap)
 
-            Spacer(minLength: 4)
-
-            if showsPasteDictation {
-                pasteDictationChip(palette: p)
+            if showsLiveCapsule && model.stagePhase == .recording {
+                LiveTranslationCapsule(
+                    liveText: model.liveText,
+                    isTranslating: model.isTranslating,
+                    isDark: p.isDark
+                )
+                .frame(maxWidth: .infinity)
+                .layoutPriority(1)
+                .transition(.opacity.combined(with: .move(edge: .leading)))
+            } else {
                 Spacer(minLength: 4)
-            }
 
-            // The translation note takes the bar's width for its few seconds.
-            if model.showsLanguageSwitch || model.showsTranslationSwitch, model.translationNote == nil {
-                languageTrigger(palette: p)
+                if showsPasteDictation {
+                    pasteDictationChip(palette: p)
+                    Spacer(minLength: 4)
+                }
+
+                // The translation note takes the bar's width for its few seconds.
+                if model.showsLanguageSwitch || model.showsTranslationSwitch, model.translationNote == nil {
+                    languageTrigger(palette: p)
+                }
             }
 
             styleTrigger(palette: p)
