@@ -1173,6 +1173,7 @@ final class KeyboardViewController: UIInputViewController {
         source: String
     ) {
         guard removeLivePreviewFromDocument() else {
+            livePreviewAbandoned = false
             KeyboardProbeLog.shared.write("final dictation not reinserted because the live preview no longer owns the cursor")
             return
         }
