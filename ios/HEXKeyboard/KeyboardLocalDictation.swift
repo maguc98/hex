@@ -10,6 +10,7 @@ enum KeyboardLivePreviewEvent {
     case update(String)
     case remove
     case keep
+    case reset
 }
 
 /// Experiment: record and transcribe inside the keyboard extension, so dictation
@@ -445,6 +446,7 @@ final class KeyboardLocalDictation {
             pressedAt: min(pressedAt ?? requestedAt.timeIntervalSince1970, requestedAt.timeIntervalSince1970),
             requestedAt: requestedAt.timeIntervalSince1970
         )
+        onLivePreview?(.reset)
         beginLiveRecognition(jobID: jobID)
         let capture = acquireCaptureForStart(in: host)
         capture.onEvent = { [weak self] event in
