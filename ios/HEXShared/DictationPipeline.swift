@@ -249,3 +249,61 @@ nonisolated struct DictationPipeline: Sendable {
         return style == .verbatim ? cased : FrenchSpacing.apply(cased, language: language)
     }
 }
+
+/// How Apple Speech balances recognition latency and accuracy across app and keyboard.
+/// Fast uses Apple's progressive presets; Precise uses the standard transcription presets.
+nonisolated enum DictationRecognitionMode: String, CaseIterable, Sendable {
+    case precise
+    case fast
+
+    var label: String {
+        switch self {
+        case .precise: String(localized: "Precise")
+        case .fast: String(localized: "Fast")
+        }
+    }
+
+    var detail: String {
+        switch self {
+        case .precise: String(localized: "Prioritizes recognition accuracy")
+        case .fast: String(localized: "Prioritizes faster, more responsive recognition")
+        }
+    }
+}
+
+/// Settings › Dictation › Recognition mode. Shared with the keyboard through the App Group.
+nonisolated struct DictationRecognitionSettings {
+    static let key = "settings.dictationRecognitionMode"
+
+    private let defaults: UserDefaults?
+
+    init(defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) {
+        self.defaults = defaults
+    }
+
+    var mode: DictationRecognitionMode {
+        get {
+            defaults?.string(forKey: Self.key)
+                .flatMap(DictationRecognitionMode.init(rawValue:))
+                ?? .precise
+        }
+        nonmutating set { defaults?.set(newValue.rawValue, forKey: Self.key) }
+    }
+}
+
+/// Settings › Dictation › Live insertion. Off by default; only on-device partial recognition
+/// is used, and the existing final transcription remains authoritative.
+nonisolated struct RealtimeInsertionSettings {
+    static let key = "settings.dictationRealtimeInsertion"
+
+    private let defaults: UserDefaults?
+
+    init(defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) {
+        self.defaults = defaults
+    }
+
+    var isEnabled: Bool {
+        get { defaults?.bool(forKey: Self.key) ?? false }
+        nonmutating set { defaults?.set(newValue, forKey: Self.key) }
+    }
+}
