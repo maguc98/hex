@@ -636,6 +636,8 @@ struct KeyboardSurfaceView: View {
                 .topBarHitTarget(alignment: .leading)
             }
             .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(10)
             .accessibilityLabel("Open Hex")
 
             // Keep the recording clock/status first, then let the transcript follow it.
