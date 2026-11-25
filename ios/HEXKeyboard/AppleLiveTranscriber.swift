@@ -41,6 +41,7 @@ final class AppleLiveTranscriber: LiveTranscriptSource {
     private var reading: Task<Void, Never>?
     private var accumulator = LiveTranscriptAccumulator()
     private var stopped = false
+    private var receivedResults = 0
     private var firstChunkAt: Date?
     /// Audio fed to the analyzer, in its own frames, for each buffer's start time.
     private var fedFrames: AVAudioFramePosition = 0
@@ -48,8 +49,9 @@ final class AppleLiveTranscriber: LiveTranscriptSource {
     private(set) var readyAfter: TimeInterval?
     private let createdAt = Date()
 
-    /// Audio held while the analyzer gets ready; past this it gives up (`onFailure`).
-    static let maximumPendingSeconds: Double = 6
+    /// Audio held while the analyzer gets ready; aligned with the outer language/model lookup
+    /// window so a cold start does not give up after only a few seconds.
+    static let maximumPendingSeconds: Double = 8
 
     init?(locale: Locale, module: Module, sampleRate: Double, log: @escaping (String) -> Void) {
         guard let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true) else {
@@ -64,6 +66,7 @@ final class AppleLiveTranscriber: LiveTranscriptSource {
     }
 
     private func start() {
+        log("live: preparing Apple SpeechAnalyzer for \(module.rawValue) (\(locale.identifier))")
         let locale = locale
         let module = module
         let input = input
@@ -119,8 +122,15 @@ final class AppleLiveTranscriber: LiveTranscriptSource {
                             self?.receive(String(result.text.characters), isFinal: result.isFinal, range: result.range)
                         }
                     }
+                    // A results sequence should remain open for the life of this capture.
+                    // A clean early end otherwise leaves the UI looking live with no updates.
+                    if !Task.isCancelled, let self, !self.stopped {
+                        self.fail("results stream ended unexpectedly")
+                    }
                 } catch {
-                    self?.fail("results failed: \(Self.describe(error))")
+                    if !Task.isCancelled {
+                        self?.fail("results failed: \(Self.describe(error))")
+                    }
                 }
             }
             do {
@@ -196,6 +206,10 @@ final class AppleLiveTranscriber: LiveTranscriptSource {
     private func receive(_ text: String, isFinal: Bool, range: CMTimeRange) {
         guard !stopped else { return }
         let at = firstChunkAt.map { Date().timeIntervalSince($0) } ?? 0
+        receivedResults += 1
+        if receivedResults == 1 {
+            log("live: first \(isFinal ? "final" : "partial") result after \(Int(at * 1000)) ms")
+        }
         onResult?(at, isFinal, text, range.start.seconds, range.end.seconds)
         onUpdate?(accumulator.apply(text, isFinal: isFinal))
     }
