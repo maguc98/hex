@@ -222,6 +222,7 @@ actor AppleSpeechTranscriber: LocalTranscribing {
             throw TranscriberError.unavailable
         }
 
+        let mode = DictationRecognitionSettings().mode
         // Experiments › Two-language dictation: the same recording read by a second installed
         // language too, merged word by word. Off, or without a usable second language, the
         // single-language path below runs exactly as before.
@@ -232,7 +233,8 @@ actor AppleSpeechTranscriber: LocalTranscribing {
                 audioURL,
                 pair: pair,
                 vocabulary: vocabulary,
-                lingeringModels: true
+                lingeringModels: true,
+                mode: mode
             )
             // A cancelled two-language run must not fall through and start a fresh
             // single-language analyzer for the same recording.
@@ -243,7 +245,6 @@ actor AppleSpeechTranscriber: LocalTranscribing {
             }
         }
 
-        let mode = DictationRecognitionSettings().mode
         let speech: AppleSpeechModule
         let analyzer: SpeechAnalyzer
         if let preparedModule, let preparedAnalyzer, preparedMode == mode {
@@ -261,6 +262,7 @@ actor AppleSpeechTranscriber: LocalTranscribing {
             self.preparedMode = nil
             speech = AppleSpeechModule(language, mode: mode)
             analyzer = makeAnalyzer(module: speech)
+            try await analyzer.prepareToAnalyze(in: nil)
         }
 
         let audioFile = try AVAudioFile(forReading: audioURL)
