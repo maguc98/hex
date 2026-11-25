@@ -996,6 +996,12 @@ final class KeyboardViewController: UIInputViewController {
             animated: animated
         )
 
+        // Settings may change while this keyboard remains on screen. Syncing the preference
+        // alone does not replace the mounted surface, so switch Full ↔ Dictation Bar here.
+        // `mountSurface()` keeps its idle/failed guard to avoid replacing the keyboard during
+        // an active recording or transcription; the next poll switches once it settles.
+        mountSurface()
+
         if viewModel.stagePhase == .recording || viewModel.stagePhase == .transcribing {
             closeBarEmojiPanel()
         }
