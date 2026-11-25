@@ -1366,7 +1366,8 @@ enum KeyboardSpeech {
                 url,
                 pair: pair,
                 vocabulary: hints,
-                lingeringModels: false
+                lingeringModels: false,
+                mode: DictationRecognitionSettings().mode
             )
             // Don't launch a single-language fallback after the user cancelled both readings.
             try Task.checkCancellation()
