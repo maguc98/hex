@@ -171,6 +171,10 @@ actor AppleSpeechTranscriber: LocalTranscribing {
         preparedModule = nil
         preparedMode = nil
         isPrepared = false
+        if let reservedLocale {
+            self.reservedLocale = nil
+            await AppleSpeechAssetReservations.shared.release(reservedLocale)
+        }
         let locale = language.locale
 
         // Best effort: a reservation Hex can't get (over Apple's limit) doesn't stop the download.
