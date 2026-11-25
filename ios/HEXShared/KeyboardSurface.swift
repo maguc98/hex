@@ -582,17 +582,16 @@ struct KeyboardSurfaceView: View {
         HStack(spacing: 8) {
             Button {
                 model.onKeyFeedback?()
-                if model.quickWakeEnabled, model.hasFullAccess {
-                    if let local = model.onLocalDictateTap {
-                        local()
-                    } else {
-                        model.onDictationUnavailable?()
-                    }
-                } else if model.hasFullAccess, !model.isWarmAvailable, let local = model.onLocalDictateTap {
+                // Dictation taps must never foreground Hex. Use an in-keyboard capture when
+                // available, otherwise a warm session; only the explicit setup path opens Hex.
+                if !model.hasFullAccess {
+                    model.onOpenURL?(KeyboardLaunchRequest.setup.url)
+                } else if let local = model.onLocalDictateTap {
                     local()
+                } else if model.dictatesThroughHex {
+                    model.onDictateTap?()
                 } else {
-                    let target = model.hasFullAccess ? model.coldStartURL : KeyboardLaunchRequest.setup.url
-                    model.onOpenURL?(target)
+                    model.onDictationUnavailable?()
                 }
             } label: {
                 HexMarkView(
@@ -1250,16 +1249,19 @@ struct KeyboardSurfaceView: View {
     private func handleIdleStageTap() {
         if !model.hasFullAccess {
             model.onOpenURL?(KeyboardLaunchRequest.setup.url)
-        } else if !model.dictatesThroughHex || model.stagePhase == .failed {
+        } else if model.stagePhase == .failed {
             if let local = model.onLocalDictateTap {
                 local()
-            } else if model.quickWakeEnabled {
-                model.onDictationUnavailable?()
             } else {
-                model.onOpenURL?(model.coldStartURL)
+                model.onDictationUnavailable?()
             }
-        } else {
+        } else if model.dictatesThroughHex {
             model.onDictateTap?()
+        } else if let local = model.onLocalDictateTap {
+            local()
+        } else {
+            // No recording fallback should unexpectedly launch the containing app.
+            model.onDictationUnavailable?()
         }
     }
 
