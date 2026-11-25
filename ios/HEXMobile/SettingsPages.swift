@@ -1,4 +1,5 @@
 import SwiftUI
+import Speech
 
 /// Settings › Dictation: how Hex writes what you say, and the microphone.
 struct DictationSettingsPage: View {
@@ -12,6 +13,7 @@ struct DictationSettingsPage: View {
     @State private var endsWithPeriod = DictationPeriodSettings().isEnabled
     @State private var quickWake = KeyboardBridge().quickWakeEnabled
     @State private var recognitionMode = DictationRecognitionSettings().mode
+    @State private var realtimeInsertion = RealtimeInsertionSettings().isEnabled
 
     var body: some View {
         SettingsPageScaffold(title: "Dictation") {
@@ -98,6 +100,14 @@ struct DictationSettingsPage: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .frame(minHeight: 50)
+
+                SettingsDivider()
+
+                SettingsToggleRow(
+                    title: String(localized: "Live insertion"),
+                    detail: String(localized: "Shows on-device recognized words in the text field as you speak"),
+                    isOn: $realtimeInsertion
+                )
             }
 
             SettingsCard {
@@ -217,6 +227,27 @@ struct DictationSettingsPage: View {
         .onChange(of: recognitionMode) { _, mode in
             DictationRecognitionSettings().mode = mode
         }
+        .onChange(of: realtimeInsertion) { _, enabled in
+            guard enabled else {
+                RealtimeInsertionSettings().isEnabled = false
+                return
+            }
+            switch SFSpeechRecognizer.authorizationStatus() {
+            case .authorized:
+                RealtimeInsertionSettings().isEnabled = true
+            case .notDetermined:
+                SFSpeechRecognizer.requestAuthorization { status in
+                    DispatchQueue.main.async {
+                        let granted = status == .authorized
+                        realtimeInsertion = granted
+                        RealtimeInsertionSettings().isEnabled = granted
+                    }
+                }
+            default:
+                realtimeInsertion = false
+                RealtimeInsertionSettings().isEnabled = false
+            }
+        }
         .onAppear {
             cleanupTagger = CleanupTaggerSettings().isEnabled
             customVocabulary = CustomVocabularySettings().isEnabled
@@ -226,6 +257,7 @@ struct DictationSettingsPage: View {
             endsWithPeriod = DictationPeriodSettings().isEnabled
             quickWake = KeyboardBridge().quickWakeEnabled
             recognitionMode = DictationRecognitionSettings().mode
+            realtimeInsertion = RealtimeInsertionSettings().isEnabled
         }
     }
 }
