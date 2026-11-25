@@ -5,7 +5,7 @@ nonisolated struct InterfaceMotionSettings {
     static let enabledKey = "settings.interfaceAnimationsEnabled"
     private let defaults: UserDefaults?
 
-    init(defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) {
+    init(defaults: UserDefaults? = UserDefaults(suiteName: "group.anomaly.hex.mobile")) {
         self.defaults = defaults
     }
 
