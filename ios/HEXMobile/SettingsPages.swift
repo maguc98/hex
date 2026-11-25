@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Settings › Dictation: how Hex writes what you say, and the microphone.
 struct DictationSettingsPage: View {
@@ -13,6 +14,8 @@ struct DictationSettingsPage: View {
     @State private var showsWhatISay = LiveDictationSettings().showsPreview
     @State private var typesAsISpeak = LiveDictationSettings().typesIntoField
     @State private var quickWake = KeyboardBridge().quickWakeEnabled
+    @State private var inProgressTextColor = Color(red: 0.22, green: 0.57, blue: 1.0)
+    @State private var completedTextColor = Color.white
 
     var body: some View {
         SettingsPageScaffold(title: "Dictation") {
@@ -90,6 +93,36 @@ struct DictationSettingsPage: View {
                         detail: String(localized: "Words can change until you stop"),
                         isOn: $typesAsISpeak
                     )
+
+                    SettingsDivider()
+
+                    HStack(spacing: 12) {
+                        SettingsRowLabel(
+                            title: String(localized: "In-progress text color"),
+                            detail: String(localized: "Unconfirmed live-recognition words")
+                        )
+                        Spacer(minLength: 8)
+                        ColorPicker("", selection: $inProgressTextColor, supportsOpacity: false)
+                            .labelsHidden()
+                            .frame(width: 44)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 50)
+
+                    SettingsDivider()
+
+                    HStack(spacing: 12) {
+                        SettingsRowLabel(
+                            title: String(localized: "Confirmed text color"),
+                            detail: String(localized: "Words the recognizer has settled")
+                        )
+                        Spacer(minLength: 8)
+                        ColorPicker("", selection: $completedTextColor, supportsOpacity: false)
+                            .labelsHidden()
+                            .frame(width: 44)
+                    }
+                    .padding(.horizontal, 16)
+                    .frame(minHeight: 50)
                 }
             }
 
@@ -210,6 +243,12 @@ struct DictationSettingsPage: View {
         .onChange(of: typesAsISpeak) { _, enabled in
             LiveDictationSettings().typesIntoField = enabled
         }
+        .onChange(of: inProgressTextColor) { _, color in
+            LiveWordsColorSettings().inProgressHex = Self.hexString(color)
+        }
+        .onChange(of: completedTextColor) { _, color in
+            LiveWordsColorSettings().completedHex = Self.hexString(color)
+        }
         .onChange(of: quickWake) { _, enabled in
             dictation.setQuickWakeEnabled(enabled)
         }
@@ -223,7 +262,41 @@ struct DictationSettingsPage: View {
             showsWhatISay = LiveDictationSettings().showsPreview
             typesAsISpeak = LiveDictationSettings().typesIntoField
             quickWake = KeyboardBridge().quickWakeEnabled
+            let colors = LiveWordsColorSettings()
+            inProgressTextColor = Self.color(
+                from: colors.inProgressHex,
+                fallback: Color(red: 0.22, green: 0.57, blue: 1.0)
+            )
+            completedTextColor = Self.color(from: colors.completedHex, fallback: .white)
         }
+    }
+
+    private static func color(from hex: String?, fallback: Color) -> Color {
+        guard let hex else { return fallback }
+        let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard value.count == 6, let rgb = UInt32(value, radix: 16) else { return fallback }
+        return Color(
+            .sRGB,
+            red: Double((rgb >> 16) & 0xFF) / 255,
+            green: Double((rgb >> 8) & 0xFF) / 255,
+            blue: Double(rgb & 0xFF) / 255,
+            opacity: 1
+        )
+    }
+
+    private static func hexString(_ color: Color) -> String {
+        let uiColor = UIColor(color)
+        var red: CGFloat = 1
+        var green: CGFloat = 1
+        var blue: CGFloat = 1
+        var alpha: CGFloat = 1
+        uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        return String(
+            format: "#%02X%02X%02X",
+            Int((red * 255).rounded()),
+            Int((green * 255).rounded()),
+            Int((blue * 255).rounded())
+        )
     }
 }
 

@@ -224,10 +224,14 @@ private struct RepeatDeleteKey: View {
                         isPressing = true
                         onDelete()
                         repeatTask = Task { @MainActor in
-                            try? await Task.sleep(for: .milliseconds(360))
+                            // The first character was deleted on touch-down. Start repeating quickly,
+                            // then accelerate for a sustained press.
+                            try? await Task.sleep(for: .milliseconds(230))
+                            var repeats = 0
                             while !Task.isCancelled {
                                 onDelete()
-                                try? await Task.sleep(for: .milliseconds(75))
+                                repeats += 1
+                                try? await Task.sleep(for: .milliseconds(repeats < 7 ? 58 : 34))
                             }
                         }
                     }
@@ -551,6 +555,12 @@ struct KeyboardSurfaceView: View {
         }
         .onChange(of: model.activeTray) { _, _ in
             removeTookPress = false
+        }
+        .onAppear {
+            whisperModeEnabled = KeyboardWhisperSettings().isEnabled
+        }
+        .onChange(of: whisperModeEnabled) { _, enabled in
+            KeyboardWhisperSettings().isEnabled = enabled
         }
         .padding(.top, 4)
         .padding(.bottom, 6)
@@ -1108,7 +1118,7 @@ struct KeyboardSurfaceView: View {
                     drawPlate: false,
                     loudnessProvider: { [weak model] in
                         let db = model?.liveLoudnessDB ?? -62.0
-                        return whisperModeEnabled ? min(0.0, db + 20.0) : db
+                        return whisperModeEnabled ? min(0.0, db + 12.0) : db
                     }
                 )
                 .clipShape(Capsule())
@@ -1266,6 +1276,9 @@ struct KeyboardSurfaceView: View {
     private func handleIdleStageTap() {
         if !model.hasFullAccess {
             model.onOpenURL?(KeyboardLaunchRequest.setup.url)
+        } else if whisperModeEnabled, let local = model.onLocalDictateTap {
+            // Whisper mode uses the keyboard's locally processed audio path.
+            local()
         } else if !model.dictatesThroughHex || model.stagePhase == .failed {
             if let local = model.onLocalDictateTap {
                 local()
@@ -1283,7 +1296,7 @@ struct KeyboardSurfaceView: View {
 
     /// The bar's punctuation keys, the commonest first: as many as leave the space bar
     /// `minSpaceWidth` (five on a 402 pt iPhone, three on the SE beside its globe).
-    private static let punctuation = [".", "'", "\"", "@", "#"]
+    private static let punctuation = ["."]
     private static let punctuationKeyWidth: CGFloat = 30
     private static let minSpaceWidth: CGFloat = 60
     private static let keyHeight: CGFloat = 42
@@ -1292,16 +1305,10 @@ struct KeyboardSurfaceView: View {
     private var glyphOpacity: Double { isTrackpadActive ? 0 : 1 }
 
     private var utilityRow: some View {
-        ViewThatFits(in: .horizontal) {
-            utilityKeys(punctuation: 5)
-            utilityKeys(punctuation: 4)
-            utilityKeys(punctuation: 3)
-            utilityKeys(punctuation: 2)
-            utilityKeys(punctuation: 1)
-        }
+        utilityKeys()
     }
 
-    private func utilityKeys(punctuation count: Int) -> some View {
+    private func utilityKeys() -> some View {
         let p = palette
         return HStack(spacing: 5) {
             if model.needsGlobeKey {
@@ -1338,7 +1345,7 @@ struct KeyboardSurfaceView: View {
             .accessibilityLabel("Whisper mode")
             .accessibilityValue(whisperModeEnabled ? "On" : "Off")
 
-            ForEach(Self.punctuation.prefix(count), id: \.self) { mark in
+            ForEach(Self.punctuation, id: \.self) { mark in
                 Button {
                     model.onKeyFeedback?()
                     model.onInsertText?(mark)

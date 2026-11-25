@@ -752,7 +752,9 @@ nonisolated final class DotScopeSimulation: @unchecked Sendable {
             } else {
                 level = min(1.0, max(0.0, (loudness + 40.0) / 30.0))
             }
-            inputLevel = min(1.0, max(0.0, level * tuning.gain))
+            // Keep a thin, stable center trace visible while the mic is open but silent.
+            // Real speech still rises above this floor and drives the full waveform.
+            inputLevel = min(1.0, max(0.028, level * tuning.gain))
         } else {
             level = 0
             inputLevel = 0

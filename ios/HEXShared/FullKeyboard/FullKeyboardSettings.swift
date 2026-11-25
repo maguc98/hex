@@ -393,3 +393,50 @@ struct FullKeyboardSettings {
         }
     }
 }
+
+
+/// The keyboard's low-volume Whisper mode. Stored in the shared App Group so the key,
+/// waveform and recording pipeline all read the same setting.
+@MainActor
+struct KeyboardWhisperSettings {
+    static let key = "settings.keyboardWhisperMode"
+    private let defaults: UserDefaults?
+
+    init(defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) {
+        self.defaults = defaults
+    }
+
+    var isEnabled: Bool {
+        get { defaults?.bool(forKey: Self.key) ?? false }
+        nonmutating set { defaults?.set(newValue, forKey: Self.key) }
+    }
+}
+
+/// Colors for the live dictation preview: tentative words and settled words can be styled
+/// independently. Nil means use the keyboard's appearance-aware default.
+@MainActor
+struct LiveWordsColorSettings {
+    static let inProgressKey = "settings.liveWordsInProgressColor"
+    static let completedKey = "settings.liveWordsCompletedColor"
+    private let defaults: UserDefaults?
+
+    init(defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) {
+        self.defaults = defaults
+    }
+
+    var inProgressHex: String? {
+        get { defaults?.string(forKey: Self.inProgressKey) }
+        nonmutating set {
+            if let newValue { defaults?.set(newValue, forKey: Self.inProgressKey) }
+            else { defaults?.removeObject(forKey: Self.inProgressKey) }
+        }
+    }
+
+    var completedHex: String? {
+        get { defaults?.string(forKey: Self.completedKey) }
+        nonmutating set {
+            if let newValue { defaults?.set(newValue, forKey: Self.completedKey) }
+            else { defaults?.removeObject(forKey: Self.completedKey) }
+        }
+    }
+}
