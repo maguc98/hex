@@ -1093,6 +1093,9 @@ final class KeyboardViewController: UIInputViewController {
                 return
             }
             guard !livePreviewText.isEmpty else {
+                // Without a readable before-input context, we cannot later prove that a
+                // deletion still targets our own preview (secure fields commonly return nil).
+                guard textDocumentProxy.documentContextBeforeInput != nil else { return }
                 livePreviewDocument = currentDocument
                 textDocumentProxy.insertText(text)
                 livePreviewText = text
