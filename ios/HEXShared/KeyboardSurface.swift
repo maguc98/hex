@@ -701,15 +701,8 @@ struct KeyboardSurfaceView: View {
 
             // The mark's tap area reaches past its pill into this group's slot: the
             // outdent keeps the badge and the status where they were.
-            HStack(spacing: 8) {
-                if let target = model.translatingTo {
-                    TranslationBadge(target: target, palette: p)
-                }
-
-                leadingAccessory(palette: p)
-            }
-            .padding(.leading, -TopBarMetrics.hexMarkOverlap)
-
+            // During dictation, put the live transcript capsule immediately after the Hex mark,
+            // shifting it left; the recording clock/status now follows it.
             if showsLiveCapsule && model.stagePhase == .recording {
                 LiveTranslationCapsule(
                     liveText: model.liveText,
@@ -719,7 +712,17 @@ struct KeyboardSurfaceView: View {
                 .frame(maxWidth: .infinity)
                 .layoutPriority(1)
                 .transition(.opacity.combined(with: .move(edge: .leading)))
-            } else {
+            }
+
+            HStack(spacing: 8) {
+                if let target = model.translatingTo {
+                    TranslationBadge(target: target, palette: p)
+                }
+                leadingAccessory(palette: p)
+            }
+            .padding(.leading, -TopBarMetrics.hexMarkOverlap)
+
+            if !(showsLiveCapsule && model.stagePhase == .recording) {
                 Spacer(minLength: 4)
 
                 if showsPasteDictation {
