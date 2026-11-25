@@ -20,6 +20,7 @@ final class KeyboardLiveDictation {
     private var stopped = false
     private var resolving: Task<Void, Never>?
     private var translationTask: Task<Void, Never>?
+    private var sourceLanguage: Locale.Language?
     private var latest: LiveTranscript?
     private var publishScheduled = false
     private let startedAt = Date()
@@ -56,7 +57,9 @@ final class KeyboardLiveDictation {
         let settings = LiveDictationSettings()
         // Words an earlier keyboard left are another dictation's: never replaced by this one's.
         if settings.leftover != nil { settings.leftover = nil }
-        guard settings.wantsLiveWords else { return nil }
+        // Translation needs live recognition even when the ordinary "Show what I say"
+        // and "Type as I speak" previews are both disabled.
+        guard settings.wantsLiveWords || DictationTranslationSettings().isEnabled else { return nil }
         let available = os_proc_available_memory()
         guard available == 0 || available >= headroomNeeded else {
             KeyboardProbeLog.shared.write("live: skipped, short of memory \(KeyboardProbeLog.memory())")
@@ -121,6 +124,7 @@ final class KeyboardLiveDictation {
                 installed = await AssetInventory.status(forModules: [AppleSpeechModule(picked).module]) == .installed
             }
             guard let self, !self.stopped else { return }
+            if let picked { self.sourceLanguage = picked.locale.language }
             guard let picked, installed else {
                 if let replay = LiveTranscriptReplay.load(log: { KeyboardProbeLog.shared.write($0) }) {
                     self.attach(replay)
@@ -213,7 +217,7 @@ final class KeyboardLiveDictation {
 
             let currentSettings = DictationTranslationSettings()
             guard currentSettings.isEnabled,
-                  let source = DictationTranslator.detectedLanguage(of: phrase) else { return }
+                  let source = self.sourceLanguage ?? DictationTranslator.detectedLanguage(of: phrase) else { return }
 
             let target = Locale.Language(identifier: currentSettings.targetLanguage)
             guard source.languageCode != target.languageCode else {
