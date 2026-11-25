@@ -11,6 +11,7 @@ struct DictationSettingsPage: View {
     @State private var spokenPunctuation = DictationPunctuationSettings().isEnabled
     @State private var endsWithPeriod = DictationPeriodSettings().isEnabled
     @State private var quickWake = KeyboardBridge().quickWakeEnabled
+    @State private var recognitionMode = DictationRecognitionModeSettings().mode
 
     var body: some View {
         SettingsPageScaffold(title: "Dictation") {
@@ -74,6 +75,34 @@ struct DictationSettingsPage: View {
                 )
 
                 DictationLanguageRow(dictation: dictation)
+
+                SettingsDivider()
+
+                HStack(spacing: 12) {
+                    SettingsRowLabel(
+                        title: String(localized: "Recognition mode"),
+                        detail: recognitionMode.detail
+                    )
+                    Spacer(minLength: 8)
+                    Menu {
+                        ForEach(DictationRecognitionMode.allCases, id: \.self) { candidate in
+                            Button {
+                                recognitionMode = candidate
+                            } label: {
+                                if recognitionMode == candidate {
+                                    Label(candidate.title, systemImage: "checkmark")
+                                } else {
+                                    Text(candidate.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        SettingsMenuValue(value: recognitionMode.title)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(minHeight: 50)
             }
 
             SettingsCard {
@@ -190,6 +219,9 @@ struct DictationSettingsPage: View {
         .onChange(of: quickWake) { _, enabled in
             dictation.setQuickWakeEnabled(enabled)
         }
+        .onChange(of: recognitionMode) { _, mode in
+            DictationRecognitionModeSettings().mode = mode
+        }
         .onAppear {
             cleanupTagger = CleanupTaggerSettings().isEnabled
             customVocabulary = CustomVocabularySettings().isEnabled
@@ -198,6 +230,7 @@ struct DictationSettingsPage: View {
             spokenPunctuation = DictationPunctuationSettings().isEnabled
             endsWithPeriod = DictationPeriodSettings().isEnabled
             quickWake = KeyboardBridge().quickWakeEnabled
+            recognitionMode = DictationRecognitionModeSettings().mode
         }
     }
 }
