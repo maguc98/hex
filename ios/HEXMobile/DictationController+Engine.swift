@@ -265,6 +265,11 @@ extension DictationController {
     ) -> any LocalTranscribing {
         let settings = LanguageSettings(defaults: UserDefaults(suiteName: suite))
         let wanted = wantedLanguage(settings: settings)
+        if DictationRecognitionModeSettings().mode == .accurate,
+           SpeechLanguagePicker.isEnglish(wanted),
+           let language = resolve(settings) {
+            return OnDeviceSpeechTranscriber(language: language, access: access, suite: suite)
+        }
         guard choice.engine(for: wanted, appleSpeechPicks: false) == .onDeviceRecognizer else {
             return ParakeetTranscriber()
         }
