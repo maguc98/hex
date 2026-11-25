@@ -19,6 +19,7 @@ final class KeyboardLiveDictation {
     private var heldBytes = 0
     private var stopped = false
     private var resolving: Task<Void, Never>?
+    private var translationTask: Task<Void, Never>?
     private var latest: LiveTranscript?
     private var publishScheduled = false
     private let startedAt = Date()
@@ -85,6 +86,8 @@ final class KeyboardLiveDictation {
         guard !stopped else { return }
         stopped = true
         resolving?.cancel()
+        translationTask?.cancel()
+        translationTask = nil
         source?.stop()
         source = nil
         held = []
@@ -184,6 +187,48 @@ final class KeyboardLiveDictation {
         rewrites += Self.changedWords(from: shownWords, to: words)
         shownWords = words
         text.update(latest)
+        scheduleTranslation(for: latest)
+    }
+
+    /// Translates a settled recognition update without changing the final dictation pipeline.
+    /// Debouncing avoids starting a new Translation session for every small speech revision.
+    private func scheduleTranslation(for transcript: LiveTranscript) {
+        let settings = DictationTranslationSettings()
+        guard settings.isEnabled, !transcript.isEmpty else {
+            text.clearTranslation()
+            return
+        }
+        guard #available(iOS 26.0, *) else { return }
+
+        let phrase = transcript.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !phrase.isEmpty else { return }
+
+        translationTask?.cancel()
+        translationTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(550))
+            guard let self, !Task.isCancelled else { return }
+
+            let currentSettings = DictationTranslationSettings()
+            guard currentSettings.isEnabled,
+                  let source = DictationTranslator.detectedLanguage(of: phrase) else { return }
+
+            let target = Locale.Language(identifier: currentSettings.targetLanguage)
+            guard source.languageCode != target.languageCode else {
+                guard self.text.transcript?.text == transcript.text else { return }
+                self.text.updateTranslation(phrase)
+                return
+            }
+
+            do {
+                let engine = TranslationEngine.apple
+                guard case .installed = await engine.status(source, target) else { return }
+                let translated = try await engine.translate(phrase, source, target)
+                guard !Task.isCancelled, self.text.transcript?.text == transcript.text else { return }
+                self.text.updateTranslation(translated)
+            } catch {
+                // A preview failure must not mutate the final dictation's persisted failure state.
+            }
+        }
     }
 
     /// How many words already on screen `next` changes or takes away.
