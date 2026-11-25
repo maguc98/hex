@@ -58,16 +58,23 @@ enum HexMotion {
     static let tray = Animation.spring(duration: trayDuration, bounce: 0.0)
     static let reducedFade = Animation.easeInOut(duration: reducedDuration)
 
+    private static var animationsEnabled: Bool {
+        InterfaceMotionSettings().isEnabled
+    }
+
     static func stageAnimation(reduceMotion: Bool) -> Animation {
-        reduceMotion ? reducedFade : stage
+        guard animationsEnabled else { return .linear(duration: 0.01) }
+        return reduceMotion ? reducedFade : stage
     }
 
     static func settleAnimation(reduceMotion: Bool) -> Animation {
-        reduceMotion ? reducedFade : settle
+        guard animationsEnabled else { return .linear(duration: 0.01) }
+        return reduceMotion ? reducedFade : settle
     }
 
     static func trayAnimation(reduceMotion: Bool) -> Animation {
-        reduceMotion ? reducedFade : tray
+        guard animationsEnabled else { return .linear(duration: 0.01) }
+        return reduceMotion ? reducedFade : tray
     }
 }
 
