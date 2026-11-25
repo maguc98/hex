@@ -141,7 +141,7 @@ struct DictationSettingsPage: View {
 
                 SettingsToggleRow(
                     title: String(localized: "Live insertion"),
-                    detail: String(localized: "Shows words as you speak when the language supports on-device partial recognition"),
+                    detail: String(localized: "Shows words as you speak when the language and text field support on-device partial recognition"),
                     isOn: $realtimeInsertion
                 )
 
