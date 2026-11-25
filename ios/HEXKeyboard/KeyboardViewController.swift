@@ -1103,8 +1103,9 @@ final class KeyboardViewController: UIInputViewController {
                 livePreviewText = text
                 return
             }
-            guard livePreviewDocument == currentDocument else {
-                abandonLivePreview(reason: "document changed during recognition")
+            guard livePreviewDocument == currentDocument,
+                  previewStillAtCursor() else {
+                abandonLivePreview(reason: "text cursor moved during recognition")
                 return
             }
             let oldCharacters = Array(livePreviewText)
@@ -1160,6 +1161,19 @@ final class KeyboardViewController: UIInputViewController {
         livePreviewText = ""
         livePreviewDocument = nil
         livePreviewAfterContext = nil
+        return true
+    }
+
+    private func previewStillAtCursor() -> Bool {
+        guard livePreviewDocument == currentDocument,
+              let context = textDocumentProxy.documentContextBeforeInput,
+              context.hasSuffix(String(livePreviewText.suffix(min(12, livePreviewText.count)))) else {
+            return false
+        }
+        if let expectedAfter = livePreviewAfterContext {
+            guard let after = textDocumentProxy.documentContextAfterInput,
+                  after.hasPrefix(expectedAfter) else { return false }
+        }
         return true
     }
 
