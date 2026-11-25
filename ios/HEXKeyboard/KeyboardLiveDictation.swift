@@ -178,10 +178,9 @@ final class KeyboardLiveDictation {
         guard !stopped else { return }
         let available = os_proc_available_memory()
         if available > 0, available < Self.floor {
-            KeyboardProbeLog.shared.write("live: stopped, short of memory \(KeyboardProbeLog.memory())")
-            stop()
-            text.fail("内存不足，实时预览已暂停")
-            return
+            // Low-memory readings can be transient during SpeechAnalyzer cold start.
+            // Keep live recognition running; UIKit memory warning remains the hard-stop fallback.
+            KeyboardProbeLog.shared.write("live: low memory, continuing preview cautiously (\\(KeyboardProbeLog.memory()))")
         }
         if firstWordsAt == nil, !transcript.isEmpty { firstWordsAt = Date() }
         latest = transcript
