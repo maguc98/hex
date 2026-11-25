@@ -180,7 +180,7 @@ final class KeyboardLiveDictation {
         if available > 0, available < Self.floor {
             // Low-memory readings can be transient during SpeechAnalyzer cold start.
             // Keep live recognition running; UIKit memory warning remains the hard-stop fallback.
-            KeyboardProbeLog.shared.write("live: low memory, continuing preview cautiously (\\(KeyboardProbeLog.memory()))")
+            KeyboardProbeLog.shared.write("live: low memory, continuing preview cautiously (\(KeyboardProbeLog.memory()))")
         }
         if firstWordsAt == nil, !transcript.isEmpty { firstWordsAt = Date() }
         latest = transcript
