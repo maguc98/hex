@@ -501,7 +501,11 @@ final class KeyboardLocalDictation {
                     self.startPending = nil
                     self.otherAudioAtStart = self.otherAudioAtStart || otherAudio
                     // Without a name to ask for, every choice but Bluetooth asks for the iPhone's own.
-                    capture.start(microphone: input?.name, builtInFallback: microphone != .bluetooth)
+                    capture.start(
+                        microphone: input?.name,
+                        builtInFallback: microphone != .bluetooth,
+                        noiseReduction: KeyboardBridge().noiseReductionEnabled
+                    )
                 }
             }
         }
@@ -837,7 +841,11 @@ final class KeyboardLocalDictation {
         Self.transcribingJobs.insert(record.jobID)
         let vocabulary = CustomVocabularySettings().activeTerms
         let fixes = corrections()
-        let hints = DictationCorrections.recognitionHints(vocabulary: vocabulary, corrections: fixes)
+        let hints = DictationCorrections.recognitionHints(
+            vocabulary: vocabulary,
+            corrections: fixes,
+            language: LanguageSettings().effectiveDictationLanguage
+        )
         let style = KeyboardBridge().style
         let lowercase = DictationLowercaseSettings().isEnabled
         let formatLists = DictationListSettings().isEnabled
@@ -1213,12 +1221,14 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
 
     private var microphone: String?
     private var builtInFallback = true
+    private var noiseReduction = false
 
     /// Records from the input labelled `microphone` (`KeyboardLocalDictation.microphone(for:)`),
     /// else, with `builtInFallback`, the iPhone's own microphone, else WebKit's default.
-    func start(microphone: String?, builtInFallback: Bool) {
+    func start(microphone: String?, builtInFallback: Bool, noiseReduction: Bool) {
         self.microphone = microphone
         self.builtInFallback = builtInFallback
+        self.noiseReduction = noiseReduction
         guard isLoaded else {
             startWhenLoaded = true
             return
@@ -1227,7 +1237,7 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
         let label = microphone
             .flatMap { try? JSONEncoder().encode($0) }
             .flatMap { String(data: $0, encoding: .utf8) } ?? "null"
-        webView.evaluateJavaScript("hexStart(\(label), \(builtInFallback))")
+        webView.evaluateJavaScript("hexStart(\(label), \(builtInFallback), \(noiseReduction))")
     }
 
     func attach(to host: UIView) {
@@ -1264,7 +1274,11 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
         onEvent?(.loaded)
         if startWhenLoaded {
             startWhenLoaded = false
-            start(microphone: microphone, builtInFallback: builtInFallback)
+            start(
+                microphone: microphone,
+                builtInFallback: builtInFallback,
+                noiseReduction: noiseReduction
+            )
         }
     }
 
@@ -1329,7 +1343,6 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
       if (s) s.getTracks().forEach((t) => t.stop());
       if (c) c.close().catch(() => {});
     };
-    const base = { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false };
     // The input named `label`, else (with `builtIn`) the iPhone's own. Labels stay empty
     // until this page has had the microphone once.
     async function chosenMicrophone(label, builtIn) {
@@ -1391,7 +1404,7 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
         backoff = Math.min(8000, backoff * 2);
       }
     }
-    async function hexStart(label, builtIn) {
+    async function hexStart(label, builtIn, noiseReduction) {
       while (stopping) await stopping;
       if (running) return;
       running = true;
@@ -1401,6 +1414,12 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
       const stale = () => start !== generation;
       let s = null, c = null;
       try {
+        const base = {
+          channelCount: 1,
+          echoCancellation: false,
+          noiseSuppression: !!noiseReduction,
+          autoGainControl: !!noiseReduction
+        };
         const choosing = !!label || builtIn;
         let id = choosing ? await chosenMicrophone(label, builtIn) : null;
         if (stale()) return;
@@ -1448,7 +1467,18 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
         source.connect(node);
         node.connect(ctx.destination);
         revive = setInterval(heal, 250);
-        post({ type: "started", rate: ctx.sampleRate, device: stream.getAudioTracks()[0].label, listed, opened, mic, audio: Date.now() });
+        const applied = track().getSettings ? track().getSettings() : {};
+        post({
+          type: "started",
+          rate: ctx.sampleRate,
+          device: track().label,
+          listed,
+          opened,
+          mic,
+          audio: Date.now(),
+          noiseSuppression: !!applied.noiseSuppression,
+          autoGainControl: !!applied.autoGainControl
+        });
       } catch (error) {
         if (stale()) return release(s, c);
         running = false;

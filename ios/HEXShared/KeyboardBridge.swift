@@ -497,6 +497,7 @@ struct KeyboardBridge {
         static let fullAccessOff = "keyboard.fullAccessOff"
         static let appMicrophoneAllowed = "app.microphoneAllowed"
         static let quickWakeEnabled = "settings.quickWakeEnabled"
+        static let noiseReductionEnabled = "settings.noiseReductionEnabled"
         static let lastEmptyDictationAt = "keyboard.lastEmptyDictationAt"
         static let heldDictation = "keyboard.heldDictation"
         static let shownAt = "keyboard.shownAt"
@@ -671,6 +672,12 @@ struct KeyboardBridge {
         nonmutating set { defaults?.set(newValue, forKey: Key.quickWakeEnabled) }
     }
 
+    /// Background-noise suppression for dictation capture, independent of Whisper mode.
+    var noiseReductionEnabled: Bool {
+        get { defaults?.bool(forKey: Key.noiseReductionEnabled) ?? false }
+        nonmutating set { defaults?.set(newValue, forKey: Key.noiseReductionEnabled) }
+    }
+
     /// Whether Hex has the microphone, as the app last read it. Only the app sets this. A
     /// keyboard process keeps the permission it read when it started (iOS doesn't update it
     /// there), so a keyboard opened before Hex was allowed the microphone needs the app's word.
@@ -748,5 +755,22 @@ struct KeyboardBridge {
     func snapshot() -> KeyboardSnapshot {
         guard let data = defaults?.data(forKey: Key.snapshot) else { return .offline }
         return (try? decoder.decode(KeyboardSnapshot.self, from: data)) ?? .offline
+    }
+}
+
+
+/// The shared color for the keyboard's live microphone waveform, never transcript text.
+nonisolated struct LiveWaveformColorSettings {
+    static let key = "settings.liveWaveformColor"
+    private let defaults: UserDefaults?
+    init(defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) {
+        self.defaults = defaults
+    }
+    var hex: String? {
+        get { defaults?.string(forKey: Self.key) }
+        nonmutating set {
+            if let newValue, !newValue.isEmpty { defaults?.set(newValue, forKey: Self.key) }
+            else { defaults?.removeObject(forKey: Self.key) }
+        }
     }
 }

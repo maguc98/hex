@@ -510,6 +510,21 @@ struct KeyboardSurfaceView: View {
     /// The space bar slides the cursor: the keys' glyphs blank out, as on the full keyboard.
     @State private var isTrackpadActive = false
     @State private var whisperModeEnabled = false
+    @State private var noiseReductionEnabled = false
+    @State private var waveformColorHex: String?
+
+    private var waveformTint: Color? {
+        guard let hex = waveformColorHex else { return nil }
+        let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard value.count == 6, let rgb = UInt32(value, radix: 16) else { return nil }
+        return Color(
+            .sRGB,
+            red: Double((rgb >> 16) & 0xFF) / 255,
+            green: Double((rgb >> 8) & 0xFF) / 255,
+            blue: Double(rgb & 0xFF) / 255,
+            opacity: 1
+        )
+    }
 
     private static let wellHeight: CGFloat = 44
     private static let controlHeight: CGFloat = 34
@@ -558,9 +573,14 @@ struct KeyboardSurfaceView: View {
         }
         .onAppear {
             whisperModeEnabled = KeyboardWhisperSettings().isEnabled
+            noiseReductionEnabled = KeyboardBridge().noiseReductionEnabled
+            waveformColorHex = LiveWaveformColorSettings().hex
         }
         .onChange(of: whisperModeEnabled) { _, enabled in
             KeyboardWhisperSettings().isEnabled = enabled
+        }
+        .onChange(of: noiseReductionEnabled) { _, enabled in
+            KeyboardBridge().noiseReductionEnabled = enabled
         }
         .padding(.top, 4)
         .padding(.bottom, 6)
@@ -636,6 +656,7 @@ struct KeyboardSurfaceView: View {
 
             // Keep language switch (Chinese) and style/精修 visible during recording.
             if model.showsLanguageSwitch || model.showsTranslationSwitch, model.translationNote == nil {
+                noiseReductionTrigger(palette: p)
                 languageTrigger(palette: p)
             }
 
@@ -834,6 +855,28 @@ struct KeyboardSurfaceView: View {
         // the switch shows (it needs Full Access).
         .layoutPriority(1)
         .accessibilityLabel("Dictation language: \(label)")
+    }
+
+    private func noiseReductionTrigger(palette p: KeyboardChromePalette) -> some View {
+        Button {
+            model.onKeyFeedback?()
+            noiseReductionEnabled.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: noiseReductionEnabled ? "waveform.badge.mic" : "waveform")
+                    .font(.system(size: 12, weight: .medium))
+                Text("降噪")
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(noiseReductionEnabled ? Color.blue : p.textMuted)
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+            .background(noiseReductionEnabled ? p.chipActiveFill : Color.clear, in: Capsule())
+        }
+        .buttonStyle(TopBarTriggerButtonStyle(palette: p))
+        .accessibilityLabel("Noise reduction")
+        .accessibilityValue(noiseReductionEnabled ? "On" : "Off")
     }
 
     private func languageTrayBar(palette p: KeyboardChromePalette) -> some View {
@@ -1119,7 +1162,8 @@ struct KeyboardSurfaceView: View {
                     loudnessProvider: { [weak model] in
                         let db = model?.liveLoudnessDB ?? -62.0
                         return whisperModeEnabled ? min(0.0, db + 12.0) : db
-                    }
+                    },
+                    customColor: waveformTint
                 )
                 .clipShape(Capsule())
                 .allowsHitTesting(false)

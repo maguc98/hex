@@ -764,7 +764,8 @@ final class DictationController {
         let personalCorrections = learnedDictationCorrections(language)
         let recognitionHints = DictationCorrections.recognitionHints(
             vocabulary: vocabularyTerms,
-            corrections: personalCorrections
+            corrections: personalCorrections,
+            language: language
         )
         let sharesHeard = typingJournalSettings.isEnabled
 

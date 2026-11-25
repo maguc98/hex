@@ -68,10 +68,16 @@ nonisolated enum DictationCorrections {
     /// Custom vocabulary remains first, but learned corrections always get a share of
     /// Apple's contextual-string budget. Otherwise 100 saved vocabulary terms silently
     /// crowd out every correction the person has repeatedly made.
-    static func recognitionHints(vocabulary: [String], corrections: [DictationCorrection]) -> [String] {
+    static func recognitionHints(
+        vocabulary: [String],
+        corrections: [DictationCorrection],
+        language: String? = nil
+    ) -> [String] {
         let limit = CustomVocabularySettings.maxTermCount
         let correctionTerms = corrections.map(\.meant)
-        let correctionSlots = min(20, min(correctionTerms.count, limit))
+        let isChinese = language?.lowercased().hasPrefix("zh") == true
+        let correctionBudget = isChinese ? 40 : 20
+        let correctionSlots = min(correctionBudget, min(correctionTerms.count, limit))
         let vocabularySlots = limit - correctionSlots
         var seen = Set<String>()
         var hints: [String] = []

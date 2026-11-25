@@ -14,8 +14,7 @@ struct DictationSettingsPage: View {
     @State private var showsWhatISay = LiveDictationSettings().showsPreview
     @State private var typesAsISpeak = LiveDictationSettings().typesIntoField
     @State private var quickWake = KeyboardBridge().quickWakeEnabled
-    @State private var inProgressTextColor = Color(red: 0.22, green: 0.57, blue: 1.0)
-    @State private var completedTextColor = Color.white
+    @State private var waveformColor = Color(red: 0.86, green: 0.83, blue: 0.77)
 
     var body: some View {
         SettingsPageScaffold(title: "Dictation") {
@@ -98,26 +97,12 @@ struct DictationSettingsPage: View {
 
                     HStack(spacing: 12) {
                         SettingsRowLabel(
-                            title: String(localized: "In-progress text color"),
-                            detail: String(localized: "Unconfirmed live-recognition words")
+                            title: String(localized: "Waveform color"),
+                            detail: String(localized: "Live microphone waveform, not transcript text")
                         )
                         Spacer(minLength: 8)
-                        ColorPicker("", selection: $inProgressTextColor, supportsOpacity: false)
-                            .labelsHidden()
-                            .frame(width: 44)
-                    }
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 50)
-
-                    SettingsDivider()
-
-                    HStack(spacing: 12) {
-                        SettingsRowLabel(
-                            title: String(localized: "Confirmed text color"),
-                            detail: String(localized: "Words the recognizer has settled")
-                        )
-                        Spacer(minLength: 8)
-                        ColorPicker("", selection: $completedTextColor, supportsOpacity: false)
+                        WaveformColorPreview(color: waveformColor)
+                        ColorPicker("", selection: $waveformColor, supportsOpacity: false)
                             .labelsHidden()
                             .frame(width: 44)
                     }
@@ -243,11 +228,8 @@ struct DictationSettingsPage: View {
         .onChange(of: typesAsISpeak) { _, enabled in
             LiveDictationSettings().typesIntoField = enabled
         }
-        .onChange(of: inProgressTextColor) { _, color in
-            LiveWordsColorSettings().inProgressHex = Self.hexString(color)
-        }
-        .onChange(of: completedTextColor) { _, color in
-            LiveWordsColorSettings().completedHex = Self.hexString(color)
+        .onChange(of: waveformColor) { _, color in
+            LiveWaveformColorSettings().hex = Self.hexString(color)
         }
         .onChange(of: quickWake) { _, enabled in
             dictation.setQuickWakeEnabled(enabled)
@@ -262,12 +244,10 @@ struct DictationSettingsPage: View {
             showsWhatISay = LiveDictationSettings().showsPreview
             typesAsISpeak = LiveDictationSettings().typesIntoField
             quickWake = KeyboardBridge().quickWakeEnabled
-            let colors = LiveWordsColorSettings()
-            inProgressTextColor = Self.color(
-                from: colors.inProgressHex,
-                fallback: Color(red: 0.22, green: 0.57, blue: 1.0)
+            waveformColor = Self.color(
+                from: LiveWaveformColorSettings().hex,
+                fallback: Color(red: 0.86, green: 0.83, blue: 0.77)
             )
-            completedTextColor = Self.color(from: colors.completedHex, fallback: .white)
         }
     }
 
@@ -297,6 +277,23 @@ struct DictationSettingsPage: View {
             Int((green * 255).rounded()),
             Int((blue * 255).rounded())
         )
+    }
+}
+
+private struct WaveformColorPreview: View {
+    let color: Color
+    var body: some View {
+        HStack(alignment: .center, spacing: 3) {
+            Capsule().fill(color).frame(width: 3, height: 7)
+            Capsule().fill(color).frame(width: 3, height: 13)
+            Capsule().fill(color).frame(width: 3, height: 19)
+            Capsule().fill(color).frame(width: 3, height: 11)
+            Capsule().fill(color).frame(width: 3, height: 16)
+            Capsule().fill(color).frame(width: 3, height: 8)
+            Capsule().fill(color).frame(width: 3, height: 14)
+        }
+        .frame(width: 34, height: 28)
+        .accessibilityHidden(true)
     }
 }
 

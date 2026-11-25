@@ -155,12 +155,8 @@ final class LiveWordsView: UIView {
             return NSAttributedString(string: placeholder, attributes: base.merging([.foregroundColor: palette.textMuted]) { $1 })
         }
         let ink = max(0, min(shown.count, settled - dropped))
-        let colors = LiveWordsColorSettings()
-        let completedColor = Self.color(hex: colors.completedHex, fallback: palette.textBase)
-        let inProgressColor = Self.color(
-            hex: colors.inProgressHex,
-            fallback: UIColor(red: 0.22, green: 0.57, blue: 1.0, alpha: 1.0)
-        )
+        let completedColor = palette.textBase
+        let inProgressColor = palette.textMuted
         let result = NSMutableAttributedString(
             string: String(shown.prefix(ink)),
             attributes: base.merging([.foregroundColor: completedColor]) { $1 }
@@ -170,18 +166,6 @@ final class LiveWordsView: UIView {
             attributes: base.merging([.foregroundColor: inProgressColor]) { $1 }
         ))
         return result
-    }
-
-    private static func color(hex: String?, fallback: UIColor) -> UIColor {
-        guard let hex else { return fallback }
-        let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-        guard value.count == 6, let rgb = UInt32(value, radix: 16) else { return fallback }
-        return UIColor(
-            red: CGFloat((rgb >> 16) & 0xFF) / 255,
-            green: CGFloat((rgb >> 8) & 0xFF) / 255,
-            blue: CGFloat(rgb & 0xFF) / 255,
-            alpha: 1
-        )
     }
 
     /// Once the words are at rest, the lines above the box go, whole: the words are laid out

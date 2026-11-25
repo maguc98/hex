@@ -1235,6 +1235,10 @@ final class DotScopeHostView: UIView {
         }
     }
 
+    var customTint: UIColor? {
+        didSet { renderCurrentFrame() }
+    }
+
     var reduceMotion = false
     var useDemoVoice = false
     var loudnessProvider: (() -> Float)?
@@ -1565,11 +1569,26 @@ final class DotScopeHostView: UIView {
         }
 
         let pose = simulation.pose
-        let palette = DotScopePalette.palette(
+        var palette = DotScopePalette.palette(
             isDark: isDark,
             pose: pose,
             saturation: simulation.tuning.saturation
         )
+        if let customTint, pose.fail < 0.5 {
+            var red: CGFloat = 0
+            var green: CGFloat = 0
+            var blue: CGFloat = 0
+            var alpha: CGFloat = 1
+            if customTint.getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
+                let tint = SIMD3<Float>(Float(red), Float(green), Float(blue))
+                palette.base = tint
+                palette.core = SIMD3<Float>(
+                    tint.x + (1 - tint.x) * 0.34,
+                    tint.y + (1 - tint.y) * 0.34,
+                    tint.z + (1 - tint.z) * 0.34
+                )
+            }
+        }
         let scale = Float(max(1.0, metalLayer.contentsScale))
         let resX = Float(metalLayer.drawableSize.width)
         let resY = Float(metalLayer.drawableSize.height)
@@ -1647,6 +1666,7 @@ struct DotScopeView: UIViewRepresentable {
     var drawPlate: Bool = true
     var demoVoice: Bool = ProcessInfo.processInfo.arguments.contains("--snap-state")
     var loudnessProvider: (() -> Float)? = nil
+    var customColor: Color? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.colorScheme) private var colorScheme
@@ -1657,6 +1677,7 @@ struct DotScopeView: UIViewRepresentable {
         view.isDark = colorScheme == .dark
         view.useDemoVoice = demoVoice
         view.loudnessProvider = loudnessProvider
+        view.customTint = customColor.map { UIColor($0) }
         view.drawPlate = drawPlate
         view.phase = phase
         return view
@@ -1667,6 +1688,7 @@ struct DotScopeView: UIViewRepresentable {
         uiView.isDark = colorScheme == .dark
         uiView.useDemoVoice = demoVoice
         uiView.loudnessProvider = loudnessProvider
+        uiView.customTint = customColor.map { UIColor($0) }
         uiView.updateTuning(tuning)
         uiView.drawPlate = drawPlate
         uiView.phase = phase

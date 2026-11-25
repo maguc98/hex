@@ -223,6 +223,23 @@ final class DictationEditInferenceTests: XCTestCase {
         ]), ["Claude"])
     }
 
+    func testChineseRecognitionHintsReserveMoreSlotsForLearnedCorrections() {
+        let vocabulary = (0..<70).map { "词汇\($0)" }
+        let corrections = (0..<50).map {
+            DictationCorrection(heard: "误识\($0)", meant: "词条\($0)")
+        }
+        let hints = DictationCorrections.recognitionHints(
+            vocabulary: vocabulary,
+            corrections: corrections,
+            language: "zh-CN"
+        )
+        XCTAssertEqual(hints.count, CustomVocabularySettings.maxTermCount)
+        XCTAssertTrue(hints.contains("词汇59"))
+        XCTAssertFalse(hints.contains("词汇60"))
+        XCTAssertTrue(hints.contains("词条39"))
+        XCTAssertFalse(hints.contains("词条40"))
+    }
+
     // MARK: Threshold rule
 
     private func record(
