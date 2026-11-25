@@ -505,6 +505,7 @@ struct KeyboardSurfaceView: View {
     @State private var removeTookPress = false
     /// The space bar slides the cursor: the keys' glyphs blank out, as on the full keyboard.
     @State private var isTrackpadActive = false
+    @State private var whisperModeEnabled = false
 
     private static let wellHeight: CGFloat = 44
     private static let controlHeight: CGFloat = 34
@@ -1105,7 +1106,10 @@ struct KeyboardSurfaceView: View {
                     phase: model.dotScopePhase,
                     tuning: .bar(leadingInset: leadInset, trailingInset: trailInset, fade: 28.0, spacing: 3.5),
                     drawPlate: false,
-                    loudnessProvider: { [weak model] in model?.liveLoudnessDB ?? -62.0 }
+                    loudnessProvider: { [weak model] in
+                        let db = model?.liveLoudnessDB ?? -62.0
+                        return whisperModeEnabled ? min(0.0, db + 20.0) : db
+                    }
                 )
                 .clipShape(Capsule())
                 .allowsHitTesting(false)
@@ -1289,12 +1293,11 @@ struct KeyboardSurfaceView: View {
 
     private var utilityRow: some View {
         ViewThatFits(in: .horizontal) {
-            utilityKeys(punctuation: 8)
-            utilityKeys(punctuation: 6)
             utilityKeys(punctuation: 5)
             utilityKeys(punctuation: 4)
             utilityKeys(punctuation: 3)
             utilityKeys(punctuation: 2)
+            utilityKeys(punctuation: 1)
         }
     }
 
@@ -1312,21 +1315,28 @@ struct KeyboardSurfaceView: View {
                     .shadow(color: p.keyShadow, radius: 0.5, x: 0, y: 1)
             }
 
-            if model.showsEmojiKey {
-                Button {
-                    model.onKeyFeedback?()
-                    model.onEmojiTap?()
-                } label: {
-                    Image(systemName: "face.smiling")
-                        .font(.system(size: 17, weight: .regular))
-                        .foregroundStyle(p.textBase)
-                        .opacity(glyphOpacity)
-                        .frame(width: 38, height: 42)
-                        .contentShape(RoundedRectangle(cornerRadius: HexTheme.controlRadius, style: .continuous))
+            Button {
+                model.onKeyFeedback?()
+                whisperModeEnabled.toggle()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: whisperModeEnabled ? "ear.and.waveform" : "ear")
+                        .font(.system(size: 15, weight: .medium))
+                    Text("悄悄话")
+                        .font(.system(size: 13, weight: .medium))
                 }
-                .buttonStyle(KeyboardKeyButtonStyle(palette: p))
-                .accessibilityLabel("Emoji")
+                .foregroundStyle(whisperModeEnabled ? Color.white : p.textBase)
+                .opacity(glyphOpacity)
+                .frame(width: 72, height: 42)
+                .background(
+                    whisperModeEnabled ? Color.blue.opacity(0.78) : p.keyFill,
+                    in: RoundedRectangle(cornerRadius: HexTheme.controlRadius, style: .continuous)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: HexTheme.controlRadius, style: .continuous))
             }
+            .buttonStyle(KeyboardKeyButtonStyle(palette: p))
+            .accessibilityLabel("Whisper mode")
+            .accessibilityValue(whisperModeEnabled ? "On" : "Off")
 
             ForEach(Self.punctuation.prefix(count), id: \.self) { mark in
                 Button {
