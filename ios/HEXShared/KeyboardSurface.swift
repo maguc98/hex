@@ -565,7 +565,7 @@ struct KeyboardSurfaceView: View {
     @State private var removeTookPress = false
     /// The space bar slides the cursor: the keys' glyphs blank out, as on the full keyboard.
     @State private var isTrackpadActive = false
-    /// The first interaction variant: the live text is hidden until the waveform is tapped.
+    /// First iteration: reveal live text only on a waveform tap; do not auto-show on recording start.
     @State private var showsLiveCapsule = false
 
     private static let wellHeight: CGFloat = 44
