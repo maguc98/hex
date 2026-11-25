@@ -4411,12 +4411,12 @@
         }
       }
     },
-    "Shows words as you speak when the language supports on-device partial recognition" : {
+    "Shows words as you speak when the language and text field support on-device partial recognition" : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前语言支持设备端实时识别时，说话内容会同步插入输入框"
+            "value" : "当前语言和输入框支持设备端实时识别时，说话内容会同步插入输入框"
           }
         }
       }
