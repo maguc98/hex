@@ -1283,7 +1283,7 @@ struct KeyboardSurfaceView: View {
 
     /// The bar's punctuation keys, the commonest first: as many as leave the space bar
     /// `minSpaceWidth` (five on a 402 pt iPhone, three on the SE beside its globe).
-    private static let punctuation = [",", ".", "?", "!", "'", "\"", "@", "#"]
+    private static let punctuation = [".", "'", "\"", "@", "#"]
     private static let punctuationKeyWidth: CGFloat = 30
     private static let minSpaceWidth: CGFloat = 60
     private static let keyHeight: CGFloat = 42
