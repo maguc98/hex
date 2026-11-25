@@ -869,12 +869,15 @@ struct KeyboardSurfaceView: View {
                     .font(.system(size: 13, weight: .medium))
                     .lineLimit(1)
             }
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(noiseReductionEnabled ? Color.blue : p.textMuted)
             .padding(.horizontal, 8)
             .frame(height: 26)
             .background(noiseReductionEnabled ? p.chipActiveFill : Color.clear, in: Capsule())
         }
         .buttonStyle(TopBarTriggerButtonStyle(palette: p))
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(2)
         .accessibilityLabel("Noise reduction")
         .accessibilityValue(noiseReductionEnabled ? "On" : "Off")
     }
