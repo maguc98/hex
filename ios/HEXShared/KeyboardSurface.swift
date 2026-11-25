@@ -361,106 +361,6 @@ private struct KeyboardRecordingClockText: View {
     }
 }
 
-/// The live transcript lives in the top status row, not in a separate floating window.
-/// Settled words are muted; the recognizer/translator's changing tail is blue.
-private struct LiveTranslationCapsule: View {
-    @ObservedObject var liveText: LiveDictationText
-    let isTranslating: Bool
-    let isDark: Bool
-
-    private var displayedTranscript: LiveTranscript? {
-        // Keep the spoken words visible while a translated preview is still being prepared.
-        isTranslating ? (liveText.translatedTranscript ?? liveText.transcript) : liveText.transcript
-    }
-
-    private var placeholderText: String {
-        switch liveText.status {
-        case .idle:
-            "实时预览未启用"
-        case .preparing:
-            "正在准备识别…"
-        case .listening:
-            isTranslating ? "正在聆听并翻译…" : "正在聆听…"
-        case .failed(let message):
-            message
-        }
-    }
-
-    private var isFailed: Bool {
-        if case .failed = liveText.status { return true }
-        return false
-    }
-
-    private var attributedText: AttributedString {
-        guard let displayedTranscript else { return AttributedString("") }
-        var settled = AttributedString(displayedTranscript.settled)
-        settled.foregroundColor = (isDark ? Color.white : Color.black).opacity(isDark ? 0.72 : 0.62)
-        var tentative = AttributedString(displayedTranscript.tentativeJoined)
-        tentative.foregroundColor = Color(red: 0.25, green: 0.58, blue: 1.0)
-        settled.append(tentative)
-        return settled
-    }
-
-    private var transcriptScrollKey: String {
-        (displayedTranscript?.settled ?? "") + (displayedTranscript?.tentativeJoined ?? "")
-    }
-
-    var body: some View {
-        HStack(spacing: 5) {
-            ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 0) {
-                        if let displayedTranscript, !displayedTranscript.isEmpty {
-                            Text(attributedText)
-                                .font(.system(size: 12.5, weight: .medium))
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                        } else {
-                            Text(placeholderText)
-                                .font(.system(size: 12.5, weight: .medium))
-                                .foregroundStyle(isFailed
-                                    ? Color.orange.opacity(0.92)
-                                    : (isDark ? Color.white : Color.black).opacity(0.52))
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                        }
-                        if !isFailed && liveText.status != .idle {
-                            Text("▏")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundStyle(Color(red: 0.25, green: 0.58, blue: 1.0))
-                                .id("transcript-tail")
-                                .accessibilityHidden(true)
-                        }
-                    }
-                }
-                .onChange(of: transcriptScrollKey) { _, _ in
-                    withAnimation(.easeOut(duration: 0.12)) {
-                        proxy.scrollTo("transcript-tail", anchor: .trailing)
-                    }
-                }
-                .onAppear {
-                    proxy.scrollTo("transcript-tail", anchor: .trailing)
-                }
-            }
-            .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
-
-            if isFailed {
-                Image(systemName: "exclamationmark.circle.fill")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color.orange.opacity(0.92))
-                    .accessibilityHidden(true)
-            }
-        }
-        .padding(.horizontal, 8)
-        .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
-        .background {
-            Capsule(style: .continuous)
-                .fill(isDark ? Color.white.opacity(0.055) : Color.black.opacity(0.045))
-        }
-        .accessibilityElement(children: .combine)
-    }
-}
-
 private struct KeyboardWarmRemainingText: View {
     @ObservedObject var clock: KeyboardClockModel
     let color: Color
@@ -605,8 +505,6 @@ struct KeyboardSurfaceView: View {
     @State private var removeTookPress = false
     /// The space bar slides the cursor: the keys' glyphs blank out, as on the full keyboard.
     @State private var isTrackpadActive = false
-    /// First iteration: reveal live text only on a waveform tap; do not auto-show on recording start.
-    @State private var showsLiveCapsule = false
 
     private static let wellHeight: CGFloat = 44
     private static let controlHeight: CGFloat = 34
@@ -652,13 +550,6 @@ struct KeyboardSurfaceView: View {
         }
         .onChange(of: model.activeTray) { _, _ in
             removeTookPress = false
-        }
-        .onChange(of: model.stagePhase) { _, phase in
-            if phase != .recording {
-                withAnimation(HexMotion.trayAnimation(reduceMotion: reduceMotion)) {
-                    showsLiveCapsule = false
-                }
-            }
         }
         .padding(.top, 4)
         .padding(.bottom, 6)
@@ -724,17 +615,6 @@ struct KeyboardSurfaceView: View {
                 leadingAccessory(palette: p)
             }
             .padding(.leading, -TopBarMetrics.hexMarkOverlap)
-
-            if showsLiveCapsule && model.stagePhase == .recording {
-                LiveTranslationCapsule(
-                    liveText: model.liveText,
-                    isTranslating: model.isTranslating,
-                    isDark: p.isDark
-                )
-                .frame(maxWidth: .infinity)
-                .layoutPriority(0)
-                .transition(.opacity.combined(with: .move(edge: .leading)))
-            }
 
             Spacer(minLength: 4)
 
@@ -1229,25 +1109,6 @@ struct KeyboardSurfaceView: View {
                 .clipShape(Capsule())
                 .allowsHitTesting(false)
             }
-
-            // The center of the waveform is a separate tap target. The side controls remain
-            // above it in the ZStack, so tapping Cancel or Done never toggles the capsule.
-            Button {
-                model.onKeyFeedback?()
-                withAnimation(HexMotion.trayAnimation(reduceMotion: reduceMotion)) {
-                    showsLiveCapsule.toggle()
-                }
-            } label: {
-                Color.clear
-                    .frame(maxWidth: .infinity)
-                    .frame(height: Self.wellHeight)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 48)
-            .opacity(showRecordingControls ? 1 : 0)
-            .allowsHitTesting(showRecordingControls)
-            .accessibilityLabel(showsLiveCapsule ? "Hide live translation" : "Show live translation")
 
             // Recording peer controls (`✕` and `Done`), always mounted so enter/exit springs stay continuous.
             HStack(spacing: 8) {
