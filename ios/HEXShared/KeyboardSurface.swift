@@ -401,38 +401,53 @@ private struct LiveTranslationCapsule: View {
         return settled
     }
 
+    private var transcriptScrollKey: String {
+        (displayedTranscript?.settled ?? "") + (displayedTranscript?.tentativeJoined ?? "")
+    }
+
     var body: some View {
         HStack(spacing: 5) {
-            Group {
-                if let displayedTranscript, !displayedTranscript.isEmpty {
-                    Text(attributedText)
-                        .font(.system(size: 12.5, weight: .medium))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .layoutPriority(1)
-                } else {
-                    Text(placeholderText)
-                        .font(.system(size: 12.5, weight: .medium))
-                        .foregroundStyle(isFailed
-                            ? Color.orange.opacity(0.92)
-                            : (isDark ? Color.white : Color.black).opacity(0.52))
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 0) {
+                        if let displayedTranscript, !displayedTranscript.isEmpty {
+                            Text(attributedText)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                        } else {
+                            Text(placeholderText)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .foregroundStyle(isFailed
+                                    ? Color.orange.opacity(0.92)
+                                    : (isDark ? Color.white : Color.black).opacity(0.52))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
+                        }
+                        if !isFailed && liveText.status != .idle {
+                            Text("▏")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundStyle(Color(red: 0.25, green: 0.58, blue: 1.0))
+                                .id("transcript-tail")
+                                .accessibilityHidden(true)
+                        }
+                    }
+                }
+                .onChange(of: transcriptScrollKey) { _, _ in
+                    withAnimation(.easeOut(duration: 0.12)) {
+                        proxy.scrollTo("transcript-tail", anchor: .trailing)
+                    }
+                }
+                .onAppear {
+                    proxy.scrollTo("transcript-tail", anchor: .trailing)
                 }
             }
+            .frame(maxWidth: .infinity, minHeight: 26, maxHeight: 26)
 
             if isFailed {
                 Image(systemName: "exclamationmark.circle.fill")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Color.orange.opacity(0.92))
-                    .accessibilityHidden(true)
-            } else if liveText.status != .idle {
-                Text("▏")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Color(red: 0.25, green: 0.58, blue: 1.0))
                     .accessibilityHidden(true)
             }
         }
@@ -712,7 +727,7 @@ struct KeyboardSurfaceView: View {
                     isDark: p.isDark
                 )
                 .frame(maxWidth: .infinity)
-                .layoutPriority(1)
+                .layoutPriority(0)
                 .transition(.opacity.combined(with: .move(edge: .leading)))
             }
 
