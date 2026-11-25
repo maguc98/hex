@@ -15,7 +15,7 @@ nonisolated enum DictationRecognitionMode: String, CaseIterable, Sendable {
     var detail: String {
         switch self {
         case .accurate: String(localized: "Prioritize recognition quality; may take longer.")
-        case .fast: String(localized: "Prioritize speed; may use Parakeet when supported and available.")
+        case .fast: String(localized: "Prioritize speed; use progressive speech results and Parakeet where supported.")
         }
     }
 }

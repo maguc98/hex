@@ -36,6 +36,11 @@ struct ContentView: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @AppStorage(
+        InterfaceMotionSettings.enabledKey,
+        store: UserDefaults(suiteName: KeyboardBridge.appGroup)
+    )
+    private var pageAnimationsEnabled = true
     @Bindable var dictation: DictationController
     @Binding var openedFromKeyboard: Bool
     @Binding var showSetup: Bool
@@ -89,8 +94,8 @@ struct ContentView: View {
             // Opened from a keyboard handing its dictations to Hex: check again whether it must.
             if phase == .active { keyboardSpeech.recheckKeyboardHandoff { dictation.engineName } }
         }
-        .animation(HexMotion.reducedFade, value: openedFromKeyboard)
-        .animation(HexMotion.reducedFade, value: onboardingPage == nil)
+        .animation(HexMotion.stageAnimation(reduceMotion: reduceMotion), value: openedFromKeyboard)
+        .animation(HexMotion.stageAnimation(reduceMotion: reduceMotion), value: onboardingPage == nil)
     }
 
     private var appStageMode: AppStageMode {
@@ -155,6 +160,14 @@ struct ContentView: View {
                 .navigationDestination(for: SettingsPage.self) { page in
                     settingsPage(page)
                 }
+        }
+        // SwiftUI's NavigationStack push/pop transitions are system-driven; apply the
+        // shared preference to their transaction as well as HexMotion's custom animations.
+        .transaction { transaction in
+            if !pageAnimationsEnabled {
+                transaction.disablesAnimations = true
+                transaction.animation = nil
+            }
         }
         .onChange(of: openPage.wrappedValue, initial: true) { _, page in
             guard let page else { return }
