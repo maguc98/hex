@@ -5,6 +5,13 @@ import Speech
 import UIKit
 import WebKit
 
+/// What the keyboard should do with a provisional on-device speech transcript.
+enum KeyboardLivePreviewEvent {
+    case update(String)
+    case remove
+    case keep
+}
+
 /// Experiment: record and transcribe inside the keyboard extension, so dictation
 /// needs no Hex app process. Each step is logged to the App Group container
 /// (`keyboard-capture-probe.log`) to measure permission and memory limits.
@@ -63,6 +70,13 @@ final class KeyboardLocalDictation {
     private var pcmFile: KeyboardPCMFile?
     private var loudness: Float = -62
     private var transcription: Task<Void, Never>?
+    /// Optional on-device partial recognition, enabled only by Settings › Dictation.
+    private var liveRecognizer: SFSpeechRecognizer?
+    private var liveRequest: SFSpeechAudioBufferRecognitionRequest?
+    private var liveTask: SFSpeechRecognitionTask?
+    private var liveAudioFormat: AVAudioFormat?
+    private var livePreviewActive = false
+    var onLivePreview: ((KeyboardLivePreviewEvent) -> Void)?
     /// The current start's steps, logged once its first audio arrives.
     private var timeline: CaptureTimeline?
     /// A failure while armed, shown only if the touch is kept: a slide to the menu drops it.
@@ -375,6 +389,7 @@ final class KeyboardLocalDictation {
     /// stops, its audio is deleted, and nothing is transcribed.
     func discard(reason: String = "slide or cancelled touch") {
         guard case .armed(_, let startedAt) = phase else { return }
+        stopLiveRecognition(preview: .remove)
         noteCaptureStopped()
         if let capture, capture !== Self.sharedCapture || Self.ownership.owner == ownerID {
             listenWhileIdle(capture)
@@ -430,6 +445,7 @@ final class KeyboardLocalDictation {
             pressedAt: min(pressedAt ?? requestedAt.timeIntervalSince1970, requestedAt.timeIntervalSince1970),
             requestedAt: requestedAt.timeIntervalSince1970
         )
+        beginLiveRecognition(jobID: jobID)
         let capture = acquireCaptureForStart(in: host)
         capture.onEvent = { [weak self] event in
             self?.handle(event, jobID: jobID, requestedAt: requestedAt)
@@ -532,6 +548,12 @@ final class KeyboardLocalDictation {
             do {
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent("keyboard-\(jobID).wav")
                 pcmFile = try KeyboardPCMFile(url: url, sampleRate: sampleRate)
+                liveAudioFormat = AVAudioFormat(
+                    commonFormat: .pcmFormatInt16,
+                    sampleRate: sampleRate,
+                    channels: 1,
+                    interleaved: true
+                )
             } catch {
                 capture?.stop()
                 fail(UserFacingError.Context.microphone.fallback, detail: "Could not create audio file: \(Self.describe(error))")
@@ -542,6 +564,9 @@ final class KeyboardLocalDictation {
                 timeline = nil
             }
             pcmFile?.append(data)
+            if let liveRequest, let buffer = Self.audioBuffer(data, format: liveAudioFormat) {
+                liveRequest.append(buffer)
+            }
             lastProgressAt = Date().timeIntervalSince1970
             loudness = peak > 0 ? max(-62, 20 * log10(peak)) : -62
         case .stopped:
@@ -576,6 +601,7 @@ final class KeyboardLocalDictation {
     }
 
     func cancel() {
+        stopLiveRecognition(preview: .remove)
         transcription?.cancel()
         transcription = nil
         timeline = nil
@@ -613,6 +639,7 @@ final class KeyboardLocalDictation {
         case .armed:
             discard(reason: "keyboard hidden")
         case .recording(let jobID, _):
+            stopLiveRecognition(preview: .remove)
             job?.interrupted = true
             KeyboardProbeLog.shared.write("keyboard hidden while recording: finishing with what was said")
             if let capture, capture !== Self.sharedCapture || Self.ownership.owner == ownerID {
@@ -621,6 +648,7 @@ final class KeyboardLocalDictation {
             }
             finishRecording(jobID: jobID)
         case .transcribing:
+            stopLiveRecognition(preview: .remove)
             if let job, !job.interrupted {
                 job.interrupted = true
                 KeyboardProbeLog.shared.write("keyboard hidden while transcribing: holding its text for the next keyboard")
@@ -672,6 +700,7 @@ final class KeyboardLocalDictation {
 
     private func finishRecording(jobID: String) {
         guard case .recording(_, let startedAt) = phase else { return }
+        stopLiveRecognition(preview: .keep)
         noteCaptureStopped()
         guard let file = pcmFile else {
             endQuietly("stopped before the microphone started")
@@ -754,6 +783,7 @@ final class KeyboardLocalDictation {
                         formatted: steps.formatted
                     )
                     : nil
+                self.stopLiveRecognition(preview: .remove)
                 self.phase = .finished(
                     jobID: jobID,
                     resultID: resultID,
@@ -766,6 +796,7 @@ final class KeyboardLocalDictation {
                 try? FileManager.default.removeItem(at: url)
                 guard let self, !Task.isCancelled,
                       case .transcribing(let current) = self.phase, current == jobID else { return }
+                self.stopLiveRecognition(preview: .keep)
                 if EmptyCapture.endsQuietly(error) {
                     self.endQuietly("no speech")
                 } else {
@@ -780,6 +811,7 @@ final class KeyboardLocalDictation {
 
     /// `message` is what the keyboard shows; `detail`, for the log only, may carry codes.
     private func fail(_ message: String, detail: String? = nil) {
+        stopLiveRecognition(preview: .keep)
         noteCaptureStopped()
         if case .armed = phase {
             // Shown only if the touch is kept.
@@ -801,6 +833,100 @@ final class KeyboardLocalDictation {
         // For onboarding's practice only; the keyboard shows nothing.
         KeyboardBridge().lastEmptyDictationAt = Date().timeIntervalSince1970
         phase = .idle
+    }
+
+
+    /// Starts Apple's on-device streaming recognizer only when the person enabled Live
+    /// insertion and granted Speech Recognition access in the containing app. The final
+    /// transcript still comes from the existing Apple Speech pipeline over the complete WAV.
+    private func beginLiveRecognition(jobID: String) {
+        guard RealtimeInsertionSettings().isEnabled,
+              SFSpeechRecognizer.authorizationStatus() == .authorized else { return }
+        let settings = LanguageSettings()
+        let wanted = settings.resolvedDictationLanguage
+            ?? settings.dictationLanguage
+            ?? settings.keyboardDictationLanguage()
+            ?? settings.effectiveDictationLanguage
+            ?? Locale.preferredLanguages.first
+            ?? "en-US"
+        let supported = SFSpeechRecognizer.supportedLocales().map { $0.identifier(.bcp47) }
+        let wantedLocale = Locale(identifier: wanted)
+        let wantedID = wantedLocale.identifier(.bcp47)
+        let matched = supported.first {
+            Locale(identifier: $0).identifier(.bcp47) == wantedID
+        } ?? supported.first {
+            let locale = Locale(identifier: $0)
+            return locale.language.languageCode?.identifier == wantedLocale.language.languageCode?.identifier
+                && locale.region?.identifier == wantedLocale.region?.identifier
+        } ?? supported.first {
+            Locale(identifier: $0).language.languageCode?.identifier == wantedLocale.language.languageCode?.identifier
+        }
+        guard let matched,
+              let recognizer = SFSpeechRecognizer(locale: Locale(identifier: matched)),
+              recognizer.isAvailable,
+              recognizer.supportsOnDeviceRecognition else {
+            KeyboardProbeLog.shared.write("live insertion unavailable for \(wanted): no on-device SFSpeechRecognizer")
+            return
+        }
+
+        let request = SFSpeechAudioBufferRecognitionRequest()
+        request.shouldReportPartialResults = true
+        request.requiresOnDeviceRecognition = true
+        request.taskHint = .dictation
+        request.addsPunctuation = true
+        request.contextualStrings = DictationCorrections.recognitionHints(
+            vocabulary: CustomVocabularySettings().activeTerms,
+            corrections: activeCorrections
+        )
+        recognizer.queue = OperationQueue()
+        liveRecognizer = recognizer
+        liveRequest = request
+        livePreviewActive = true
+        liveTask = recognizer.recognitionTask(with: request) { [weak self] result, error in
+            if let result {
+                let text = result.bestTranscription.formattedString
+                Task { @MainActor [weak self] in
+                    guard let self, self.job?.id == jobID, self.livePreviewActive else { return }
+                    self.onLivePreview?(text.isEmpty ? .remove : .update(text))
+                }
+            }
+            if error != nil {
+                Task { @MainActor [weak self] in
+                    guard let self, self.job?.id == jobID, self.livePreviewActive else { return }
+                    self.stopLiveRecognition(preview: .keep)
+                    KeyboardProbeLog.shared.write("live partial recognition ended; keeping inserted words")
+                }
+            }
+        }
+        KeyboardProbeLog.shared.write("live on-device partial recognition started for \(matched)")
+    }
+
+    /// Ends partial recognition independently of the final file-based transcript. Keep
+    /// detaches the preview without deleting it; remove rolls it back so final formatting can
+    /// calculate spacing against the surrounding field text.
+    private func stopLiveRecognition(preview event: KeyboardLivePreviewEvent) {
+        livePreviewActive = false
+        liveRequest?.endAudio()
+        liveTask?.cancel()
+        liveTask = nil
+        liveRequest = nil
+        liveRecognizer = nil
+        liveAudioFormat = nil
+        onLivePreview?(event)
+    }
+
+    private static func audioBuffer(_ data: Data, format: AVAudioFormat?) -> AVAudioPCMBuffer? {
+        let count = data.count / MemoryLayout<Int16>.size
+        guard count > 0, let format,
+              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(count)) else {
+            return nil
+        }
+        buffer.frameLength = AVAudioFrameCount(count)
+        data.withUnsafeBytes { raw in
+            guard let base = raw.baseAddress, let target = buffer.int16ChannelData?[0] else { return }
+            memcpy(target, base, count * MemoryLayout<Int16>.size)
+        }
+        return buffer
     }
 
     nonisolated private static func describe(_ error: Error) -> String {
