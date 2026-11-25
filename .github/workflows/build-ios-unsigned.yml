@@ -97,4 +97,5 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+# Manual rebuild trigger: refresh this workflow file to rerun the iOS unsigned IPA build.
 # Triggered by updates to this workflow on the dev branch.
