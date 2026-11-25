@@ -670,7 +670,7 @@ final class KeyboardViewController: UIInputViewController {
             return TypingJournal.sharedIfEnabled()?.dictationCorrections(language: language) ?? []
         }
         localDictation.currentDocument = { [weak self] in self?.currentDocument }
-        localDictation.onLivePreview = { [weak self] event in self?.applyLivePreview(event) }
+        localDictation.onLivePreview = { [weak self] event in self?.applyLivePreview(event) ?? false }
         viewModel.onPasteDictation = { [weak self] in self?.pasteOfferedDictation() }
         viewModel.onDictateTap = { [weak self] in self?.startWarmDictation() }
         viewModel.onDictationUnavailable = { [weak self] in
@@ -1085,29 +1085,29 @@ final class KeyboardViewController: UIInputViewController {
 
     /// Applies streaming recognition in place. Revisions replace only the provisional suffix,
     /// so previously recognized words are not appended repeatedly.
-    private func applyLivePreview(_ event: KeyboardLivePreviewEvent) {
+    @discardableResult
+    private func applyLivePreview(_ event: KeyboardLivePreviewEvent) -> Bool {
         switch event {
         case .update(let text):
-            guard !livePreviewAbandoned else { return }
+            guard !livePreviewAbandoned else { return false }
             guard !text.isEmpty else {
-                _ = removeLivePreviewFromDocument()
-                return
+                return removeLivePreviewFromDocument()
             }
             guard !livePreviewText.isEmpty else {
                 // Without a readable before-input context, we cannot later prove that a
                 // deletion still targets our own preview (secure fields commonly return nil).
                 guard textDocumentProxy.documentContextBeforeInput != nil,
-                      let document = currentDocument else { return }
+                      let document = currentDocument else { return false }
                 livePreviewDocument = document
                 livePreviewAfterContext = textDocumentProxy.documentContextAfterInput.map { String($0.prefix(12)) }
                 textDocumentProxy.insertText(text)
                 livePreviewText = text
-                return
+                return true
             }
             guard livePreviewDocument == currentDocument,
                   previewStillAtCursor() else {
                 abandonLivePreview(reason: "text cursor moved during recognition")
-                return
+                return false
             }
             let oldCharacters = Array(livePreviewText)
             let newCharacters = Array(text)
@@ -1119,13 +1119,14 @@ final class KeyboardViewController: UIInputViewController {
             let changedSuffix = String(oldCharacters.dropFirst(commonPrefix))
             guard deletePreviewSuffix(changedSuffix) else {
                 abandonLivePreview(reason: "could not safely replace the previous partial result")
-                return
+                return false
             }
             textDocumentProxy.insertText(String(newCharacters.dropFirst(commonPrefix)))
             livePreviewText = text
+            return true
 
         case .remove:
-            _ = removeLivePreviewFromDocument()
+            return removeLivePreviewFromDocument()
 
         case .keep:
             // A failed final pass must not erase words already shown to the person.
@@ -1133,6 +1134,7 @@ final class KeyboardViewController: UIInputViewController {
             livePreviewDocument = nil
             livePreviewAfterContext = nil
             livePreviewAbandoned = false
+            return true
 
         case .reset:
             // A new recording starts after any earlier preview was either finalized or kept.
@@ -1140,6 +1142,7 @@ final class KeyboardViewController: UIInputViewController {
             livePreviewDocument = nil
             livePreviewAfterContext = nil
             livePreviewAbandoned = false
+            return true
         }
     }
 
