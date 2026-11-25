@@ -229,6 +229,11 @@ extension DictationController {
         guard #available(iOS 26.0, *) else {
             return transcriberBeforeAppleSpeech(choice: choice)
         }
+        if DictationRecognitionModeSettings().mode == .fast,
+           SpeechLanguagePicker.isEnglish(wantedLanguage()),
+           choice.parakeetFitsBesideAppleSpeech {
+            return ParakeetTranscriber()
+        }
         if let language = await appleSpeechLanguage(
             picked: AppleSpeechTranscriber.preferredLanguage(),
             parakeetFits: choice.parakeetFitsBesideAppleSpeech
