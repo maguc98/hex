@@ -198,10 +198,20 @@ nonisolated enum AppleSpeechModule {
                 : .transcription
             self = .speech(SpeechTranscriber(locale: language.locale, preset: preset))
         case .dictation:
-            // Punctuated long-form dictation, with Apple's progressive variant for Fast mode.
-            let preset: DictationTranscriber.Preset = mode == .fast
-                ? .progressiveLongDictation
-                : .longDictation
+            // Keep the long-form punctuation and enable frequent finalization in Fast mode,
+            // so it favors responsive delivery without switching to the short-dictation model.
+            let preset: DictationTranscriber.Preset
+            if mode == .fast {
+                let progressive = DictationTranscriber.Preset.progressiveLongDictation
+                preset = DictationTranscriber.Preset(
+                    contentHints: progressive.contentHints,
+                    transcriptionOptions: progressive.transcriptionOptions,
+                    reportingOptions: progressive.reportingOptions.union([.frequentFinalization]),
+                    attributeOptions: progressive.attributeOptions
+                )
+            } else {
+                preset = .longDictation
+            }
             self = .dictation(DictationTranscriber(locale: language.locale, preset: preset))
         }
     }
