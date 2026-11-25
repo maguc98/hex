@@ -678,16 +678,16 @@ final class KeyboardViewController: UIInputViewController {
             let multilingual = MultilingualParakeetSettings()
             let message: String
             if !KeyboardLocalDictation.isSupported {
-                message = String(localized: "Quick wake requires iOS 26 or later.")
+                message = String(localized: "In-keyboard dictation requires iOS 26 or later.")
             } else if multilingual.keyboardOpensHex(language: multilingual.language())
                         && !KeyboardParakeet.shared.dictatesMultilingualHere {
-                message = String(localized: "Turn off the multilingual speech model to use Quick wake.")
+                message = String(localized: "The multilingual speech model requires Hex to prepare dictation for this language.")
             } else if LanguageSettings().keyboardNeedsHex() {
                 message = String(localized: "Open Hex once to prepare this speech language, then return to the keyboard.")
             } else if !self.localDictation.hasMemoryToStart {
                 message = String(localized: "Not enough available memory for voice input in the keyboard. Close unused apps and try again.")
             } else {
-                message = String(localized: "Quick wake is temporarily unavailable. Try again in a moment.")
+                message = String(localized: "Voice input is temporarily unavailable in the keyboard. Try again in a moment.")
             }
             self.localDictation.reportUnavailable(message)
         }
