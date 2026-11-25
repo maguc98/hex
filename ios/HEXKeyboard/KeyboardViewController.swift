@@ -7,6 +7,10 @@ final class KeyboardViewController: UIInputViewController {
     private let bridge = KeyboardBridge()
     private let viewModel = KeyboardViewModel()
     private let localDictation = KeyboardLocalDictation()
+    /// The provisional text currently at the insertion point, kept separate from final dictation.
+    private var livePreviewText = ""
+    private var livePreviewDocument: UUID?
+    private var livePreviewAbandoned = false
     private var pollTimer: Timer?
     private var coldStartJobID = UUID().uuidString
     private var lastURLRefreshBucket: Int = 0
@@ -665,6 +669,7 @@ final class KeyboardViewController: UIInputViewController {
             return TypingJournal.sharedIfEnabled()?.dictationCorrections(language: language) ?? []
         }
         localDictation.currentDocument = { [weak self] in self?.currentDocument }
+        localDictation.onLivePreview = { [weak self] event in self?.applyLivePreview(event) }
         viewModel.onPasteDictation = { [weak self] in self?.pasteOfferedDictation() }
         viewModel.onDictateTap = { [weak self] in self?.startWarmDictation() }
         viewModel.onDictationUnavailable = { [weak self] in
@@ -1076,6 +1081,89 @@ final class KeyboardViewController: UIInputViewController {
         viewModel.offeredDictation = nil
     }
 
+
+    /// Applies streaming recognition in place. Revisions replace only the provisional suffix,
+    /// so previously recognized words are not appended repeatedly.
+    private func applyLivePreview(_ event: KeyboardLivePreviewEvent) {
+        switch event {
+        case .update(let text):
+            guard !livePreviewAbandoned else { return }
+            guard !text.isEmpty else {
+                _ = removeLivePreviewFromDocument()
+                return
+            }
+            guard !livePreviewText.isEmpty else {
+                livePreviewDocument = currentDocument
+                textDocumentProxy.insertText(text)
+                livePreviewText = text
+                return
+            }
+            guard livePreviewDocument == currentDocument,
+                  let context = textDocumentProxy.documentContextBeforeInput,
+                  context.hasSuffix(String(livePreviewText.suffix(min(12, livePreviewText.count)))) else {
+                livePreviewAbandoned = true
+                livePreviewText = ""
+                livePreviewDocument = nil
+                KeyboardProbeLog.shared.write("live preview changed outside Hex; leaving field text untouched")
+                return
+            }
+            let oldCharacters = Array(livePreviewText)
+            let newCharacters = Array(text)
+            var commonPrefix = 0
+            while commonPrefix < min(oldCharacters.count, newCharacters.count),
+                  oldCharacters[commonPrefix] == newCharacters[commonPrefix] {
+                commonPrefix += 1
+            }
+            for _ in oldCharacters.dropFirst(commonPrefix) {
+                textDocumentProxy.deleteBackward()
+            }
+            textDocumentProxy.insertText(String(newCharacters.dropFirst(commonPrefix)))
+            livePreviewText = text
+
+        case .remove:
+            _ = removeLivePreviewFromDocument()
+
+        case .keep:
+            // A failed final pass must not erase words already shown to the person.
+            livePreviewText = ""
+            livePreviewDocument = nil
+            livePreviewAbandoned = false
+
+        case .reset:
+            // A new recording starts after any earlier preview was either finalized or kept.
+            livePreviewText = ""
+            livePreviewDocument = nil
+            livePreviewAbandoned = false
+        }
+    }
+
+    /// Removes only text that is still immediately before the same field cursor. If the person
+    /// moved the cursor or changed the field, leave their text alone and suppress final duplicate
+    /// insertion for this job.
+    @discardableResult
+    private func removeLivePreviewFromDocument() -> Bool {
+        guard !livePreviewAbandoned else { return false }
+        guard !livePreviewText.isEmpty else {
+            livePreviewDocument = nil
+            return true
+        }
+        guard livePreviewDocument == currentDocument,
+              let context = textDocumentProxy.documentContextBeforeInput,
+              context.hasSuffix(String(livePreviewText.suffix(min(12, livePreviewText.count)))) else {
+            livePreviewAbandoned = true
+            livePreviewText = ""
+            livePreviewDocument = nil
+            KeyboardProbeLog.shared.write("could not safely roll back live preview; retained current field text")
+            return false
+        }
+        for _ in livePreviewText {
+            textDocumentProxy.deleteBackward()
+        }
+        livePreviewText = ""
+        livePreviewDocument = nil
+        return true
+    }
+
     private func insertDictation(
         _ transcript: String,
         resultID: String,
@@ -1084,6 +1172,10 @@ final class KeyboardViewController: UIInputViewController {
         translationFailure: TranslationFailure? = nil,
         source: String
     ) {
+        guard removeLivePreviewFromDocument() else {
+            KeyboardProbeLog.shared.write("final dictation not reinserted because the live preview no longer owns the cursor")
+            return
+        }
         // A two-thumb Dictate's words replace the range it picked, if the field still shows
         // it; either way, the context below is read after that, so spacing sees the result.
         fullKeyboard?.engine.commitHangulComposition()
