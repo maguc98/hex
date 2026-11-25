@@ -409,7 +409,9 @@ private struct LiveTranslationCapsule: View {
                         .font(.system(size: 12.5, weight: .medium))
                         .lineLimit(1)
                         .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .layoutPriority(1)
                 } else {
                     Text(placeholderText)
                         .font(.system(size: 12.5, weight: .medium))
@@ -736,8 +738,10 @@ struct KeyboardSurfaceView: View {
                 }
             }
 
-            styleTrigger(palette: p)
-                .hexTrayReveal(model.hasFullAccess && model.translationNote == nil, reduceMotion: reduceMotion, offsetY: 0)
+            if !(showsLiveCapsule && model.stagePhase == .recording) {
+                styleTrigger(palette: p)
+                    .hexTrayReveal(model.hasFullAccess && model.translationNote == nil, reduceMotion: reduceMotion, offsetY: 0)
+            }
         }
         .frame(height: TopBarMetrics.height)
     }
