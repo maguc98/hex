@@ -186,6 +186,17 @@ extension DictationController {
     private func prepareBeforeAppleSpeechAtLaunch(hasCachedModel: Bool) {
         let choice = SpeechEngineChoice.current
         let wanted = Self.wantedLanguage()
+        if DictationRecognitionModeSettings().mode == .accurate,
+           SpeechLanguagePicker.isEnglish(wanted),
+           OnDeviceSpeechLanguages.resolve(settings: LanguageSettings()) != nil {
+            engineName = "Apple Speech"
+            languageNotice = nil
+            if SFSpeechRecognizer.authorizationStatus() == .authorized {
+                keyboardBridge.setModelInstalled(true)
+                prepareModel()
+            }
+            return
+        }
         switch choice.engine(for: wanted, appleSpeechPicks: false) {
         case .parakeet:
             engineName = "Parakeet V2"
