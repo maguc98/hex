@@ -127,6 +127,7 @@ targets:
       - HEXWidgets
       - HEXActivity
       - HEXShared/HexTheme.swift
+      - HEXShared/InterfaceMotionSettings.swift
     info:
       path: HEXWidgets/Info.plist
       properties:
