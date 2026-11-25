@@ -361,6 +361,66 @@ private struct KeyboardRecordingClockText: View {
     }
 }
 
+/// The tap-to-expand transcript pill floating over the recording scope.
+/// Settled words are muted; the recognizer/translator's changing tail is blue.
+private struct LiveTranslationCapsule: View {
+    @ObservedObject var liveText: LiveDictationText
+    let isTranslating: Bool
+    let isDark: Bool
+
+    private var displayedTranscript: LiveTranscript? {
+        isTranslating ? liveText.translatedTranscript : liveText.transcript
+    }
+
+    private var attributedText: AttributedString {
+        guard let displayedTranscript else { return AttributedString("") }
+        var settled = AttributedString(displayedTranscript.settled)
+        settled.foregroundColor = Color.white.opacity(isDark ? 0.72 : 0.58)
+        var tentative = AttributedString(displayedTranscript.tentativeJoined)
+        tentative.foregroundColor = Color(red: 0.25, green: 0.58, blue: 1.0)
+        settled.append(tentative)
+        return settled
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Group {
+                if let displayedTranscript, !displayedTranscript.isEmpty {
+                    Text(attributedText)
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text(isTranslating ? "正在翻译…" : "正在聆听…")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.58))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+
+            Text("▏")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundStyle(Color(red: 0.25, green: 0.58, blue: 1.0))
+                .accessibilityHidden(true)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
+        .frame(maxWidth: .infinity, minHeight: 36, maxHeight: 40)
+        .background {
+            Capsule(style: .continuous)
+                .fill(Color.black.opacity(isDark ? 0.55 : 0.68))
+                .background(.ultraThinMaterial, in: Capsule(style: .continuous))
+        }
+        .overlay {
+            Capsule(style: .continuous)
+                .stroke(Color.white.opacity(isDark ? 0.13 : 0.20), lineWidth: 0.7)
+        }
+        .shadow(color: .black.opacity(0.20), radius: 8, x: 0, y: 3)
+        .accessibilityElement(children: .combine)
+    }
+}
+
 private struct KeyboardWarmRemainingText: View {
     @ObservedObject var clock: KeyboardClockModel
     let color: Color
@@ -505,6 +565,8 @@ struct KeyboardSurfaceView: View {
     @State private var removeTookPress = false
     /// The space bar slides the cursor: the keys' glyphs blank out, as on the full keyboard.
     @State private var isTrackpadActive = false
+    /// The first interaction variant: the live text is hidden until the waveform is tapped.
+    @State private var showsLiveCapsule = false
 
     private static let wellHeight: CGFloat = 44
     private static let controlHeight: CGFloat = 34
@@ -550,6 +612,13 @@ struct KeyboardSurfaceView: View {
         }
         .onChange(of: model.activeTray) { _, _ in
             removeTookPress = false
+        }
+        .onChange(of: model.stagePhase) { _, phase in
+            if phase != .recording {
+                withAnimation(HexMotion.trayAnimation(reduceMotion: reduceMotion)) {
+                    showsLiveCapsule = false
+                }
+            }
         }
         .padding(.top, 4)
         .padding(.bottom, 6)
@@ -1111,6 +1180,25 @@ struct KeyboardSurfaceView: View {
                 .allowsHitTesting(false)
             }
 
+            // The center of the waveform is a separate tap target. The side controls remain
+            // above it in the ZStack, so tapping Cancel or Done never toggles the capsule.
+            Button {
+                model.onKeyFeedback?()
+                withAnimation(HexMotion.trayAnimation(reduceMotion: reduceMotion)) {
+                    showsLiveCapsule.toggle()
+                }
+            } label: {
+                Color.clear
+                    .frame(maxWidth: .infinity)
+                    .frame(height: Self.wellHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 48)
+            .opacity(showRecordingControls ? 1 : 0)
+            .allowsHitTesting(showRecordingControls)
+            .accessibilityLabel(showsLiveCapsule ? "Hide live translation" : "Show live translation")
+
             // Recording peer controls (`✕` and `Done`), always mounted so enter/exit springs stay continuous.
             HStack(spacing: 8) {
                 Button {
@@ -1163,6 +1251,19 @@ struct KeyboardSurfaceView: View {
                 }
             }
             .padding(.horizontal, Self.wellInset)
+
+            if showsLiveCapsule && showRecordingControls {
+                LiveTranslationCapsule(
+                    liveText: model.liveText,
+                    isTranslating: model.isTranslating,
+                    isDark: p.isDark
+                )
+                .frame(width: 210, height: 36)
+                .frame(maxWidth: .infinity)
+                .allowsHitTesting(false)
+                .transition(.scale(scale: 0.94, anchor: .center).combined(with: .opacity))
+                .zIndex(2)
+            }
 
             // Single permanently mounted idle trigger (never swapped across 3 Button branches).
             Button {
