@@ -36,9 +36,9 @@ final class KeyboardLiveDictation {
     /// share in the keyboard (about 2 MB measured, its model runs in Apple's speech service)
     /// with margin, and the speech model's transcription after it
     /// (`KeyboardParakeetBudget.transcribeHeadroom`, 24 MB).
-    static let headroomNeeded = 32 * 1_048_576
+    static let headroomNeeded = 16 * 1_048_576
     /// Below this while recording, the recogniser goes and the dictation goes on without it.
-    static let floor = 24 * 1_048_576
+    static let floor = 12 * 1_048_576
     /// Audio held while language/model readiness is resolved. Four seconds was too short on
     /// a cold SpeechAnalyzer start and could silently disable live words on later dictations.
     static let maximumHeldSeconds: Double = 8
