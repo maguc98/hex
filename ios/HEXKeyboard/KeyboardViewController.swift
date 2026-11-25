@@ -10,6 +10,7 @@ final class KeyboardViewController: UIInputViewController {
     /// The provisional text currently at the insertion point, kept separate from final dictation.
     private var livePreviewText = ""
     private var livePreviewDocument: UUID?
+    private var livePreviewAfterContext: String?
     private var livePreviewAbandoned = false
     private var pollTimer: Timer?
     private var coldStartJobID = UUID().uuidString
@@ -1097,17 +1098,13 @@ final class KeyboardViewController: UIInputViewController {
                 // deletion still targets our own preview (secure fields commonly return nil).
                 guard textDocumentProxy.documentContextBeforeInput != nil else { return }
                 livePreviewDocument = currentDocument
+                livePreviewAfterContext = textDocumentProxy.documentContextAfterInput.map { String($0.prefix(12)) }
                 textDocumentProxy.insertText(text)
                 livePreviewText = text
                 return
             }
-            guard livePreviewDocument == currentDocument,
-                  let context = textDocumentProxy.documentContextBeforeInput,
-                  context.hasSuffix(String(livePreviewText.suffix(min(12, livePreviewText.count)))) else {
-                livePreviewAbandoned = true
-                livePreviewText = ""
-                livePreviewDocument = nil
-                KeyboardProbeLog.shared.write("live preview changed outside Hex; leaving field text untouched")
+            guard livePreviewDocument == currentDocument else {
+                abandonLivePreview(reason: "document changed during recognition")
                 return
             }
             let oldCharacters = Array(livePreviewText)
@@ -1117,8 +1114,10 @@ final class KeyboardViewController: UIInputViewController {
                   oldCharacters[commonPrefix] == newCharacters[commonPrefix] {
                 commonPrefix += 1
             }
-            for _ in oldCharacters.dropFirst(commonPrefix) {
-                textDocumentProxy.deleteBackward()
+            let changedSuffix = String(oldCharacters.dropFirst(commonPrefix))
+            guard deletePreviewSuffix(changedSuffix) else {
+                abandonLivePreview(reason: "could not safely replace the previous partial result")
+                return
             }
             textDocumentProxy.insertText(String(newCharacters.dropFirst(commonPrefix)))
             livePreviewText = text
@@ -1130,12 +1129,14 @@ final class KeyboardViewController: UIInputViewController {
             // A failed final pass must not erase words already shown to the person.
             livePreviewText = ""
             livePreviewDocument = nil
+            livePreviewAfterContext = nil
             livePreviewAbandoned = false
 
         case .reset:
             // A new recording starts after any earlier preview was either finalized or kept.
             livePreviewText = ""
             livePreviewDocument = nil
+            livePreviewAfterContext = nil
             livePreviewAbandoned = false
         }
     }
@@ -1148,23 +1149,50 @@ final class KeyboardViewController: UIInputViewController {
         guard !livePreviewAbandoned else { return false }
         guard !livePreviewText.isEmpty else {
             livePreviewDocument = nil
+            livePreviewAfterContext = nil
             return true
         }
         guard livePreviewDocument == currentDocument,
-              let context = textDocumentProxy.documentContextBeforeInput,
-              context.hasSuffix(String(livePreviewText.suffix(min(12, livePreviewText.count)))) else {
-            livePreviewAbandoned = true
-            livePreviewText = ""
-            livePreviewDocument = nil
-            KeyboardProbeLog.shared.write("could not safely roll back live preview; retained current field text")
+              deletePreviewSuffix(livePreviewText) else {
+            abandonLivePreview(reason: "could not safely roll back live preview; retained current field text")
             return false
-        }
-        for _ in livePreviewText {
-            textDocumentProxy.deleteBackward()
         }
         livePreviewText = ""
         livePreviewDocument = nil
+        livePreviewAfterContext = nil
         return true
+    }
+
+    /// Deletes from the cursor backwards in small verified chunks. UIKit only exposes a bounded
+    /// documentContextBeforeInput; checking once and deleting a long transcript could otherwise
+    /// run past the visible context and erase text that Hex did not insert.
+    private func deletePreviewSuffix(_ text: String) -> Bool {
+        var remaining = Array(text)
+        while !remaining.isEmpty {
+            guard livePreviewDocument == currentDocument,
+                  let context = textDocumentProxy.documentContextBeforeInput else { return false }
+            if let expectedAfter = livePreviewAfterContext {
+                guard let after = textDocumentProxy.documentContextAfterInput,
+                      after.hasPrefix(expectedAfter) else { return false }
+            }
+            let count = min(12, remaining.count)
+            let expected = String(remaining.suffix(count))
+            guard context.hasSuffix(expected) else { return false }
+            for _ in 0..<count {
+                textDocumentProxy.deleteBackward()
+            }
+            remaining.removeLast(count)
+            livePreviewText = String(remaining)
+        }
+        return true
+    }
+
+    private func abandonLivePreview(reason: String) {
+        livePreviewAbandoned = true
+        livePreviewText = ""
+        livePreviewDocument = nil
+        livePreviewAfterContext = nil
+        KeyboardProbeLog.shared.write("\(reason); leaving field text untouched")
     }
 
     private func insertDictation(
