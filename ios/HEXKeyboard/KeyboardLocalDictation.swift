@@ -923,7 +923,11 @@ final class KeyboardLocalDictation {
         }
         let fixes = activeCorrections
         let vocabulary = CustomVocabularySettings().activeTerms
-        let hints = DictationCorrections.recognitionHints(vocabulary: vocabulary, corrections: fixes)
+        let hints = DictationCorrections.recognitionHints(
+            vocabulary: vocabulary,
+            corrections: fixes,
+            language: LanguageSettings().effectiveDictationLanguage
+        )
         Self.transcribingJobs.insert(jobID)
         transcription = Task { [weak self] in
             defer { Self.transcribingJobs.remove(jobID) }
