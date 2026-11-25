@@ -4381,12 +4381,12 @@
         }
       }
     },
-    "Prioritize speed; uses the keyboard model when enabled and ready." : {
+    "Prioritize speed; may use Parakeet when supported and available." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "优先速度；启用并准备好键盘模型时会使用它。"
+            "value" : "优先速度；在支持且可用时可能使用 Parakeet。"
           }
         }
       }
