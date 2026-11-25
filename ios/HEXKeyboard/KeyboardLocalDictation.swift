@@ -700,7 +700,7 @@ final class KeyboardLocalDictation {
 
     private func finishRecording(jobID: String) {
         guard case .recording(_, let startedAt) = phase else { return }
-        stopLiveRecognition(preview: .keep)
+        stopLiveRecognition()
         noteCaptureStopped()
         guard let file = pcmFile else {
             endQuietly("stopped before the microphone started")
@@ -827,6 +827,7 @@ final class KeyboardLocalDictation {
 
     /// Nothing to insert and nothing wrong: back to idle without a message.
     private func endQuietly(_ reason: String) {
+        stopLiveRecognition(preview: .keep)
         noteCaptureStopped()
         releaseAudioSession()
         KeyboardProbeLog.shared.write("ended quietly: \(reason)")
@@ -904,7 +905,7 @@ final class KeyboardLocalDictation {
     /// Ends partial recognition independently of the final file-based transcript. Keep
     /// detaches the preview without deleting it; remove rolls it back so final formatting can
     /// calculate spacing against the surrounding field text.
-    private func stopLiveRecognition(preview event: KeyboardLivePreviewEvent) {
+    private func stopLiveRecognition(preview event: KeyboardLivePreviewEvent? = nil) {
         livePreviewActive = false
         liveRequest?.endAudio()
         liveTask?.cancel()
@@ -912,7 +913,7 @@ final class KeyboardLocalDictation {
         liveRequest = nil
         liveRecognizer = nil
         liveAudioFormat = nil
-        onLivePreview?(event)
+        if let event { onLivePreview?(event) }
     }
 
     private static func audioBuffer(_ data: Data, format: AVAudioFormat?) -> AVAudioPCMBuffer? {
