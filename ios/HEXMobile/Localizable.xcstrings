@@ -4381,12 +4381,12 @@
         }
       }
     },
-    "Prioritize response speed when a suitable engine is available." : {
+    "Prioritize speed; uses the keyboard model when enabled and ready." : {
       "localizations" : {
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "在有合适识别引擎时优先速度。"
+            "value" : "优先速度；启用并准备好键盘模型时会使用它。"
           }
         }
       }
