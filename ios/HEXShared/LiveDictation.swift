@@ -90,6 +90,8 @@ protocol LiveTranscriptSource: AnyObject {
 @MainActor
 final class LiveDictationText: ObservableObject {
     @Published private(set) var transcript: LiveTranscript?
+    /// The latest translated preview, split into stable and changing text for the capsule.
+    @Published private(set) var translatedTranscript: LiveTranscript?
     /// Settings › Dictation's two switches as this dictation started.
     private(set) var showsPreview = true
     private(set) var typesIntoField = false
@@ -102,6 +104,7 @@ final class LiveDictationText: ObservableObject {
         self.typesIntoField = typesIntoField
         dictation += 1
         transcript = LiveTranscript()
+        translatedTranscript = nil
     }
 
     func update(_ next: LiveTranscript) {
@@ -109,8 +112,28 @@ final class LiveDictationText: ObservableObject {
         transcript = next
     }
 
+    /// Updates the translated preview, dimming the shared prefix and highlighting its live tail.
+    func updateTranslation(_ next: String) {
+        guard transcript != nil else { return }
+        let previous = Array(translatedTranscript?.text ?? "")
+        let current = Array(next)
+        var shared = 0
+        while shared < min(previous.count, current.count), previous[shared] == current[shared] {
+            shared += 1
+        }
+        translatedTranscript = LiveTranscript(
+            settled: String(current.prefix(shared)),
+            tentative: String(current.dropFirst(shared))
+        )
+    }
+
+    func clearTranslation() {
+        translatedTranscript = nil
+    }
+
     func end() {
         if transcript != nil { transcript = nil }
+        translatedTranscript = nil
     }
 }
 
