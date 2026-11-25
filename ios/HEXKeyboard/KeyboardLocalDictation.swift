@@ -43,6 +43,9 @@ final class KeyboardLocalDictation {
         let id: String
         let document: UUID?
         var interrupted = false
+        /// If the live preview could not be removed from its host field, don't hold the final
+        /// transcript for reinsertion elsewhere; the preview may still be visible in that field.
+        var suppressInterruptedHold = false
 
         init(id: String, document: UUID?) {
             self.id = id
@@ -77,7 +80,7 @@ final class KeyboardLocalDictation {
     private var liveTask: SFSpeechRecognitionTask?
     private var liveAudioFormat: AVAudioFormat?
     private var livePreviewActive = false
-    var onLivePreview: ((KeyboardLivePreviewEvent) -> Void)?
+    var onLivePreview: ((KeyboardLivePreviewEvent) -> Bool)?
     /// The current start's steps, logged once its first audio arrives.
     private var timeline: CaptureTimeline?
     /// A failure while armed, shown only if the touch is kept: a slide to the menu drops it.
@@ -656,8 +659,13 @@ final class KeyboardLocalDictation {
                 KeyboardProbeLog.shared.write("keyboard hidden while transcribing: holding its text for the next keyboard")
             }
         case .finished(_, let resultID, let transcript, let heard, _, _):
-            // Shown but not yet inserted: the next keyboard inserts it.
-            Self.hold(resultID: resultID, text: transcript, heard: heard, document: job?.document)
+            // Shown but not yet inserted: the next keyboard inserts it, unless the live preview
+            // could not be removed safely from its original field.
+            if job?.suppressInterruptedHold != true {
+                Self.hold(resultID: resultID, text: transcript, heard: heard, document: job?.document)
+            } else {
+                KeyboardProbeLog.shared.write("not holding final text: live preview may remain in the original field")
+            }
             job = nil
             phase = .idle
         case .idle, .failed:
@@ -759,9 +767,12 @@ final class KeyboardLocalDictation {
                 let resultID = UUID().uuidString
                 let learnable = translated == nil ? steps.heard : nil
                 guard let self, !(job?.interrupted ?? false) else {
-                    // The keyboard hid before it finished, or is gone: the next one delivers it.
-                    if !text.isEmpty {
+                    // The keyboard hid before it finished, or is gone: the next one delivers it,
+                    // unless provisional text couldn't be removed from the original field.
+                    if !text.isEmpty, job?.suppressInterruptedHold != true {
                         Self.hold(resultID: resultID, text: text, heard: learnable, document: job?.document)
+                    } else if !text.isEmpty {
+                        KeyboardProbeLog.shared.write("not holding final text: live preview may remain in the original field")
                     }
                     if let self, self.job === job {
                         self.job = nil
@@ -915,7 +926,12 @@ final class KeyboardLocalDictation {
         liveRequest = nil
         liveRecognizer = nil
         liveAudioFormat = nil
-        if let event { onLivePreview?(event) }
+        if let event {
+            let applied = onLivePreview?(event) ?? true
+            if case .remove = event, !applied {
+                job?.suppressInterruptedHold = true
+            }
+        }
     }
 
     private static func audioBuffer(_ data: Data, format: AVAudioFormat?) -> AVAudioPCMBuffer? {
