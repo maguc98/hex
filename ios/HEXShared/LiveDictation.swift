@@ -87,24 +87,45 @@ protocol LiveTranscriptSource: AnyObject {
 /// What the keyboard shows while it records: nil while no live source runs (the keys stay as
 /// they are), else the words so far. The preview and Type as I speak read it; changing it
 /// never refreshes the rest of the keyboard.
+nonisolated enum LiveDictationStatus: Equatable, Sendable {
+    case idle
+    case preparing
+    case listening
+    case failed(String)
+}
+
 @MainActor
 final class LiveDictationText: ObservableObject {
     @Published private(set) var transcript: LiveTranscript?
     /// The latest translated preview, split into stable and changing text for the capsule.
     @Published private(set) var translatedTranscript: LiveTranscript?
+    /// What the live recogniser is actually doing; the UI must not infer this from recording.
+    @Published private(set) var status: LiveDictationStatus = .idle
     /// Settings › Dictation's two switches as this dictation started.
     private(set) var showsPreview = true
     private(set) var typesIntoField = false
     /// Counts dictations, so what follows the words can tell a new one from the last.
     private(set) var dictation = 0
 
-    /// A source started: the preview shows, empty until the first words.
+    /// A capture wants live words; language/model preparation starts before the source attaches.
+    func prepare() {
+        dictation += 1
+        transcript = nil
+        translatedTranscript = nil
+        status = .preparing
+    }
+
+    /// A source attached successfully: show the preview, empty until its first words arrive.
     func begin(showsPreview: Bool, typesIntoField: Bool) {
         self.showsPreview = showsPreview
         self.typesIntoField = typesIntoField
-        dictation += 1
         transcript = LiveTranscript()
         translatedTranscript = nil
+        status = .listening
+    }
+
+    func fail(_ message: String) {
+        status = .failed(message)
     }
 
     func update(_ next: LiveTranscript) {
@@ -134,6 +155,7 @@ final class LiveDictationText: ObservableObject {
     func end() {
         if transcript != nil { transcript = nil }
         translatedTranscript = nil
+        status = .idle
     }
 }
 
