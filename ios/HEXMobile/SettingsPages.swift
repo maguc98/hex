@@ -237,7 +237,7 @@ struct DictationSettingsPage: View {
                 RealtimeInsertionSettings().isEnabled = true
             case .notDetermined:
                 SFSpeechRecognizer.requestAuthorization { status in
-                    DispatchQueue.main.async {
+                    Task { @MainActor in
                         let granted = status == .authorized
                         realtimeInsertion = granted
                         RealtimeInsertionSettings().isEnabled = granted
