@@ -230,6 +230,12 @@ struct DictationSettingsPage: View {
         }
         .onChange(of: recognitionMode) { _, mode in
             DictationRecognitionModeSettings().mode = mode
+            switch dictation.phase {
+            case .recording, .transcribing, .requestingPermission:
+                dictation.pendingLanguagePreparation = true
+            case .modelRequired, .preparingModel, .ready, .failed:
+                dictation.prepareModel()
+            }
         }
         .onChange(of: pageAnimations) { _, enabled in
             InterfaceMotionSettings().isEnabled = enabled
