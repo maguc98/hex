@@ -187,12 +187,15 @@ final class KeyboardLiveDictation {
         rewrites += Self.changedWords(from: shownWords, to: words)
         shownWords = words
         text.update(latest)
-        scheduleTranslation(for: latest)
+        if !stopped {
+            scheduleTranslation(for: latest)
+        }
     }
 
     /// Translates a settled recognition update without changing the final dictation pipeline.
     /// Debouncing avoids starting a new Translation session for every small speech revision.
     private func scheduleTranslation(for transcript: LiveTranscript) {
+        guard !stopped else { return }
         let settings = DictationTranslationSettings()
         guard settings.isEnabled, !transcript.isEmpty else {
             text.clearTranslation()
