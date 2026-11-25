@@ -716,10 +716,15 @@ struct KeyboardSurfaceView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Open Hex")
 
-            // The mark's tap area reaches past its pill into this group's slot: the
-            // outdent keeps the badge and the status where they were.
-            // During dictation, put the live transcript capsule immediately after the Hex mark,
-            // shifting it left; the recording clock/status now follows it.
+            // Keep the recording clock/status first, then let the transcript follow it.
+            HStack(spacing: 8) {
+                if let target = model.translatingTo {
+                    TranslationBadge(target: target, palette: p)
+                }
+                leadingAccessory(palette: p)
+            }
+            .padding(.leading, -TopBarMetrics.hexMarkOverlap)
+
             if showsLiveCapsule && model.stagePhase == .recording {
                 LiveTranslationCapsule(
                     liveText: model.liveText,
@@ -731,32 +736,20 @@ struct KeyboardSurfaceView: View {
                 .transition(.opacity.combined(with: .move(edge: .leading)))
             }
 
-            HStack(spacing: 8) {
-                if let target = model.translatingTo {
-                    TranslationBadge(target: target, palette: p)
-                }
-                leadingAccessory(palette: p)
-            }
-            .padding(.leading, -TopBarMetrics.hexMarkOverlap)
+            Spacer(minLength: 4)
 
-            if !(showsLiveCapsule && model.stagePhase == .recording) {
+            if showsPasteDictation {
+                pasteDictationChip(palette: p)
                 Spacer(minLength: 4)
-
-                if showsPasteDictation {
-                    pasteDictationChip(palette: p)
-                    Spacer(minLength: 4)
-                }
-
-                // The translation note takes the bar's width for its few seconds.
-                if model.showsLanguageSwitch || model.showsTranslationSwitch, model.translationNote == nil {
-                    languageTrigger(palette: p)
-                }
             }
 
-            if !(showsLiveCapsule && model.stagePhase == .recording) {
-                styleTrigger(palette: p)
-                    .hexTrayReveal(model.hasFullAccess && model.translationNote == nil, reduceMotion: reduceMotion, offsetY: 0)
+            // Keep language switch (Chinese) and style/精修 visible during recording.
+            if model.showsLanguageSwitch || model.showsTranslationSwitch, model.translationNote == nil {
+                languageTrigger(palette: p)
             }
+
+            styleTrigger(palette: p)
+                .hexTrayReveal(model.hasFullAccess && model.translationNote == nil, reduceMotion: reduceMotion, offsetY: 0)
         }
         .frame(height: TopBarMetrics.height)
     }
