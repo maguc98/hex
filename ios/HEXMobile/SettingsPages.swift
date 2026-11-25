@@ -12,6 +12,7 @@ struct DictationSettingsPage: View {
     @State private var endsWithPeriod = DictationPeriodSettings().isEnabled
     @State private var quickWake = KeyboardBridge().quickWakeEnabled
     @State private var recognitionMode = DictationRecognitionModeSettings().mode
+    @State private var pageAnimations = InterfaceMotionSettings().isEnabled
 
     var body: some View {
         SettingsPageScaffold(title: "Dictation") {
@@ -103,6 +104,14 @@ struct DictationSettingsPage: View {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .frame(minHeight: 50)
+
+                SettingsDivider()
+
+                SettingsToggleRow(
+                    title: String(localized: "Page animations"),
+                    detail: String(localized: "Animate transitions and controls"),
+                    isOn: $pageAnimations
+                )
             }
 
             SettingsCard {
@@ -222,6 +231,9 @@ struct DictationSettingsPage: View {
         .onChange(of: recognitionMode) { _, mode in
             DictationRecognitionModeSettings().mode = mode
         }
+        .onChange(of: pageAnimations) { _, enabled in
+            InterfaceMotionSettings().isEnabled = enabled
+        }
         .onAppear {
             cleanupTagger = CleanupTaggerSettings().isEnabled
             customVocabulary = CustomVocabularySettings().isEnabled
@@ -231,6 +243,7 @@ struct DictationSettingsPage: View {
             endsWithPeriod = DictationPeriodSettings().isEnabled
             quickWake = KeyboardBridge().quickWakeEnabled
             recognitionMode = DictationRecognitionModeSettings().mode
+            pageAnimations = InterfaceMotionSettings().isEnabled
         }
     }
 }
