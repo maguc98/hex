@@ -511,6 +511,7 @@ struct KeyboardSurfaceView: View {
     @State private var isTrackpadActive = false
     @State private var whisperModeEnabled = false
     @State private var noiseReductionEnabled = false
+    @State private var speechEngine = "apple"
     @State private var waveformColorHex: String?
 
     private var waveformTint: Color? {
@@ -574,6 +575,7 @@ struct KeyboardSurfaceView: View {
         .onAppear {
             whisperModeEnabled = KeyboardWhisperSettings().isEnabled
             noiseReductionEnabled = KeyboardBridge().noiseReductionEnabled
+            speechEngine = KeyboardBridge().speechEngine
             waveformColorHex = LiveWaveformColorSettings().hex
         }
         .onChange(of: whisperModeEnabled) { _, enabled in
@@ -581,6 +583,9 @@ struct KeyboardSurfaceView: View {
         }
         .onChange(of: noiseReductionEnabled) { _, enabled in
             KeyboardBridge().noiseReductionEnabled = enabled
+        }
+        .onChange(of: speechEngine) { _, engine in
+            KeyboardBridge().speechEngine = engine
         }
         .padding(.top, 4)
         .padding(.bottom, 6)
@@ -659,6 +664,7 @@ struct KeyboardSurfaceView: View {
             // Keep language switch (Chinese) and style/精修 visible during recording.
             if model.showsLanguageSwitch || model.showsTranslationSwitch, model.translationNote == nil {
                 noiseReductionTrigger(palette: p)
+                speechEngineTrigger(palette: p)
                 languageTrigger(palette: p)
             }
 
@@ -882,6 +888,39 @@ struct KeyboardSurfaceView: View {
         .layoutPriority(2)
         .accessibilityLabel("Noise reduction")
         .accessibilityValue(noiseReductionEnabled ? "On" : "Off")
+    }
+
+    private func speechEngineTrigger(palette p: KeyboardChromePalette) -> some View {
+        Menu {
+            Button {
+                model.onKeyFeedback?()
+                speechEngine = "apple"
+            } label: {
+                if speechEngine == "apple" { Label("Apple", systemImage: "checkmark") } else { Text("Apple") }
+            }
+            Button {
+                model.onKeyFeedback?()
+                speechEngine = "qwen"
+            } label: {
+                if speechEngine == "qwen" { Label("Qwen3-ASR", systemImage: "checkmark") } else { Text("Qwen3-ASR") }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "waveform")
+                    .font(.system(size: 12, weight: .medium))
+                Text(speechEngine == "qwen" ? "千问" : "Apple")
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .foregroundStyle(p.textMuted)
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+        }
+        .buttonStyle(TopBarTriggerButtonStyle(palette: p))
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(2)
+        .accessibilityLabel("Speech recognition engine")
     }
 
     private func languageTrayBar(palette p: KeyboardChromePalette) -> some View {

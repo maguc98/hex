@@ -14,6 +14,7 @@ struct DictationSettingsPage: View {
     @State private var showsWhatISay = LiveDictationSettings().showsPreview
     @State private var typesAsISpeak = LiveDictationSettings().typesIntoField
     @State private var quickWake = KeyboardBridge().quickWakeEnabled
+    @State private var qwenAPIKey = KeyboardBridge().qwenAPIKey
     @State private var waveformColor = Color(red: 0.86, green: 0.83, blue: 0.77)
 
     var body: some View {
@@ -78,6 +79,25 @@ struct DictationSettingsPage: View {
                 )
 
                 DictationLanguageRow(dictation: dictation)
+            }
+
+            SettingsCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    SettingsRowLabel(
+                        title: String(localized: "Qwen3-ASR API key"),
+                        detail: String(localized: "Required to use Qwen Chinese speech recognition. Stored in shared settings on this device.")
+                    )
+                    SecureField("DashScope API key", text: $qwenAPIKey)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .padding(.horizontal, 12)
+                        .frame(minHeight: 44)
+                        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                }
+                .padding(16)
+            }
+            .onChange(of: qwenAPIKey) { _, key in
+                KeyboardBridge().qwenAPIKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
             }
 
             // While the keyboard records by itself (iOS 26 and later): its live words.
