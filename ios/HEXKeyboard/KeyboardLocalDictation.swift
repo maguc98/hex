@@ -923,8 +923,11 @@ final class KeyboardLocalDictation {
         }
         let fixes = activeCorrections
         let vocabulary = CustomVocabularySettings().activeTerms
+        let learnedPhrases = SpeechLearningStore().recognitionHints(
+            language: LanguageSettings().effectiveDictationLanguage
+        )
         let hints = DictationCorrections.recognitionHints(
-            vocabulary: vocabulary,
+            vocabulary: learnedPhrases + vocabulary,
             corrections: fixes,
             language: LanguageSettings().effectiveDictationLanguage
         )
@@ -934,7 +937,6 @@ final class KeyboardLocalDictation {
             let started = Date()
             do {
                 let (heard, language, engine) = try await KeyboardTranscription.transcribe(url, hints: hints, audioSeconds: seconds)
-                if !(job?.interrupted ?? false) { try? FileManager.default.removeItem(at: url) }
                 let locale = language.identifier
                 let style = KeyboardBridge().style
                 // The app's steps (but Apple Intelligence's cleanup), its style, Format lists,
@@ -962,6 +964,19 @@ final class KeyboardLocalDictation {
                 // A translation's words can't be compared with what was heard, so it isn't learned from.
                 let resultID = UUID().uuidString
                 let learnable = translated == nil ? steps.heard : nil
+                if translated == nil, !text.isEmpty {
+                    _ = SpeechLearningStore().stagePendingAudio(
+                        from: url,
+                        resultID: resultID,
+                        text: text,
+                        heard: steps.heard,
+                        language: locale,
+                        duration: seconds
+                    )
+                }
+                if !(job?.interrupted ?? false) {
+                    try? FileManager.default.removeItem(at: url)
+                }
                 guard let self, !(job?.interrupted ?? false) else {
                     // The keyboard hid before it finished, or is gone: the next one delivers it.
                     if !text.isEmpty {
