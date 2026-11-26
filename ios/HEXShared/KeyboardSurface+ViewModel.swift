@@ -82,6 +82,14 @@ final class KeyboardViewModel: ObservableObject {
     /// the keyboard came back in another field): the full keyboard's strip and the dictation
     /// bar's top row offer Paste dictation, which calls `onPasteDictation`.
     @Published var offeredDictation: String?
+    /// The most recently inserted voice result that still has a staged local audio sample.
+    @Published private(set) var speechLearningResultID: String?
+    @Published private(set) var didLearnSpeechSample = false
+
+    var canLearnSpeechSample: Bool {
+        hasFullAccess && stagePhase == .idle && speechLearningResultID != nil
+    }
+
     /// Duration shown beside Paste dictation when the keyboard closed during recording.
     @Published private(set) var offeredDictationStoppedAfter: TimeInterval?
     private var stoppedNoteWork: Task<Void, Never>?
@@ -101,6 +109,17 @@ final class KeyboardViewModel: ObservableObject {
             guard !Task.isCancelled else { return }
             self?.offeredDictationStoppedAfter = nil
         }
+    }
+
+    func offerSpeechLearning(resultID: String?) {
+        guard speechLearningResultID != resultID else { return }
+        speechLearningResultID = resultID
+        didLearnSpeechSample = false
+    }
+
+    func markSpeechSampleLearned() {
+        guard speechLearningResultID != nil else { return }
+        didLearnSpeechSample = true
     }
 
     // Non-published live telemetry read directly by `DotScopeHostView` / button tap handlers
@@ -144,6 +163,7 @@ final class KeyboardViewModel: ObservableObject {
     var onReturn: (() -> Void)?
     var onOpenURL: ((URL) -> Void)?
     var onPasteDictation: (() -> Void)?
+    var onLearnSpeechSample: (() -> Void)?
     /// The dictation bar's light haptic for each press; the keyboard allows it with Full
     /// Access and Experiments › Haptics, as the full keyboard's keys.
     var onKeyFeedback: (() -> Void)?
