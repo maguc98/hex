@@ -664,10 +664,6 @@ struct KeyboardSurfaceView: View {
 
             Spacer(minLength: 4)
 
-            if model.canLearnSpeechSample {
-                speechLearningChip(palette: p)
-            }
-
             if showsPasteDictation {
                 pasteDictationChip(palette: p)
                 Spacer(minLength: 4)
@@ -707,33 +703,6 @@ struct KeyboardSurfaceView: View {
         }
         .buttonStyle(TopBarChipButtonStyle())
         .layoutPriority(1)
-    }
-
-    /// Learns the just-inserted result in place; tapping never starts another recording.
-    private func speechLearningChip(palette p: KeyboardChromePalette) -> some View {
-        let learned = model.didLearnSpeechSample
-        return Button {
-            guard !learned else { return }
-            model.onKeyFeedback?()
-            model.onLearnSpeechSample?()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: learned ? "checkmark" : "sparkles")
-                    .font(.system(size: 10, weight: .semibold))
-                Text(learned ? "已学习" : "学习")
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(p.textBase)
-            .padding(.horizontal, 9)
-            .frame(height: 26)
-            .background(learned ? p.chipIdleFill : p.chipActiveFill, in: Capsule())
-        }
-        .buttonStyle(TopBarChipButtonStyle())
-        .disabled(learned)
-        .transition(.opacity.combined(with: .scale(scale: 0.94)))
-        .accessibilityLabel(learned ? "Speech sample learned" : "Learn this speech sample")
-        .accessibilityHint("Saves the spoken sentence, its translation when available, and audio on this iPhone")
     }
 
     private func styleTrayBar(palette p: KeyboardChromePalette) -> some View {
@@ -1309,6 +1278,40 @@ struct KeyboardSurfaceView: View {
                 scale: 0.92,
                 blur: 2.5,
                 anchor: .trailing
+            )
+
+            // Keep the Learning action in the large voice well, beside Dictate / Set up.
+            // The outer row stays mounted; only its reveal state changes with the pending sample.
+            let learned = model.didLearnSpeechSample
+            HStack(spacing: 0) {
+                Button {
+                    guard model.canLearnSpeechSample, !learned else { return }
+                    model.onKeyFeedback?()
+                    model.onLearnSpeechSample?()
+                } label: {
+                    Label(learned ? "已加入" : "加入学习",
+                          systemImage: learned ? "checkmark.circle.fill" : "book.closed.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(learned ? p.textMuted : p.textBase)
+                        .padding(.horizontal, 11)
+                        .frame(height: Self.controlHeight)
+                        .background(learned ? p.chipIdleFill : p.chipActiveFill, in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(!model.canLearnSpeechSample || learned)
+                .accessibilityLabel(learned ? "已加入学习" : "加入学习")
+                .accessibilityHint("保存这句话、译文和录音")
+
+                Spacer(minLength: 0)
+            }
+            .padding(.leading, Self.wellInset + 6)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .hexControlReveal(
+                model.canLearnSpeechSample,
+                reduceMotion: reduceMotion,
+                scale: 0.96,
+                blur: 1.5,
+                anchor: .leading
             )
         }
         .frame(height: Self.wellHeight)
