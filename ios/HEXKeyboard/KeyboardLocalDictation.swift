@@ -880,12 +880,15 @@ final class KeyboardLocalDictation {
                 ).run(heard, translationSource: language.locale.language)
                 guard !steps.formatted.isEmpty else { return }
                 let resultID = UUID().uuidString
-                if steps.translated == nil {
+                let spokenSentence = steps.translated == nil ? steps.formatted : steps.cleaned
+                if !spokenSentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     _ = SpeechLearningStore().stagePendingAudio(
                         from: record.url,
                         resultID: resultID,
-                        text: steps.formatted,
+                        text: spokenSentence,
                         heard: steps.heard,
+                        translatedText: steps.translated == nil ? nil : steps.formatted,
+                        translatedLanguage: steps.translatedLanguage,
                         language: language.identifier,
                         duration: record.seconds
                     )
@@ -980,15 +983,19 @@ final class KeyboardLocalDictation {
                     KeyboardProbeLog.shared.write("pasted as spoken: \(failure.source)->\(failure.target) \(failure.reason.rawValue) \(failure.detail ?? "")")
                 }
                 guard !Task.isCancelled else { return }
-                // A translation's words can't be compared with what was heard, so it isn't learned from.
+                // A translation cannot be compared with the spoken words for typing corrections,
+                // but the spoken sentence, translation and original audio are still a useful study sample.
                 let resultID = UUID().uuidString
                 let learnable = translated == nil ? steps.heard : nil
-                if translated == nil, !text.isEmpty {
+                let spokenSentence = translated == nil ? text : steps.cleaned
+                if !spokenSentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     _ = SpeechLearningStore().stagePendingAudio(
                         from: url,
                         resultID: resultID,
-                        text: text,
+                        text: spokenSentence,
                         heard: steps.heard,
+                        translatedText: translated == nil ? nil : text,
+                        translatedLanguage: steps.translatedLanguage,
                         language: locale,
                         duration: seconds
                     )
