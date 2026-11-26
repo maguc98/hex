@@ -1149,6 +1149,7 @@ struct KeyboardSurfaceView: View {
         let showCancelControl = showStarting || showRecordingControls
         let showIdleTrigger = model.stagePhase == .idle || model.stagePhase == .failed
         let spec = idleTriggerSpec
+        let learned = model.didLearnSpeechSample
 
         let leadInset: Float = showCancelControl
             ? Float(Self.wellInset + Self.cancelWidth + 6)
@@ -1282,7 +1283,6 @@ struct KeyboardSurfaceView: View {
 
             // Keep the Learning action in the large voice well, beside Dictate / Set up.
             // The outer row stays mounted; only its reveal state changes with the pending sample.
-            let learned = model.didLearnSpeechSample
             HStack(spacing: 0) {
                 Button {
                     guard model.canLearnSpeechSample, !learned else { return }
