@@ -4350,6 +4350,76 @@
           }
         }
       }
+    },
+    "Accurate" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "精确识别"
+          }
+        }
+      }
+    },
+    "Fast" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "快速识别"
+          }
+        }
+      }
+    },
+    "Prioritize recognition quality; may take longer." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优先识别准确度，速度可能稍慢。"
+          }
+        }
+      }
+    },
+    "Prioritize speed; use progressive speech results and Parakeet where supported." : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "优先响应速度；支持时使用更快返回结果的识别方式或 Parakeet。"
+          }
+        }
+      }
+    },
+    "Recognition mode" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "识别模式"
+          }
+        }
+      }
+    },
+    "Page animations" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "页面动画"
+          }
+        }
+      }
+    },
+    "Animate transitions and controls" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "为页面切换和控件添加动画"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
