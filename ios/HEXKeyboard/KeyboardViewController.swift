@@ -1038,8 +1038,10 @@ final class KeyboardViewController: UIInputViewController {
         // short-lived original WAV is still staged in the local App Group.
         let learningStore = SpeechLearningStore()
         let insertedID = bridge.lastInsertedResultID
-        let learningID = insertedID.flatMap { learningStore.hasPending(resultID: $0) ? $0 : nil }
-        viewModel.offerSpeechLearning(resultID: learningID)
+        if !(viewModel.didLearnSpeechSample && viewModel.speechLearningResultID == insertedID) {
+            let learningID = insertedID.flatMap { learningStore.hasPending(resultID: $0) ? $0 : nil }
+            viewModel.offerSpeechLearning(resultID: learningID)
+        }
 
         syncLanguageState()
 
