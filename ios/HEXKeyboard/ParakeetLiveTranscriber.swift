@@ -115,7 +115,13 @@ final class ParakeetLiveTranscriber: LiveTranscriptSource {
         while count < settledCount, ends[count] < seconds - Self.keepTentative { count += 1 }
         guard count > 0 else { return }
         frozen = ([frozen] + words.prefix(count)).filter { !$0.isEmpty }.joined(separator: " ")
-        windowStart += Int(ends[count - 1] * Self.sampleRate)
+        let frozenFrames = max(0, Int((ends[count - 1] * Self.sampleRate).rounded(.down)))
+        let consumedSamples = min(samples.count, windowStart + frozenFrames)
+        // The rolling pass only needs the unsettled tail. Rebuild the array so its capacity
+        // shrinks too; removeFirst alone would leave the large allocation resident in memory.
+        samples = Array(samples.dropFirst(consumedSamples))
+        samplesAtLastPass = max(0, samplesAtLastPass - consumedSamples)
+        windowStart = 0
         previousWords = Array(previousWords.dropFirst(count))
         settledCount -= count
     }
