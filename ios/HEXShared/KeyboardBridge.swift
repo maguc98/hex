@@ -946,6 +946,10 @@ nonisolated struct LiveWaveformColorSettings {
         defaults.set(data, forKey: Self.paletteKey)
         _ = defaults.synchronize()
         guard notify else { return }
+
+        // Refresh a preview hosted in this process immediately; the Darwin notification
+        // below is still required to refresh the separate keyboard-extension process.
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
         CFNotificationCenterPostNotification(
             CFNotificationCenterGetDarwinNotifyCenter(),
             CFNotificationName(Self.darwinNotification as CFString),
