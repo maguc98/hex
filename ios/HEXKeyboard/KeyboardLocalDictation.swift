@@ -840,9 +840,12 @@ final class KeyboardLocalDictation {
         }
         Self.transcribingJobs.insert(record.jobID)
         let vocabulary = CustomVocabularySettings().activeTerms
+        let learnedPhrases = SpeechLearningStore().recognitionHints(
+            language: LanguageSettings().effectiveDictationLanguage
+        )
         let fixes = corrections()
         let hints = DictationCorrections.recognitionHints(
-            vocabulary: vocabulary,
+            vocabulary: learnedPhrases + vocabulary,
             corrections: fixes,
             language: LanguageSettings().effectiveDictationLanguage
         )
@@ -876,8 +879,19 @@ final class KeyboardLocalDictation {
                     endsWithPeriod: endsWithPeriod
                 ).run(heard, translationSource: language.locale.language)
                 guard !steps.formatted.isEmpty else { return }
+                let resultID = UUID().uuidString
+                if steps.translated == nil {
+                    _ = SpeechLearningStore().stagePendingAudio(
+                        from: record.url,
+                        resultID: resultID,
+                        text: steps.formatted,
+                        heard: steps.heard,
+                        language: language.identifier,
+                        duration: record.seconds
+                    )
+                }
                 Self.hold(
-                    resultID: UUID().uuidString,
+                    resultID: resultID,
                     text: steps.formatted,
                     heard: steps.translated == nil ? steps.heard : nil,
                     document: record.document,
