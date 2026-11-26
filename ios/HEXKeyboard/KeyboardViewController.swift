@@ -8,6 +8,7 @@ final class KeyboardViewController: UIInputViewController {
     private let viewModel = KeyboardViewModel()
     private let localDictation = KeyboardLocalDictation()
     private var pollTimer: Timer?
+    private var lastSpeechLearningCleanupAt: TimeInterval = 0
     private var coldStartJobID = UUID().uuidString
     private var lastURLRefreshBucket: Int = 0
     private var lastFullAccessReport: KeyboardFullAccessReport?
@@ -992,6 +993,11 @@ final class KeyboardViewController: UIInputViewController {
             // can still render its setup prompt and lets the user open Hex's setup screen.
             mountSurface()
             return
+        }
+
+        if now - lastSpeechLearningCleanupAt >= 5 {
+            SpeechLearningStore().cleanupExpiredPending()
+            lastSpeechLearningCleanupAt = now
         }
 
         if dictationEdits.isTracking {
