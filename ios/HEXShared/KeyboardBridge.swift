@@ -498,8 +498,6 @@ struct KeyboardBridge {
         static let appMicrophoneAllowed = "app.microphoneAllowed"
         static let quickWakeEnabled = "settings.quickWakeEnabled"
         static let noiseReductionEnabled = "settings.noiseReductionEnabled"
-        static let speechEngine = "settings.keyboardSpeechEngine"
-        static let qwenAPIKey = "settings.qwenAPIKey"
         static let lastEmptyDictationAt = "keyboard.lastEmptyDictationAt"
         static let heldDictation = "keyboard.heldDictation"
         static let shownAt = "keyboard.shownAt"
@@ -678,18 +676,6 @@ struct KeyboardBridge {
     var noiseReductionEnabled: Bool {
         get { defaults?.bool(forKey: Key.noiseReductionEnabled) ?? false }
         nonmutating set { defaults?.set(newValue, forKey: Key.noiseReductionEnabled) }
-    }
-
-    /// The selected speech recognition engine for keyboard dictation.
-    var speechEngine: String {
-        get { defaults?.string(forKey: Key.speechEngine) ?? "apple" }
-        nonmutating set { defaults?.set(newValue, forKey: Key.speechEngine) }
-    }
-
-    /// User-provided Qwen API key shared with the keyboard extension.
-    var qwenAPIKey: String {
-        get { defaults?.string(forKey: Key.qwenAPIKey) ?? "" }
-        nonmutating set { defaults?.set(newValue, forKey: Key.qwenAPIKey) }
     }
 
     /// Whether Hex has the microphone, as the app last read it. Only the app sets this. A
