@@ -25,7 +25,9 @@ nonisolated struct SpeechLearningPending: Codable, Equatable, Sendable {
 /// A finished recording is staged briefly; only tapping Learn moves it into the durable local library.
 nonisolated struct SpeechLearningStore {
     static let pendingLifetime: TimeInterval = 45
-    static let maximumSamples = 50
+    static let maximumSamples = 12
+    static let maximumSampleDuration: TimeInterval = 30
+    static let maximumAudioBytes = 3 * 1_048_576
     static let maximumHintCount = 20
     static let maximumHintLength = 64
 
@@ -66,7 +68,11 @@ nonisolated struct SpeechLearningStore {
     ) -> Bool {
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard validID(resultID), !cleanText.isEmpty,
+              duration > 0, duration <= Self.maximumSampleDuration,
               fileManager.fileExists(atPath: sourceURL.path),
+              let attributes = try? fileManager.attributesOfItem(atPath: sourceURL.path),
+              let size = attributes[.size] as? NSNumber,
+              size.intValue <= Self.maximumAudioBytes,
               let directory = directory(named: "Pending", create: true) else { return false }
 
         pruneExpiredPending()
@@ -95,8 +101,14 @@ nonisolated struct SpeechLearningStore {
         return true
     }
 
+    /// Removes expired, unconfirmed recordings. Safe to call periodically while the keyboard is visible.
+    func cleanupExpiredPending() {
+        pruneExpiredPending()
+    }
+
     /// True only while the matching audio sample is still staged and can be confirmed.
     func hasPending(resultID: String) -> Bool {
+        pruneExpiredPending()
         guard validID(resultID), let record = readPending().first(where: { $0.id == resultID }) else {
             return false
         }
@@ -222,8 +234,8 @@ nonisolated struct SpeechLearningStore {
     }
 
     private func validID(_ id: String) -> Bool {
-        !id.isEmpty && id.count <= 64 && id.allSatisfy {
-            $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-")
+        !id.isEmpty && id.utf8.count <= 64 && id.utf8.allSatisfy {
+            ($0 >= 48 && $0 <= 57) || ($0 >= 65 && $0 <= 90) || ($0 >= 97 && $0 <= 122) || $0 == 45
         }
     }
 
