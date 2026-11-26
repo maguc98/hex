@@ -82,6 +82,21 @@ final class KeyboardBridgeTests: XCTestCase {
         XCTAssertTrue(store.samples().isEmpty)
     }
 
+    func testSpeechLearningChipKeepsConfirmationUntilANewResultArrives() {
+        let model = KeyboardViewModel()
+        model.offerSpeechLearning(resultID: "result-one")
+        XCTAssertTrue(model.canLearnSpeechSample)
+        XCTAssertFalse(model.didLearnSpeechSample)
+
+        model.markSpeechSampleLearned()
+        model.offerSpeechLearning(resultID: "result-one")
+        XCTAssertTrue(model.didLearnSpeechSample, "Repeated bridge polls must not reset the learned state.")
+
+        model.offerSpeechLearning(resultID: "result-two")
+        XCTAssertFalse(model.didLearnSpeechSample)
+        XCTAssertEqual(model.speechLearningResultID, "result-two")
+    }
+
     func testQuickWakePreferencePersistsAcrossBridgeInstances() {
         let suiteName = "hex.tests.quickWake.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
