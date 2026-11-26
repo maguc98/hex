@@ -731,6 +731,7 @@ struct KeyboardSurfaceView: View {
         }
         .buttonStyle(TopBarChipButtonStyle())
         .disabled(learned)
+        .transition(.opacity.combined(with: .scale(scale: 0.94)))
         .accessibilityLabel(learned ? "Speech sample learned" : "Learn this speech sample")
         .accessibilityHint("Saves the current sentence and its audio on this iPhone")
     }
