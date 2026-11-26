@@ -105,9 +105,11 @@ struct FullKeyboardSettings {
     /// `experiments.fullKeyboard`, from when the full keyboard was an experiment: unset or
     /// true is the full keyboard and false the dictation bar, so testers who never touched
     /// the experiment get the full keyboard and those who turned it off keep the bar.
+    /// Full keyboard is temporarily hidden from the product UI. Keep its implementation and
+    /// stored setting for future restoration, but always select the dictation bar by default.
     var isEnabled: Bool {
-        get { defaults?.object(forKey: Key.fullKeyboard) as? Bool ?? true }
-        nonmutating set { defaults?.set(newValue, forKey: Key.fullKeyboard) }
+        get { false }
+        nonmutating set { defaults?.set(false, forKey: Key.fullKeyboard) }
     }
 
     /// Settings › Keyboard › Auto-capitalization, as Apple's switch of the same name. On by

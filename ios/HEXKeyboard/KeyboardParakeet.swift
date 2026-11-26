@@ -395,7 +395,8 @@ private nonisolated final class FootprintPeak: @unchecked Sendable {
 @available(iOS 26.0, *)
 enum KeyboardTranscription {
     static func transcribe(_ url: URL, hints: [String], audioSeconds: Double) async throws -> (String, SpeechLanguage, String) {
-        if let parakeet = await KeyboardParakeet.shared.transcribe(url, audioSeconds: audioSeconds) {
+        if DictationRecognitionModeSettings().mode == .fast,
+           let parakeet = await KeyboardParakeet.shared.transcribe(url, audioSeconds: audioSeconds) {
             return (parakeet.text, parakeet.language, parakeet.engine)
         }
         let started = Date()

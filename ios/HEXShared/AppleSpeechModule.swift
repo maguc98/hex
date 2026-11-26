@@ -187,13 +187,24 @@ nonisolated enum AppleSpeechModule {
     case speech(SpeechTranscriber)
     case dictation(DictationTranscriber)
 
-    init(_ language: SpeechLanguage) {
+    init(
+        _ language: SpeechLanguage,
+        mode: DictationRecognitionMode = DictationRecognitionModeSettings().mode
+    ) {
         switch language.module {
         case .speech:
-            self = .speech(SpeechTranscriber(locale: language.locale, preset: .transcription))
+            // Progressive transcription returns faster interim results; Accurate keeps the
+            // standard preset that favors a completed, stable transcript.
+            let preset = mode == .fast
+                ? SpeechTranscriber.Preset.progressiveTranscription
+                : SpeechTranscriber.Preset.transcription
+            self = .speech(SpeechTranscriber(locale: language.locale, preset: preset))
         case .dictation:
-            // Punctuated long-form preset for recordings longer than a minute.
-            self = .dictation(DictationTranscriber(locale: language.locale, preset: .longDictation))
+            // Keep long-form handling in both modes; Fast opts into progressive results.
+            let preset = mode == .fast
+                ? DictationTranscriber.Preset.progressiveLongDictation
+                : DictationTranscriber.Preset.longDictation
+            self = .dictation(DictationTranscriber(locale: language.locale, preset: preset))
         }
     }
 

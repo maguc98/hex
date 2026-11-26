@@ -619,17 +619,15 @@ struct KeyboardSurfaceView: View {
         HStack(spacing: 8) {
             Button {
                 model.onKeyFeedback?()
-                if model.quickWakeEnabled, model.hasFullAccess {
-                    if let local = model.onLocalDictateTap {
-                        local()
-                    } else {
-                        model.onDictationUnavailable?()
-                    }
-                } else if model.hasFullAccess, !model.isWarmAvailable, let local = model.onLocalDictateTap {
+                if !model.hasFullAccess {
+                    model.onOpenURL?(KeyboardLaunchRequest.setup.url)
+                } else if let local = model.onLocalDictateTap {
+                    // Prefer the keyboard's own capture and live-typing path; never foreground Hex.
                     local()
+                } else if model.dictatesThroughHex {
+                    model.onDictateTap?()
                 } else {
-                    let target = model.hasFullAccess ? model.coldStartURL : KeyboardLaunchRequest.setup.url
-                    model.onOpenURL?(target)
+                    model.onDictationUnavailable?()
                 }
             } label: {
                 HexMarkView(
@@ -1364,19 +1362,14 @@ struct KeyboardSurfaceView: View {
     private func handleIdleStageTap() {
         if !model.hasFullAccess {
             model.onOpenURL?(KeyboardLaunchRequest.setup.url)
-        } else if whisperModeEnabled, let local = model.onLocalDictateTap {
-            // Whisper mode uses the keyboard's locally processed audio path.
+        } else if let local = model.onLocalDictateTap {
+            // Use the in-keyboard capture for both ordinary and whisper dictation.
+            // Whisper gain/noise processing stays in the local capture pipeline.
             local()
-        } else if !model.dictatesThroughHex || model.stagePhase == .failed {
-            if let local = model.onLocalDictateTap {
-                local()
-            } else if model.quickWakeEnabled {
-                model.onDictationUnavailable?()
-            } else {
-                model.onOpenURL?(model.coldStartURL)
-            }
-        } else {
+        } else if model.dictatesThroughHex {
             model.onDictateTap?()
+        } else {
+            model.onDictationUnavailable?()
         }
     }
 

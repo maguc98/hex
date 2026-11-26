@@ -14,6 +14,8 @@ struct DictationSettingsPage: View {
     @State private var showsWhatISay = LiveDictationSettings().showsPreview
     @State private var typesAsISpeak = LiveDictationSettings().typesIntoField
     @State private var quickWake = KeyboardBridge().quickWakeEnabled
+    @State private var recognitionMode = DictationRecognitionModeSettings().mode
+    @State private var pageAnimations = InterfaceMotionSettings().isEnabled
     @State private var qwenAPIKey = KeyboardBridge().qwenAPIKey
     @State private var waveformColor = Color(red: 0.86, green: 0.83, blue: 0.77)
 
@@ -79,6 +81,42 @@ struct DictationSettingsPage: View {
                 )
 
                 DictationLanguageRow(dictation: dictation)
+
+                SettingsDivider()
+
+                HStack(spacing: 12) {
+                    SettingsRowLabel(
+                        title: String(localized: "Recognition mode"),
+                        detail: recognitionMode.detail
+                    )
+                    Spacer(minLength: 8)
+                    Menu {
+                        ForEach(DictationRecognitionMode.allCases, id: \.self) { candidate in
+                            Button {
+                                recognitionMode = candidate
+                            } label: {
+                                if recognitionMode == candidate {
+                                    Label(candidate.title, systemImage: "checkmark")
+                                } else {
+                                    Text(candidate.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        SettingsMenuValue(value: recognitionMode.title)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(minHeight: 50)
+
+                SettingsDivider()
+
+                SettingsToggleRow(
+                    title: String(localized: "Page animations"),
+                    detail: String(localized: "Animate transitions and controls"),
+                    isOn: $pageAnimations
+                )
             }
 
             SettingsCard {
@@ -254,6 +292,18 @@ struct DictationSettingsPage: View {
         .onChange(of: quickWake) { _, enabled in
             dictation.setQuickWakeEnabled(enabled)
         }
+        .onChange(of: recognitionMode) { _, mode in
+            DictationRecognitionModeSettings().mode = mode
+            switch dictation.phase {
+            case .recording, .transcribing, .requestingPermission:
+                dictation.pendingLanguagePreparation = true
+            case .modelRequired, .preparingModel, .ready, .failed:
+                dictation.prepareModel()
+            }
+        }
+        .onChange(of: pageAnimations) { _, enabled in
+            InterfaceMotionSettings().isEnabled = enabled
+        }
         .onAppear {
             cleanupTagger = CleanupTaggerSettings().isEnabled
             customVocabulary = CustomVocabularySettings().isEnabled
@@ -264,6 +314,8 @@ struct DictationSettingsPage: View {
             showsWhatISay = LiveDictationSettings().showsPreview
             typesAsISpeak = LiveDictationSettings().typesIntoField
             quickWake = KeyboardBridge().quickWakeEnabled
+            recognitionMode = DictationRecognitionModeSettings().mode
+            pageAnimations = InterfaceMotionSettings().isEnabled
             waveformColor = Self.color(
                 from: LiveWaveformColorSettings().hex,
                 fallback: Color(red: 0.86, green: 0.83, blue: 0.77)
@@ -386,7 +438,7 @@ struct KeyboardSettingsPage: View {
     /// `KeyboardSetupMonitor.fullAccessOn`.
     let fullAccessOn: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var fullKeyboard = FullKeyboardSettings().isEnabled
+    @State private var fullKeyboard = false
     @State private var autoCapitalization = FullKeyboardSettings().autoCapitalization
     @State private var hexKeyOnLeft = FullKeyboardSettings().hexKeyOnLeft
     @State private var numberRow = FullKeyboardSettings().numberRow
@@ -411,24 +463,7 @@ struct KeyboardSettingsPage: View {
     var body: some View {
         SettingsPageScaffold(title: "Keyboard") {
             SettingsCard {
-                HStack(spacing: 12) {
-                    SettingsRowLabel(
-                        title: String(localized: "Keyboard"),
-                        detail: fullKeyboard ? nil : fullAccessNeed
-                    )
-                    Spacer(minLength: 8)
-                    SettingsSegments(
-                        items: KeyboardChoice.allCases,
-                        selected: fullKeyboard ? .full : .dictationBar,
-                        label: \.label,
-                        onSelect: { choice in
-                            fullKeyboard = choice == .full
-                        }
-                    )
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .frame(minHeight: 50)
+                // Keyboard mode selector intentionally hidden: Hex opens in dictation-bar mode.
 
                 if !fullKeyboard {
                     SettingsDivider()
@@ -575,6 +610,10 @@ struct KeyboardSettingsPage: View {
         .animation(HexMotion.settleAnimation(reduceMotion: reduceMotion), value: fullKeyboard)
         .animation(HexMotion.settleAnimation(reduceMotion: reduceMotion), value: autocorrect)
         .animation(HexMotion.settleAnimation(reduceMotion: reduceMotion), value: emoji)
+        .onAppear {
+            fullKeyboard = false
+            FullKeyboardSettings().isEnabled = false
+        }
         .onChange(of: fullKeyboard) { _, enabled in
             FullKeyboardSettings().isEnabled = enabled
         }
