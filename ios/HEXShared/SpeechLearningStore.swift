@@ -31,10 +31,10 @@ nonisolated struct SpeechLearningPending: Codable, Equatable, Sendable {
 /// A translated dictation keeps its spoken sentence and translation together; recognition hints
 /// always use the spoken-language sentence, never the translated text.
 nonisolated struct SpeechLearningStore {
-    static let pendingLifetime: TimeInterval = 45
+    static let pendingLifetime: TimeInterval = 30 * 60
     static let maximumSamples = 12
-    static let maximumSampleDuration: TimeInterval = 30
-    static let maximumAudioBytes = 3 * 1_048_576
+    static let maximumSampleDuration: TimeInterval = 180
+    static let maximumAudioBytes = 8 * 1_048_576
     static let maximumHintCount = 20
     static let maximumHintLength = 64
 
