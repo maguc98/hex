@@ -261,16 +261,18 @@ final class HexKeyRecordingPanel: UIView {
     }
 
     private func applyWaveformTint() {
-        let state: LiveWaveformColorState
+        let color: LiveWaveformRGB?
         switch scope.phase {
-        case .idle, .hidden, .failed:
-            state = .idle
+        case .idle:
+            color = waveformPalette.idle
         case .recording:
-            state = .recording
+            color = waveformPalette.recording
         case .processing:
-            state = .processing
+            color = waveformPalette.processing
+        case .hidden, .failed:
+            color = nil
         }
-        scope.customTint = waveformPalette.color(for: state).map {
+        scope.customTint = color.map {
             UIColor(red: CGFloat($0.redUnit), green: CGFloat($0.greenUnit), blue: CGFloat($0.blueUnit), alpha: 1)
         }
     }
