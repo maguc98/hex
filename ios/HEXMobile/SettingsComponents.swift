@@ -11,7 +11,7 @@ enum SettingsPage: String, Hashable, CaseIterable {
     var title: String {
         switch self {
         case .dictation: String(localized: "Dictation")
-        case .learning: String(localized: "Learning")
+        case .learning: String(localized: "学习")
         case .keyboard: String(localized: "Keyboard")
         case .privacy: String(localized: "Privacy")
         case .experiments: String(localized: "Experiments")
