@@ -148,6 +148,11 @@ final class DictationController {
     }
     var isModelReady = false
     var transcript = ""
+    /// The current transcript's staged Learning sample, also available to the standalone app.
+    private(set) var learningResultID: String?
+    private(set) var isLearningSampleReady = false
+    private(set) var didSaveCurrentTranscriptToLearning = false
+    private(set) var learningSaveFailed = false
     @ObservationIgnored var audioLevel: Float = 0
     @ObservationIgnored var loudnessDB: Float = -120
     @ObservationIgnored private var rawRecordingDuration: TimeInterval = 0
@@ -473,6 +478,25 @@ final class DictationController {
     func clearTranscript() {
         transcript = ""
         copied = false
+        learningResultID = nil
+        isLearningSampleReady = false
+        didSaveCurrentTranscriptToLearning = false
+        learningSaveFailed = false
+    }
+
+    /// Saves the current app transcript's staged audio, spoken sentence and optional translation.
+    @discardableResult
+    func saveCurrentTranscriptToLearning() -> Bool {
+        if didSaveCurrentTranscriptToLearning { return true }
+        guard isLearningSampleReady, let learningResultID else { return false }
+        guard SpeechLearningStore().confirmPending(resultID: learningResultID) else {
+            learningSaveFailed = true
+            isLearningSampleReady = false
+            return false
+        }
+        didSaveCurrentTranscriptToLearning = true
+        learningSaveFailed = false
+        return true
     }
 
     func copyTranscript() {
@@ -932,25 +956,30 @@ final class DictationController {
                     self.liveActivity.endImmediately()
                 }
 
+                // Stage every successful dictation, not only a keyboard handoff. The app's
+                // transcript card uses this same pending sample so the user can save the sentence
+                // immediately beside the translation, without opening the keyboard or Learning page.
+                let resultID = UUID().uuidString
+                let spokenSentence = translated == nil ? formatted : stages.cleaned
+                let hasSpokenSentence = !spokenSentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                let stagedForLearning = hasSpokenSentence && SpeechLearningStore().stagePendingAudio(
+                    from: captureURL,
+                    resultID: resultID,
+                    text: spokenSentence,
+                    heard: stages.heard,
+                    translatedText: translated == nil ? nil : formatted,
+                    translatedLanguage: stages.translatedLanguage,
+                    language: session.language,
+                    duration: finalDuration
+                )
+                self.learningResultID = stagedForLearning ? resultID : nil
+                self.isLearningSampleReady = stagedForLearning
+                self.didSaveCurrentTranscriptToLearning = false
+                self.learningSaveFailed = hasSpokenSentence && !stagedForLearning
+
                 if keyboardJobID != nil {
-                    self.keyboardResultID = UUID().uuidString
+                    self.keyboardResultID = resultID
                     self.keyboardResult = formatted
-                    // Keep the spoken sentence paired with its translation and original WAV.
-                    // The stored text remains in the spoken language so recognition hints are valid.
-                    let spokenSentence = translated == nil ? formatted : stages.cleaned
-                    if !spokenSentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                       let resultID = self.keyboardResultID {
-                        _ = SpeechLearningStore().stagePendingAudio(
-                            from: captureURL,
-                            resultID: resultID,
-                            text: spokenSentence,
-                            heard: stages.heard,
-                            translatedText: translated == nil ? nil : formatted,
-                            translatedLanguage: stages.translatedLanguage,
-                            language: session.language,
-                            duration: finalDuration
-                        )
-                    }
                     // A translation's words can't be compared with what was heard.
                     self.keyboardResultHeard = session.sharesHeard && translated == nil ? stages.heard : nil
                     self.keyboardResultTranslationFailure = stages.translationFailure
