@@ -1211,6 +1211,9 @@ final class DotScopeHostView: UIView {
     private var hasSeededSnapshot = false
     private var visibilityObservations: [NSKeyValueObservation] = []
     private var visibilityRefreshScheduled = false
+    /// Last window/ancestor visibility. iOS can keep this UIView alive across an app switch;
+    /// an already-settled idle scope has no display-link tick to repaint a lost drawable.
+    private var lastEffectiveVisibility = false
 
     var phase: DotScopePhase = .hidden {
         didSet {
@@ -1342,6 +1345,12 @@ final class DotScopeHostView: UIView {
             self.visibilityRefreshScheduled = false
             self.observeVisibility()
             self.updateAnimatingState()
+            // Repaint even when SwiftUI reuses the representable and idle is already
+            // settled. This also covers a visibility KVO notification missed during a
+            // keyboard-host/window transition.
+            if self.isEffectivelyVisible, self.displayLink?.isPaused != false {
+                self.renderCurrentFrame()
+            }
         }
     }
 
@@ -1376,6 +1385,7 @@ final class DotScopeHostView: UIView {
             updateAnimatingState()
             renderCurrentFrame()
         } else {
+            lastEffectiveVisibility = false
             visibilityObservations.removeAll()
             displayLink?.invalidate()
             displayLink = nil
@@ -1489,6 +1499,8 @@ final class DotScopeHostView: UIView {
 
     private func updateAnimatingState() {
         let visible = isEffectivelyVisible
+        let becameVisible = visible && !lastEffectiveVisibility
+        lastEffectiveVisibility = visible
         let wantsFrames: Bool
         if !visible {
             wantsFrames = false
@@ -1508,6 +1520,13 @@ final class DotScopeHostView: UIView {
                 lastTargetTimestamp = nil
             }
             displayLink?.isPaused = targetPaused
+        }
+
+        // Do not depend on a CADisplayLink tick to restore the last frame. Idle deliberately
+        // pauses the link after settling, so a drawable lost while switching apps could
+        // otherwise remain transparent until the next recording phase.
+        if becameVisible && targetPaused {
+            renderCurrentFrame()
         }
     }
 
@@ -1554,6 +1573,50 @@ final class DotScopeHostView: UIView {
         }
     }
 
+    /// Converts custom picker colours to the display-sRGB values consumed by Metal.
+    /// UIColor.getRed may fail for extended or grayscale colour spaces; previously that
+    /// silently left the built-in pearl/blue palette in place.
+    static func sRGBComponents(for color: UIColor) -> SIMD3<Float>? {
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 1
+
+        if color.getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
+            return SIMD3<Float>(
+                Float(min(1, max(0, red))),
+                Float(min(1, max(0, green))),
+                Float(min(1, max(0, blue)))
+            )
+        }
+
+        guard
+            let sRGB = CGColorSpace(name: CGColorSpace.sRGB),
+            let converted = color.cgColor.converted(
+                to: sRGB,
+                intent: .defaultIntent,
+                options: nil
+            ),
+            let components = converted.components
+        else {
+            return nil
+        }
+
+        let channels: (CGFloat, CGFloat, CGFloat)
+        if components.count >= 3 {
+            channels = (components[0], components[1], components[2])
+        } else if components.count == 2 {
+            channels = (components[0], components[0], components[0])
+        } else {
+            return nil
+        }
+        return SIMD3<Float>(
+            Float(min(1, max(0, channels.0))),
+            Float(min(1, max(0, channels.1))),
+            Float(min(1, max(0, channels.2)))
+        )
+    }
+
     private func renderCurrentFrame(withTransaction: Bool = false) {
         guard bounds.width > 1, bounds.height > 1,
               let gpu = DotScopeMetalPipeline.shared,
@@ -1574,20 +1637,14 @@ final class DotScopeHostView: UIView {
             pose: pose,
             saturation: simulation.tuning.saturation
         )
-        if let customTint, pose.fail < 0.5 {
-            var red: CGFloat = 0
-            var green: CGFloat = 0
-            var blue: CGFloat = 0
-            var alpha: CGFloat = 1
-            if customTint.getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
-                let tint = SIMD3<Float>(Float(red), Float(green), Float(blue))
-                palette.base = tint
-                palette.core = SIMD3<Float>(
-                    tint.x + (1 - tint.x) * 0.34,
-                    tint.y + (1 - tint.y) * 0.34,
-                    tint.z + (1 - tint.z) * 0.34
-                )
-            }
+        if let customTint, pose.fail < 0.5,
+           let tint = Self.sRGBComponents(for: customTint) {
+            palette.base = tint
+            palette.core = SIMD3<Float>(
+                tint.x + (1 - tint.x) * 0.34,
+                tint.y + (1 - tint.y) * 0.34,
+                tint.z + (1 - tint.z) * 0.34
+            )
         }
         let scale = Float(max(1.0, metalLayer.contentsScale))
         let resX = Float(metalLayer.drawableSize.width)
