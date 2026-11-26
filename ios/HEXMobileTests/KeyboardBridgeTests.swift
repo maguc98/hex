@@ -3,6 +3,100 @@ import XCTest
 
 @MainActor
 final class KeyboardBridgeTests: XCTestCase {
+    func testSpeechLearningStoresAudioOnlyAfterConfirmationAndOffersPhraseHints() throws {
+        let suiteName = "hex.tests.speechLearning.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hex-speech-learning-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hex-speech-learning-source-\(UUID().uuidString).wav")
+        try Data("local audio sample".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let text = "这部电影里面的人物塑造得非常真实。"
+        let resultID = UUID().uuidString
+        let store = SpeechLearningStore(defaults: defaults, directoryURL: root, now: { 1_000 })
+
+        XCTAssertTrue(store.stagePendingAudio(
+            from: source,
+            resultID: resultID,
+            text: text,
+            heard: text,
+            language: "zh-CN",
+            duration: 2.4
+        ))
+        XCTAssertTrue(store.hasPending(resultID: resultID))
+        XCTAssertTrue(store.samples().isEmpty, "A staged sample is not learned until the user confirms it.")
+
+        XCTAssertTrue(store.confirmPending(resultID: resultID))
+        XCTAssertFalse(store.hasPending(resultID: resultID))
+        XCTAssertEqual(store.samples().first?.text, text)
+        XCTAssertEqual(store.recognitionHints(language: "zh-Hans"), [text])
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent("Samples/\(resultID).wav").path
+        ))
+        XCTAssertFalse(store.confirmPending(resultID: resultID), "The same pending audio cannot be learned twice.")
+    }
+
+    func testUnconfirmedSpeechLearningAudioExpiresAndIsDeleted() throws {
+        let suiteName = "hex.tests.speechLearningExpiry.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hex-speech-learning-expiry-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hex-speech-learning-expiry-source-\(UUID().uuidString).wav")
+        try Data("temporary audio".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        var currentTime: TimeInterval = 2_000
+        let resultID = UUID().uuidString
+        let store = SpeechLearningStore(
+            defaults: defaults,
+            directoryURL: root,
+            now: { currentTime }
+        )
+        XCTAssertTrue(store.stagePendingAudio(
+            from: source,
+            resultID: resultID,
+            text: "人物",
+            heard: "人物",
+            language: "zh-CN",
+            duration: 1
+        ))
+
+        currentTime += SpeechLearningStore.pendingLifetime + 1
+        XCTAssertFalse(store.hasPending(resultID: resultID))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent("Pending/\(resultID).wav").path
+        ))
+        XCTAssertTrue(store.samples().isEmpty)
+    }
+
+    func testSpeechLearningChipKeepsConfirmationUntilANewResultArrives() {
+        let model = KeyboardViewModel()
+        model.offerSpeechLearning(resultID: "result-one")
+        XCTAssertTrue(model.canLearnSpeechSample)
+        XCTAssertFalse(model.didLearnSpeechSample)
+
+        model.markSpeechSampleLearned()
+        model.offerSpeechLearning(resultID: "result-one")
+        XCTAssertTrue(model.didLearnSpeechSample, "Repeated bridge polls must not reset the learned state.")
+
+        model.offerSpeechLearning(resultID: "result-two")
+        XCTAssertFalse(model.didLearnSpeechSample)
+        XCTAssertEqual(model.speechLearningResultID, "result-two")
+    }
+
     func testQuickWakePreferencePersistsAcrossBridgeInstances() {
         let suiteName = "hex.tests.quickWake.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
@@ -14,6 +108,91 @@ final class KeyboardBridgeTests: XCTestCase {
         XCTAssertTrue(KeyboardBridge(defaults: defaults).quickWakeEnabled)
         bridge.quickWakeEnabled = false
         XCTAssertFalse(KeyboardBridge(defaults: defaults).quickWakeEnabled)
+    }
+
+    func testLiveWaveformColorsPersistIndependentlyAcrossSettingsInstances() {
+        let suiteName = "hex.tests.liveWaveformColors.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = LiveWaveformColorSettings(defaults: defaults)
+        settings.idleHex = "#112233"
+        settings.recordingHex = "#445566"
+        settings.processingHex = "#778899"
+
+        let reloaded = LiveWaveformColorSettings(defaults: defaults)
+        XCTAssertEqual(reloaded.idleHex, "#112233")
+        XCTAssertEqual(reloaded.recordingHex, "#445566")
+        XCTAssertEqual(reloaded.processingHex, "#778899")
+    }
+
+    func testFullKeyboardRecordingPanelAppliesStateSpecificWaveformColors() {
+        let panel = HexKeyRecordingPanel(loudness: { -30 })
+        panel.waveformPalette = LiveWaveformPalette(
+            idle: LiveWaveformRGB(red: 0x11, green: 0x22, blue: 0x33),
+            recording: LiveWaveformRGB(red: 0xE1, green: 0x1D, blue: 0x74),
+            processing: LiveWaveformRGB(red: 0x12, green: 0xA4, blue: 0xFE)
+        )
+
+        panel.update(phase: .recording, style: .polished)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        XCTAssertTrue(panel.scope.customTint?.getRed(&red, green: &green, blue: &blue, alpha: &alpha) == true)
+        XCTAssertEqual(red, CGFloat(0xE1) / 255.0, accuracy: 0.01)
+        XCTAssertEqual(green, CGFloat(0x1D) / 255.0, accuracy: 0.01)
+        XCTAssertEqual(blue, CGFloat(0x74) / 255.0, accuracy: 0.01)
+
+        panel.update(phase: .processing, style: .polished)
+        XCTAssertTrue(panel.scope.customTint?.getRed(&red, green: &green, blue: &blue, alpha: &alpha) == true)
+        XCTAssertEqual(red, CGFloat(0x12) / 255.0, accuracy: 0.01)
+        XCTAssertEqual(green, CGFloat(0xA4) / 255.0, accuracy: 0.01)
+        XCTAssertEqual(blue, CGFloat(0xFE) / 255.0, accuracy: 0.01)
+        panel.tearDown()
+    }
+
+    func testLiveWaveformColorWritePostsImmediateLocalRefreshNotification() {
+        let suiteName = "hex.tests.liveWaveformNotification.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let changed = expectation(description: "Local waveform preview receives the new palette")
+        let token = NotificationCenter.default.addObserver(
+            forName: LiveWaveformColorSettings.didChangeNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            changed.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        LiveWaveformColorSettings(defaults: defaults).idleHex = "#E11D74"
+        wait(for: [changed], timeout: 1.0)
+    }
+
+    func testLiveWaveformColorsReadLegacySharedColorAndMigrateToRGBPalette() {
+        let suiteName = "hex.tests.liveWaveformLegacyColor.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set("#AABBCC", forKey: LiveWaveformColorSettings.key)
+        defaults.set("#102030", forKey: LiveWaveformColorSettings.processingKey)
+
+        let settings = LiveWaveformColorSettings(defaults: defaults)
+        let migrated = settings.palette
+        XCTAssertEqual(migrated.idle?.hex, "#AABBCC")
+        XCTAssertEqual(migrated.recording?.hex, "#AABBCC")
+        XCTAssertEqual(migrated.processing?.hex, "#102030")
+        XCTAssertNotNil(defaults.data(forKey: "settings.liveWaveformPalette.v1"))
+    }
+
+    func testLiveWaveformRGBRoundTripsExactSixDigitHex() {
+        let source = LiveWaveformRGB(hex: "#12A4FE")
+        XCTAssertEqual(source?.red, 0x12)
+        XCTAssertEqual(source?.green, 0xA4)
+        XCTAssertEqual(source?.blue, 0xFE)
+        XCTAssertEqual(source?.hex, "#12A4FE")
+        XCTAssertNil(LiveWaveformRGB(hex: "#12AF"))
     }
 
     func testQuickWakePrefersKeyboardOverAnAvailableWarmSession() {
@@ -42,11 +221,96 @@ final class KeyboardBridgeTests: XCTestCase {
         let stale = snapshot(state: .ready, heartbeat: now - 3.0, expiresAt: now + 1)
         let expired = snapshot(state: .ready, heartbeat: now, expiresAt: now)
         let transcribingAfterSessionEnd = snapshot(state: .transcribing, heartbeat: now - 0.5, expiresAt: 0)
+        let starting = snapshot(state: .starting, heartbeat: now - 0.5, expiresAt: 0)
 
         XCTAssertTrue(available.isAvailable(at: now))
         XCTAssertFalse(stale.isAvailable(at: now))
         XCTAssertFalse(expired.isAvailable(at: now))
         XCTAssertTrue(transcribingAfterSessionEnd.isAvailable(at: now))
+        XCTAssertTrue(starting.isAvailable(at: now), "starting is an active capture heartbeat")
+    }
+
+
+    func testKeyboardShowsStartingUntilTheFirstAudioSnapshot() {
+        let now = 4_000.0
+        let model = KeyboardViewModel()
+        let starting = KeyboardSnapshot(state: .starting, heartbeat: now, expiresAt: now + 60, jobID: "startup")
+        model.applyBridgeState(
+            hasFullAccess: true,
+            snapshot: starting,
+            isModelInstalled: true,
+            style: .polished,
+            now: now,
+            animated: false
+        )
+        XCTAssertEqual(model.stagePhase, .starting)
+        XCTAssertEqual(model.dotScopePhase, .idle, "the visualizer stays calm before PCM audio arrives")
+
+        let recording = KeyboardSnapshot(
+            state: .recording,
+            heartbeat: now + 0.1,
+            expiresAt: now + 60,
+            recordingStartedAt: now + 0.1,
+            jobID: "startup"
+        )
+        model.applyBridgeState(
+            hasFullAccess: true,
+            snapshot: recording,
+            isModelInstalled: true,
+            style: .polished,
+            now: now + 0.1,
+            animated: false
+        )
+        XCTAssertEqual(model.stagePhase, .recording)
+        XCTAssertEqual(model.dotScopePhase, .recording)
+    }
+
+    func testInterruptedRecordingPersistsUntilClearedOrExpires() throws {
+        let suite = "KeyboardInterruptedRecordingTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let fileName = "keyboard-interrupted-\(UUID().uuidString).wav"
+        let record = KeyboardInterruptedRecording(
+            jobID: "interrupted-job",
+            fileName: fileName,
+            document: UUID(),
+            seconds: 42.5,
+            cutShort: true,
+            at: 10_000
+        )
+        try Data("wav".utf8).write(to: record.url)
+        record.save(defaults: defaults)
+        XCTAssertEqual(KeyboardInterruptedRecording.load(defaults: defaults), record)
+        XCTAssertFalse(record.isExpired(at: 10_000 + 60))
+        XCTAssertTrue(record.isExpired(at: 10_000 + KeyboardInterruptedRecording.keptFor + 1))
+
+        KeyboardInterruptedRecording.clear(jobID: "another-job", defaults: defaults)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: record.url.path))
+        KeyboardInterruptedRecording.clear(jobID: record.jobID, defaults: defaults)
+        XCTAssertNil(KeyboardInterruptedRecording.load(defaults: defaults))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: record.url.path))
+    }
+
+    func testCaptureWatchWaitsForInterruptedMicrophoneAndResetsOnResume() {
+        var watch = KeyboardCaptureWatch(startedAt: 100)
+        watch.heardAudio(at: 102)
+        XCTAssertFalse(watch.isStalled(now: 107))
+
+        let interrupted = KeyboardCapturePageState(
+            cause: "mute", context: "interrupted", muted: true, ended: false, at: 108
+        )
+        XCTAssertEqual(watch.page(interrupted, at: 108), .interrupted)
+        XCTAssertEqual(watch.interruptedSince, 108)
+        XCTAssertFalse(watch.isStalled(now: 122), "a notification gets up to 15 seconds to release the audio session")
+        XCTAssertTrue(watch.isStalled(now: 124), "a call or alarm that outlasts the recovery window finishes with what was heard")
+
+        let resumed = KeyboardCapturePageState(
+            cause: "unmute", context: "running", muted: false, ended: false, at: 120
+        )
+        XCTAssertEqual(watch.page(resumed, at: 120), .resumed(after: 12))
+        XCTAssertNil(watch.interruptedSince)
+        XCTAssertFalse(watch.isStalled(now: 125), "silence is counted again from when the microphone came back")
+        XCTAssertTrue(watch.isStalled(now: 127))
     }
 
     func testDeliverableResultSurvivesWarmSessionShutdownUntilTTL() {
@@ -120,6 +384,10 @@ final class KeyboardBridgeTests: XCTestCase {
         XCTAssertTrue(
             KeyboardSnapshot(state: .recording, heartbeat: 0, expiresAt: 0, jobID: "handoff").isOrphanedJob(at: t0),
             "never heartbeated"
+        )
+        XCTAssertTrue(
+            KeyboardSnapshot(state: .starting, heartbeat: 0, expiresAt: 0, jobID: "handoff").isOrphanedJob(at: t0),
+            "an abandoned startup must not hold another keyboard open"
         )
 
         // A result the snapshot carries still arrives, and a Hex heartbeating again is live again.

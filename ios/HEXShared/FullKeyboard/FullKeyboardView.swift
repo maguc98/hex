@@ -50,6 +50,9 @@ final class FullKeyboardView: UIView {
     /// The capsule that grows from the Hex mark across the strip into the recording bar.
     private let morph = UIView()
     private var recordingPanel: HexKeyRecordingPanel?
+    private var waveformPalette = LiveWaveformColorSettings().palette
+    /// The words so far over the keys while recording (Show words as you speak).
+    let livePreview = LiveDictationPreviewHost()
     private var styleMenu: HexStyleMenuView?
     private(set) var palette = FullKeyboardPalette(isDark: false)
     private var didApplyPalette = false
@@ -86,18 +89,18 @@ final class FullKeyboardView: UIView {
     /// Every key's touch-down tick (letters, space, delete and its repeats, shift, 123,
     /// return, suggestions), as hard as Settings › Keyboard › Strength asks. The Hex key's hold
     /// and its menu keep `haptics`' fuller thud.
-    var hapticStrength: KeyHapticStrength = .medium {
+    var hapticStrength: KeyHapticStrength = .light {
         didSet {
             guard hapticStrength != oldValue else { return }
             keyTicks = UIImpactFeedbackGenerator(style: Self.keyTickStyle(hapticStrength))
             if allowsHaptics() { keyTicks.prepare() }
         }
     }
-    private var keyTicks = UIImpactFeedbackGenerator(style: FullKeyboardView.keyTickStyle(.medium))
+    private var keyTicks = UIImpactFeedbackGenerator(style: FullKeyboardView.keyTickStyle(.light))
 
     /// Apple's key haptic is a crisp tick, so every strength is a rigid impact (the sharpest
-    /// style) but Strong, a fuller medium one. Medium, the default, is 0.8 of a rigid tap;
-    /// Hex's was a 0.65 light impact, which testers found much weaker than Apple's.
+    /// style) but Strong, a fuller medium one. Light, the default, is 0.5 of a rigid tap and
+    /// Medium 0.8; before both, a 0.65 light impact felt much weaker than Apple's to testers.
     static func keyTickStyle(_ strength: KeyHapticStrength) -> UIImpactFeedbackGenerator.FeedbackStyle {
         strength == .strong ? .medium : .rigid
     }
@@ -156,6 +159,14 @@ final class FullKeyboardView: UIView {
         plane = KeyboardKeyPlaneView(engine: engine)
         super.init(frame: .zero)
         backgroundColor = .clear
+        LiveWaveformColorSettings.observeChanges()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(reloadWaveformColors),
+            name: LiveWaveformColorSettings.didChangeNotification,
+            object: nil
+        )
+        reloadWaveformColors()
 
         // Under the glass panel's rim, under every key: the keys' pop-ups overflow this
         // view, which must never clip them, so the panel is a subview, not this view's fill.
@@ -187,6 +198,10 @@ final class FullKeyboardView: UIView {
         stripView.onOpenNotice = { [weak self] in
             guard let self else { return }
             self.keyFeedback()
+            if self.model.stoppedNote != nil {
+                self.model.onPasteDictation?()
+                return self.refreshStrip()
+            }
             if let word = self.vocabularyOffer {
                 self.addToVocabulary(word)
                 return
@@ -279,6 +294,7 @@ final class FullKeyboardView: UIView {
         syncSwipeTyping()
         engine.configureForField()
         applyAppearance()
+        livePreview.attach(to: self)
         refreshFromModel()
     }
 
@@ -775,6 +791,7 @@ final class FullKeyboardView: UIView {
             menu.frame = bounds
             menu.anchor = hex.frame
         }
+        livePreview.layout()
         plane.setNeedsDisplay()
         updateCallout()
     }
@@ -803,6 +820,7 @@ final class FullKeyboardView: UIView {
         accentCallout.palette = next
         hexKey.palette = next
         recordingPanel?.palette = next
+        livePreview.palette = next
         styleMenu?.palette = next
         emojiPanel?.palette = next
         emojiSearchField?.palette = next
@@ -821,9 +839,10 @@ final class FullKeyboardView: UIView {
         hexKey.isWarm = model.dictatesThroughHex
         hexKey.translatingTo = model.translatingTo
         syncGlobe()
-        let recording = model.stagePhase == .recording || model.stagePhase == .transcribing
+        let recording = model.stagePhase == .starting || model.stagePhase == .recording || model.stagePhase == .transcribing
         if recording != showsRecording {
             setRecording(recording)
+            livePreview.sync()
         }
         refreshRecordingPanel()
         // A language picked in the switch changes the layout at once when it follows dictation.
@@ -866,6 +885,8 @@ final class FullKeyboardView: UIView {
         // dictation needs shows only once the Hex key is tapped (`showFullAccessHint`).
         let status: String? = if model.hasFullAccess, model.stagePhase == .failed {
             model.statusMessage
+        } else if let note = model.stoppedNote {
+            "\(note.title). \(note.detail)"
         } else if showsAllowPasteHint {
             KeyboardClipboardTracker.allowPasteHint
         } else {
@@ -916,22 +937,33 @@ final class FullKeyboardView: UIView {
             statusText: status,
             clipboard: clipboardOffer,
             fullAccessHint: showsFullAccessHint && !model.hasFullAccess,
-            notice: vocabularyNotice ?? translationNotice
+            notice: vocabularyNotice ?? stoppedNotice ?? translationNotice
         )
     }
 
     /// The last dictation went in as spoken while Translate what I say was on: what happened,
     /// the fix, and Open Hex, which opens Settings › Dictation.
+    private var stoppedNotice: KeyboardStripNotice? {
+        guard let note = model.stoppedNote else { return nil }
+        return KeyboardStripNotice(title: note.title, detail: note.detail, button: String(localized: "Paste"))
+    }
+
     private var translationNotice: KeyboardStripNotice? {
         guard model.hasFullAccess, let note = model.translationNote else { return nil }
         return KeyboardStripNotice(title: TranslationFailure.note, detail: note.fix, button: String(localized: "Open Hex"))
     }
 
+    @objc private func reloadWaveformColors() {
+        waveformPalette = LiveWaveformColorSettings().palette
+        recordingPanel?.waveformPalette = waveformPalette
+    }
+
     private func refreshRecordingPanel() {
         guard let panel = recordingPanel, showsRecording else { return }
         panel.update(
-            phase: model.stagePhase == .transcribing ? .processing : .recording,
-            style: model.style
+            phase: model.stagePhase == .starting || model.stagePhase == .transcribing ? .processing : .recording,
+            style: model.style,
+            isStarting: model.stagePhase == .starting
         )
     }
 
@@ -945,6 +977,7 @@ final class FullKeyboardView: UIView {
             hideUndo()
             let panel = recordingPanel ?? makeRecordingPanel()
             panel.palette = palette
+            panel.waveformPalette = waveformPalette
             panel.frame = recordingPanelFrame
             refreshRecordingPanel()
             panel.isHidden = false
@@ -1011,11 +1044,12 @@ final class FullKeyboardView: UIView {
         morph.layer.cornerRadius = start.height / 2
         morph.alpha = appearing ? 0.6 : 1
         morph.isHidden = false
+        // No bounce: the recording bar and the live words share one spring family.
         UIView.animate(
-            withDuration: 0.34,
-            delay: 0,
-            usingSpringWithDamping: 0.82,
+            springDuration: 0.34,
+            bounce: 0,
             initialSpringVelocity: 0,
+            delay: 0,
             options: [.beginFromCurrentState, .allowUserInteraction]
         ) {
             self.morph.frame = end
@@ -1023,7 +1057,7 @@ final class FullKeyboardView: UIView {
             if appearing { self.morph.alpha = 1 }
         }
         guard !appearing else { return }
-        UIView.animate(withDuration: 0.12, delay: 0.24, options: [.allowUserInteraction]) {
+        UIView.animate(springDuration: 0.15, bounce: 0, initialSpringVelocity: 0, delay: 0.22, options: [.allowUserInteraction]) {
             self.morph.alpha = 0
         } completion: { _ in
             if !self.showsRecording {
@@ -1036,7 +1070,7 @@ final class FullKeyboardView: UIView {
         shown.forEach { $0.isHidden = false }
         let globeHidden = engine.layout.key(.globe) == nil
         let accentHidden = engine.activeAccentMenu == nil
-        let duration = window == nil ? 0 : 0.18
+        let duration = window == nil ? 0 : 0.2
         if duration == 0 {
             shown.forEach { $0.alpha = 1 }
             hidden.forEach {
@@ -1048,7 +1082,7 @@ final class FullKeyboardView: UIView {
             after?()
             return
         }
-        UIView.animate(withDuration: duration, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+        UIView.animate(springDuration: duration, bounce: 0, initialSpringVelocity: 0, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
             shown.forEach { $0.alpha = 1 }
             hidden.forEach { $0.alpha = 0 }
         } completion: { _ in
@@ -1219,7 +1253,7 @@ final class FullKeyboardView: UIView {
         let m = engine.layout.metrics
         let bar = CGRect(x: 0, y: appliedLift, width: bounds.width, height: m.stripTop + m.stripHeight)
         guard bar.contains(point), !showsRecording, emojiPanel == nil, styleMenu == nil,
-              !(showsFullAccessHint && !model.hasFullAccess), vocabularyNotice == nil, translationNotice == nil
+              !(showsFullAccessHint && !model.hasFullAccess), vocabularyNotice == nil, stoppedNotice == nil, translationNotice == nil
         else { return false }
         return model.stagePhase == .idle || model.stagePhase == .failed
     }

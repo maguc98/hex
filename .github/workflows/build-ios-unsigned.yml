@@ -5,6 +5,15 @@ on:
   push:
     branches:
       - dev
+      - 'sync/**'
+      - 'rebuild/**'
+    paths:
+      - ".github/workflows/build-ios-unsigned.yml"
+      - "ios/**"
+      - "app/AppIcon.icon/**"
+  pull_request:
+    branches:
+      - dev
     paths:
       - ".github/workflows/build-ios-unsigned.yml"
       - "ios/**"
@@ -14,13 +23,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: hex-ios-unsigned-${{ github.ref }}
+  # Keep only the newest build for this branch/PR; cancel superseded builds.
+  group: ${{ github.workflow }}-${{ github.ref }}-macos26
   cancel-in-progress: true
 
 jobs:
   build:
     name: Archive iOS app and package unsigned IPA
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 90
     steps:
       - name: Check out source
@@ -49,9 +59,19 @@ jobs:
             -project HEXMobile.xcodeproj \
             -scheme HEXMobile
 
+      - name: Install Metal Toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -downloadComponent MetalToolchain
+          xcrun --find metal
+          metal_path="$(xcrun --find metal)"
+          test -x "$metal_path"
+          "$metal_path" -v
+
       - name: Build unsigned iOS archive
         working-directory: ios
         run: |
+          set -o pipefail
           xcodebuild archive \
             -project HEXMobile.xcodeproj \
             -scheme HEXMobile \
@@ -60,7 +80,7 @@ jobs:
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/Hex.xcarchive" \
             CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+            CODE_SIGNING_REQUIRED=NO 2>&1 | tee "$RUNNER_TEMP/xcodebuild-archive.log"
 
       - name: Package IPA
         run: |
@@ -79,6 +99,14 @@ jobs:
           unzip -l Hex-iOS-unsigned.ipa | grep -E 'Payload/HEX.app/(Info.plist|PlugIns/.*\.appex/Info.plist)' || true
           echo "Created unsigned IPA: $IPA_SIZE"
 
+      - name: Upload Xcode build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hex-iOS-build-log
+          path: ${{ runner.temp }}/xcodebuild-archive.log
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
         with:
@@ -87,4 +115,12 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+# Manual rebuild trigger: refresh this workflow file to rerun the iOS unsigned IPA build.
 # Triggered by updates to this workflow on the dev branch.
+
+# Rebuilt from verified build 131; validate recognition modes, live typing and keyboard routing.
+# Rebuild after removing stale speech-engine selector references from KeyboardSurface.
+
+# Trigger a fresh iOS archive after the three-state waveform colour controls.
+
+# Trigger rebuild after reducing SettingsPages Swift type-check complexity.

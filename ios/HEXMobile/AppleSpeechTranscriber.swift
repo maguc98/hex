@@ -110,6 +110,7 @@ actor AppleSpeechTranscriber: LocalTranscribing {
 
     private var preparedAnalyzer: SpeechAnalyzer?
     private var preparedModule: AppleSpeechModule?
+    private var preparedMode: DictationRecognitionMode?
     private var isPrepared = false
     private var reservedLocale: Locale?
 
@@ -161,7 +162,19 @@ actor AppleSpeechTranscriber: LocalTranscribing {
     func prepare(
         progressHandler: @escaping @Sendable (ModelPreparationProgress) -> Void
     ) async throws {
-        guard !isPrepared else { return }
+        let mode = DictationRecognitionModeSettings().mode
+        if isPrepared, preparedMode == mode { return }
+        if let preparedAnalyzer {
+            await preparedAnalyzer.cancelAndFinishNow()
+        }
+        preparedAnalyzer = nil
+        preparedModule = nil
+        preparedMode = nil
+        isPrepared = false
+        if let reservedLocale {
+            self.reservedLocale = nil
+            await AppleSpeechAssetReservations.shared.release(reservedLocale)
+        }
         let locale = language.locale
 
         // Best effort: a reservation Hex can't get (over Apple's limit) doesn't stop the download.
@@ -177,7 +190,7 @@ actor AppleSpeechTranscriber: LocalTranscribing {
                     ModelPreparationProgress(fractionCompleted: min(0.85, fraction * 0.85), detail: detail)
                 )
             })
-            let speech = AppleSpeechModule(language)
+            let speech = AppleSpeechModule(language, mode: mode)
             progressHandler(
                 ModelPreparationProgress(
                     fractionCompleted: 0.9,
@@ -191,6 +204,7 @@ actor AppleSpeechTranscriber: LocalTranscribing {
             isPrepared = true
             preparedModule = speech
             preparedAnalyzer = analyzer
+            preparedMode = mode
             progressHandler(
                 ModelPreparationProgress(
                     fractionCompleted: 1,
@@ -212,6 +226,7 @@ actor AppleSpeechTranscriber: LocalTranscribing {
             throw TranscriberError.unavailable
         }
 
+        let mode = DictationRecognitionModeSettings().mode
         // Experiments › Two-language dictation: the same recording read by a second installed
         // language too, merged word by word. Off, or without a usable second language, the
         // single-language path below runs exactly as before.
@@ -222,7 +237,8 @@ actor AppleSpeechTranscriber: LocalTranscribing {
                 audioURL,
                 pair: pair,
                 vocabulary: vocabulary,
-                lingeringModels: true
+                lingeringModels: true,
+                mode: mode
             )
             // A cancelled two-language run must not fall through and start a fresh
             // single-language analyzer for the same recording.
@@ -235,14 +251,22 @@ actor AppleSpeechTranscriber: LocalTranscribing {
 
         let speech: AppleSpeechModule
         let analyzer: SpeechAnalyzer
-        if let preparedModule, let preparedAnalyzer {
+        if let preparedModule, let preparedAnalyzer, preparedMode == mode {
             speech = preparedModule
             analyzer = preparedAnalyzer
             self.preparedModule = nil
             self.preparedAnalyzer = nil
+            self.preparedMode = nil
         } else {
-            speech = AppleSpeechModule(language)
+            if let preparedAnalyzer {
+                await preparedAnalyzer.cancelAndFinishNow()
+            }
+            self.preparedModule = nil
+            self.preparedAnalyzer = nil
+            self.preparedMode = nil
+            speech = AppleSpeechModule(language, mode: mode)
             analyzer = makeAnalyzer(module: speech)
+            try await analyzer.prepareToAnalyze(in: nil)
         }
 
         let audioFile = try AVAudioFile(forReading: audioURL)

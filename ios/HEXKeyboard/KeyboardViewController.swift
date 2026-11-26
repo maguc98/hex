@@ -8,12 +8,16 @@ final class KeyboardViewController: UIInputViewController {
     private let viewModel = KeyboardViewModel()
     private let localDictation = KeyboardLocalDictation()
     private var pollTimer: Timer?
+    private var lastSpeechLearningCleanupAt: TimeInterval = 0
+    private var lastSpeechLearningCheckAt: TimeInterval = 0
     private var coldStartJobID = UUID().uuidString
     private var lastURLRefreshBucket: Int = 0
     private var lastFullAccessReport: KeyboardFullAccessReport?
     /// When this keyboard process started (its first load): its Full Access reports' generation.
     private static let processLaunchedAt = Date().timeIntervalSince1970
     private var surface: UIView?
+    /// Last logged surface-selection inputs, to diagnose signed App Group access without flooding the probe log.
+    private var lastSurfaceDecision: String?
     private var fullKeyboard: FullKeyboardView?
     /// The dictation bar's emoji panel, at the full keyboard's height while it's open, and
     /// the index it reads (kept while the keyboard runs, as the full keyboard's).
@@ -54,6 +58,8 @@ final class KeyboardViewController: UIInputViewController {
     /// Learn how I type: what becomes of each dictation Hex inserts.
     private let dictationEdits = DictationEditTracker()
     private lazy var documentTarget = DocumentProxyTextTarget { [weak self] in self?.textDocumentProxy }
+    /// Type as I speak: the live words in the field while recording.
+    private lazy var liveTyping = KeyboardLiveTyping(target: documentTarget)
     /// Record typing logs: the process's logger while the experiment is on.
     private var typingLog: TypingLogger?
     /// The field the current typing log session is for.
@@ -66,6 +72,7 @@ final class KeyboardViewController: UIInputViewController {
     /// How long the note that a dictation went in as spoken stays up.
     static let translationNoteDuration: TimeInterval = 8
     private var isShown = false
+    private var isSyncingFromBridge = false
     /// Retired while a newer Hex keyboard sits over this one in the same field (`KeyboardsOnScreen`):
     /// keeps listening and restores its surface if the newer one goes away.
     private var isRetired = false
@@ -84,7 +91,7 @@ final class KeyboardViewController: UIInputViewController {
     /// The dictation bar's key haptic; the full keyboard has its own generator.
     private lazy var barHaptics = UIImpactFeedbackGenerator(style: FullKeyboardView.keyTickStyle(hapticStrength))
     /// Settings › Keyboard › Strength as of the last bridge sync.
-    private var hapticStrength = KeyHapticStrength.medium {
+    private var hapticStrength = KeyHapticStrength.light {
         didSet {
             if hapticStrength != oldValue { barHaptics = UIImpactFeedbackGenerator(style: FullKeyboardView.keyTickStyle(hapticStrength)) }
         }
@@ -258,6 +265,7 @@ final class KeyboardViewController: UIInputViewController {
         fullKeyboard?.engine.commitHangulComposition()
         closeBarEmojiPanel()
         // A dictation under way finishes without the keyboard, and the next one delivers it.
+        liveTyping.keyboardWillHide()
         localDictation.keyboardWillHide()
         endTypingLogSession(reason: "disappear", settleDictation: editContext)
         pollTimer?.invalidate()
@@ -622,6 +630,7 @@ final class KeyboardViewController: UIInputViewController {
         isRetired = true
         launchWork.forEach { $0.cancel() }
         launchWork = []
+        liveTyping.keyboardWillHide()
         localDictation.keyboardWillHide()
         endTypingLogSession(reason: "superseded", settleDictation: nil)
         pollTimer?.invalidate()
@@ -665,7 +674,27 @@ final class KeyboardViewController: UIInputViewController {
             return TypingJournal.sharedIfEnabled()?.dictationCorrections(language: language) ?? []
         }
         localDictation.currentDocument = { [weak self] in self?.currentDocument }
+        localDictation.liveText = viewModel.liveText
+        localDictation.onPhaseChange = { [weak self] in
+            guard let self, self.isShown, !self.isSyncingFromBridge else { return }
+            self.syncFromBridge(animated: true)
+        }
+        liveTyping.attach(viewModel.liveText)
+        liveTyping.mayType = { [weak self] in self?.fullKeyboard?.engine.hasPendingSelectionDictation != true }
+        liveTyping.didEdit = { [weak self] in
+            self?.fullKeyboard?.engine.forgetTextAroundKeys()
+            self?.fullKeyboard?.engine.textDidChange()
+        }
         viewModel.onPasteDictation = { [weak self] in self?.pasteOfferedDictation() }
+        viewModel.onLearnSpeechSample = { [weak self] in
+            guard let self, let resultID = self.viewModel.speechLearningResultID else { return }
+            if SpeechLearningStore().confirmPending(resultID: resultID) {
+                self.viewModel.markSpeechSampleLearned()
+                UIAccessibility.post(notification: .announcement, argument: "已学习")
+            } else {
+                self.viewModel.offerSpeechLearning(resultID: nil)
+            }
+        }
         viewModel.onDictateTap = { [weak self] in self?.startWarmDictation() }
         viewModel.onDictationUnavailable = { [weak self] in
             guard let self else { return }
@@ -807,10 +836,28 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     /// The full keyboard, or the dictation bar once it was chosen, on an iPhone and an iPad alike.
-    /// Without Full Access always the full keyboard: the bar types nothing but spaces and line
-    /// breaks, and its Dictate needs Full Access. Only switches while idle.
+    /// Without Full Access, iOS may withhold the App Group that stores the selection. Show the
+    /// dictation bar's setup prompt in that case instead of silently falling back to the full
+    /// keyboard; once access is granted, respect the saved choice. Only switches while idle.
     private func mountSurface() {
-        let wantsFull = FullKeyboardSettings().isEnabled || !hasFullAccess
+        let settings = FullKeyboardSettings()
+        // A UserDefaults suite object can be created even when the signed keyboard extension
+        // cannot access its App Group container. In that case its missing selection reads as
+        // the default (Full), which silently defeats the user's Dictation bar choice.
+        let hasSharedAppGroup = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: KeyboardBridge.appGroup
+        ) != nil
+        let selectedFullKeyboard = settings.isEnabled
+        let wantsFull = hasFullAccess && hasSharedAppGroup && selectedFullKeyboard
+
+        // Keep one concise record whenever any input changes. This makes signing/entitlement
+        // failures distinguishable from a saved Full selection in the keyboard's probe log.
+        let decision = "surface fullAccess=\(hasFullAccess) appGroup=\(hasSharedAppGroup) selectedFull=\(selectedFullKeyboard) mountedFull=\(wantsFull)"
+        if decision != lastSurfaceDecision {
+            KeyboardProbeLog.shared.write(decision)
+            lastSurfaceDecision = decision
+        }
+
         guard surface == nil || wantsFull != (fullKeyboard != nil) else { return }
         guard surface == nil || viewModel.stagePhase == .idle || viewModel.stagePhase == .failed else { return }
         closeBarEmojiPanel()
@@ -884,7 +931,7 @@ final class KeyboardViewController: UIInputViewController {
 
     /// The dictation bar polls at 25 Hz; the full keyboard at 4 Hz, and 30 Hz while recording.
     private func schedulePoll(force: Bool) {
-        let busy = viewModel.stagePhase == .recording || viewModel.stagePhase == .transcribing
+        let busy = viewModel.stagePhase == .starting || viewModel.stagePhase == .recording || viewModel.stagePhase == .transcribing
             || viewModel.pendingCommand != nil
         let interval: TimeInterval = fullKeyboard == nil ? 0.04 : (busy ? 1.0 / 30 : 0.25)
         guard force || (pollTimer != nil && interval != pollInterval) else { return }
@@ -920,6 +967,8 @@ final class KeyboardViewController: UIInputViewController {
     }
 
     private func syncFromBridge(animated: Bool) {
+        isSyncingFromBridge = true
+        defer { isSyncingFromBridge = false }
         let now = Date().timeIntervalSince1970
         reportFullAccess(force: false)
         viewModel.setQuickWakeEnabled(bridge.quickWakeEnabled)
@@ -941,7 +990,15 @@ final class KeyboardViewController: UIInputViewController {
                 clearPending: true,
                 animated: animated
             )
+            // The bridge is unavailable without Full Access, but the dictation bar itself
+            // can still render its setup prompt and lets the user open Hex's setup screen.
+            mountSurface()
             return
+        }
+
+        if now - lastSpeechLearningCleanupAt >= 5 {
+            SpeechLearningStore().cleanupExpiredPending()
+            lastSpeechLearningCleanupAt = now
         }
 
         if dictationEdits.isTracking {
@@ -978,6 +1035,20 @@ final class KeyboardViewController: UIInputViewController {
         }
         refreshOfferedDictation(app: appSnapshot, now: now)
 
+        // Only offer Learn for the exact result that was inserted, and only while its
+        // short-lived original WAV is still staged in the local App Group.
+        let insertedID = bridge.lastInsertedResultID
+        let learningOfferChanged = viewModel.speechLearningResultID != insertedID
+        let learningCheckIsDue = now - lastSpeechLearningCheckAt >= 5
+        if !(viewModel.didLearnSpeechSample && viewModel.speechLearningResultID == insertedID),
+           learningOfferChanged || learningCheckIsDue {
+            let learningID = insertedID.flatMap {
+                SpeechLearningStore().hasPending(resultID: $0) ? $0 : nil
+            }
+            viewModel.offerSpeechLearning(resultID: learningID)
+            lastSpeechLearningCheckAt = now
+        }
+
         syncLanguageState()
 
         viewModel.applyBridgeState(
@@ -989,6 +1060,12 @@ final class KeyboardViewController: UIInputViewController {
             clearPending: insertedResult,
             animated: animated
         )
+
+        // Re-check the selected surface after applying the latest dictation phase. On
+        // appearance, mountSurface() can run before this bridge sync and see a stale
+        // recording phase; without this second check, the old keyboard can remain mounted
+        // until the next cold-start URL refresh even though the user chose the dictation bar.
+        mountSurface()
 
         if viewModel.stagePhase == .recording || viewModel.stagePhase == .transcribing {
             closeBarEmojiPanel()
@@ -1062,6 +1139,9 @@ final class KeyboardViewController: UIInputViewController {
            let id = app.resultID, let text = app.transcript, bridge.lastInsertedResultID != id {
             offer = OfferedDictation(id: id, text: text, heard: app.heard, held: false)
         }
+        if offer?.id != offeredDictation?.id {
+            viewModel.showStoppedNote(offer?.held == true ? bridge.heldDictation?.stoppedAfter : nil)
+        }
         offeredDictation = offer
         if viewModel.offeredDictation != offer?.text {
             viewModel.offeredDictation = offer?.text
@@ -1074,6 +1154,7 @@ final class KeyboardViewController: UIInputViewController {
         insertDictation(offer.text, resultID: offer.id, heard: offer.heard, stages: nil, source: offer.held ? "keyboard" : "app")
         offeredDictation = nil
         viewModel.offeredDictation = nil
+        viewModel.showStoppedNote(nil)
     }
 
     private func insertDictation(
@@ -1088,7 +1169,8 @@ final class KeyboardViewController: UIInputViewController {
         // it; either way, the context below is read after that, so spacing sees the result.
         fullKeyboard?.engine.commitHangulComposition()
         fullKeyboard?.applyPendingSelectionDictation()
-        let context = editContext
+        // Type as I speak's words come out first: the text goes in where and as it would without them.
+        let context = liveTyping.handOver() ?? editContext
         let insertion = TranscriptFormatter.insertionText(
             for: transcript,
             beforeContext: context.before,
@@ -1407,7 +1489,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         // As the full keyboard's emoji key: fields that take any text.
         let takesEmoji: Bool = {
-            guard case .keys(.text, _) = KeyboardFieldRouting.route(for: textDocumentProxy.keyboardType) else { return false }
+            guard case .keys(let kind, _) = KeyboardFieldRouting.route(for: textDocumentProxy.keyboardType), kind.takesWords else { return false }
             return textDocumentProxy.keyboardType != .asciiCapable
         }()
         let showsEmoji = FullKeyboardSettings().emoji && takesEmoji

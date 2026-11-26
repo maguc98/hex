@@ -224,10 +224,14 @@ private struct RepeatDeleteKey: View {
                         isPressing = true
                         onDelete()
                         repeatTask = Task { @MainActor in
-                            try? await Task.sleep(for: .milliseconds(360))
+                            // The first character was deleted on touch-down. Start repeating quickly,
+                            // then accelerate for a sustained press.
+                            try? await Task.sleep(for: .milliseconds(230))
+                            var repeats = 0
                             while !Task.isCancelled {
                                 onDelete()
-                                try? await Task.sleep(for: .milliseconds(75))
+                                repeats += 1
+                                try? await Task.sleep(for: .milliseconds(repeats < 7 ? 58 : 34))
                             }
                         }
                     }
@@ -419,7 +423,7 @@ enum KeyboardSetupCopy {
 /// device, command queue, render pipelines, `CAMetalLayer`, display link, or
 /// idle simulation steps before the first frame.
 private struct KeyboardRestingDotBar: View {
-    let isDark: Bool
+    let tint: Color
     let leadingInset: CGFloat
     let trailingInset: CGFloat
 
@@ -432,9 +436,6 @@ private struct KeyboardRestingDotBar: View {
     var body: some View {
         let lead = Double(max(0, leadingInset))
         let trail = Double(max(0, trailingInset))
-        let tint: (red: Double, green: Double, blue: Double) = isDark
-            ? (red: 0.93, green: 0.91, blue: 0.86)
-            : (red: 0.55, green: 0.46, blue: 0.33)
         return Canvas { context, size in
             let pitch = Double(Self.pitch)
             let firstX = lead + 3
@@ -463,9 +464,13 @@ private struct KeyboardRestingDotBar: View {
                     let litUpper = exp(-pow(y - upper, 2) / 2.2)
                     let litLower = exp(-pow(y - lower, 2) / 2.2)
                     let power = min(1.0, 1.0 - (1.0 - litUpper) * (1.0 - litLower))
-                    let alpha = (0.05 + 0.40 * power) * edge
+                    // The keyboard extension uses this Canvas while idle to avoid
+                    // creating a Metal layer at launch. Keep the selected hue visible even
+                    // at rest; the previous 5%-floor opacity made custom colours look like
+                    // the same neutral grey on a translucent keyboard backdrop.
+                    let alpha = (0.13 + 0.55 * power) * edge
                     guard alpha > 0.01 else { continue }
-                    let radius = (0.16 + 0.21 * power) * pitch
+                    let radius = (0.19 + 0.24 * power) * pitch
                     context.fill(
                         Path(
                             ellipseIn: CGRect(
@@ -475,7 +480,7 @@ private struct KeyboardRestingDotBar: View {
                                 height: radius * 2
                             )
                         ),
-                        with: .color(Color(red: tint.red, green: tint.green, blue: tint.blue, opacity: alpha))
+                        with: .color(tint.opacity(alpha))
                     )
                 }
             }
@@ -505,6 +510,32 @@ struct KeyboardSurfaceView: View {
     @State private var removeTookPress = false
     /// The space bar slides the cursor: the keys' glyphs blank out, as on the full keyboard.
     @State private var isTrackpadActive = false
+    @State private var whisperModeEnabled = false
+    @State private var noiseReductionEnabled = false
+    @State private var waveformPalette = LiveWaveformPalette(idle: nil, recording: nil, processing: nil)
+
+    /// One RGB mapping feeds the resting Canvas and the active Metal scope.
+    private func waveformTint(for phase: DotScopePhase) -> Color? {
+        let state: LiveWaveformColorState
+        switch phase {
+        case .idle: state = .idle
+        case .recording: state = .recording
+        case .processing: state = .processing
+        case .hidden, .failed: return nil
+        }
+        guard let rgb = waveformPalette.color(for: state) else { return nil }
+        return Color(
+            .sRGB,
+            red: rgb.redUnit,
+            green: rgb.greenUnit,
+            blue: rgb.blueUnit,
+            opacity: 1
+        )
+    }
+
+    private func reloadWaveformColors() {
+        waveformPalette = LiveWaveformColorSettings().palette
+    }
 
     private static let wellHeight: CGFloat = 44
     private static let controlHeight: CGFloat = 34
@@ -524,7 +555,7 @@ struct KeyboardSurfaceView: View {
     }
 
     private var isStageActive: Bool {
-        model.stagePhase == .recording || model.stagePhase == .transcribing
+        model.stagePhase == .starting || model.stagePhase == .recording || model.stagePhase == .transcribing
     }
 
     var body: some View {
@@ -551,6 +582,21 @@ struct KeyboardSurfaceView: View {
         .onChange(of: model.activeTray) { _, _ in
             removeTookPress = false
         }
+        .onAppear {
+            whisperModeEnabled = KeyboardWhisperSettings().isEnabled
+            noiseReductionEnabled = KeyboardBridge().noiseReductionEnabled
+            LiveWaveformColorSettings.observeChanges()
+            reloadWaveformColors()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: LiveWaveformColorSettings.didChangeNotification)) { _ in
+            reloadWaveformColors()
+        }
+        .onChange(of: whisperModeEnabled) { _, enabled in
+            KeyboardWhisperSettings().isEnabled = enabled
+        }
+        .onChange(of: noiseReductionEnabled) { _, enabled in
+            KeyboardBridge().noiseReductionEnabled = enabled
+        }
         .padding(.top, 4)
         .padding(.bottom, 6)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -574,6 +620,7 @@ struct KeyboardSurfaceView: View {
 
             moreLanguagesBar(palette: p)
                 .hexTrayReveal(model.activeTray == .moreLanguages, reduceMotion: reduceMotion, offsetY: 3.5)
+
         }
         .frame(height: TopBarMetrics.height)
     }
@@ -582,17 +629,15 @@ struct KeyboardSurfaceView: View {
         HStack(spacing: 8) {
             Button {
                 model.onKeyFeedback?()
-                if model.quickWakeEnabled, model.hasFullAccess {
-                    if let local = model.onLocalDictateTap {
-                        local()
-                    } else {
-                        model.onDictationUnavailable?()
-                    }
-                } else if model.hasFullAccess, !model.isWarmAvailable, let local = model.onLocalDictateTap {
+                if !model.hasFullAccess {
+                    model.onOpenURL?(KeyboardLaunchRequest.setup.url)
+                } else if let local = model.onLocalDictateTap {
+                    // Prefer the keyboard's own capture and live-typing path; never foreground Hex.
                     local()
+                } else if model.dictatesThroughHex {
+                    model.onDictateTap?()
                 } else {
-                    let target = model.hasFullAccess ? model.coldStartURL : KeyboardLaunchRequest.setup.url
-                    model.onOpenURL?(target)
+                    model.onDictationUnavailable?()
                 }
             } label: {
                 HexMarkView(
@@ -604,28 +649,33 @@ struct KeyboardSurfaceView: View {
                 .topBarHitTarget(alignment: .leading)
             }
             .buttonStyle(.plain)
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(10)
             .accessibilityLabel("Open Hex")
 
-            // The mark's tap area reaches past its pill into this group's slot: the
-            // outdent keeps the badge and the status where they were.
+            // Keep the recording clock/status first, then let the transcript follow it.
             HStack(spacing: 8) {
                 if let target = model.translatingTo {
                     TranslationBadge(target: target, palette: p)
                 }
-
                 leadingAccessory(palette: p)
             }
             .padding(.leading, -TopBarMetrics.hexMarkOverlap)
 
             Spacer(minLength: 4)
 
+            if model.canLearnSpeechSample {
+                speechLearningChip(palette: p)
+            }
+
             if showsPasteDictation {
                 pasteDictationChip(palette: p)
                 Spacer(minLength: 4)
             }
 
-            // The translation note takes the bar's width for its few seconds.
+            // Keep language switch (Chinese) and style/精修 visible during recording.
             if model.showsLanguageSwitch || model.showsTranslationSwitch, model.translationNote == nil {
+                noiseReductionTrigger(palette: p)
                 languageTrigger(palette: p)
             }
 
@@ -659,6 +709,33 @@ struct KeyboardSurfaceView: View {
         .layoutPriority(1)
     }
 
+    /// Learns the just-inserted result in place; tapping never starts another recording.
+    private func speechLearningChip(palette p: KeyboardChromePalette) -> some View {
+        let learned = model.didLearnSpeechSample
+        return Button {
+            guard !learned else { return }
+            model.onKeyFeedback?()
+            model.onLearnSpeechSample?()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: learned ? "checkmark" : "sparkles")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(learned ? "已学习" : "学习")
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(p.textBase)
+            .padding(.horizontal, 9)
+            .frame(height: 26)
+            .background(learned ? p.chipIdleFill : p.chipActiveFill, in: Capsule())
+        }
+        .buttonStyle(TopBarChipButtonStyle())
+        .disabled(learned)
+        .transition(.opacity.combined(with: .scale(scale: 0.94)))
+        .accessibilityLabel(learned ? "Speech sample learned" : "Learn this speech sample")
+        .accessibilityHint("Saves the current sentence and its audio on this iPhone")
+    }
+
     private func styleTrayBar(palette p: KeyboardChromePalette) -> some View {
         let firstStyle = DictationStyle.allCases.first
         return HStack(spacing: 4) {
@@ -688,15 +765,16 @@ struct KeyboardSurfaceView: View {
 
     private func leadingAccessory(palette p: KeyboardChromePalette) -> some View {
         let showNoAccess = !model.hasFullAccess
+        let showStartingStatus = model.hasFullAccess && model.stagePhase == .starting
         let showRecordingClock = model.hasFullAccess && model.stagePhase == .recording
         let showTranslationNote = model.hasFullAccess
             && model.translationNote != nil
-            && model.stagePhase != .recording
-            && model.stagePhase != .transcribing
+            && !isStageActive
+        // Stale stopped-note status must never overlay the live recording clock.
+        let showStoppedNote = model.stoppedNote != nil && !isStageActive
         let showWarmStatus = model.hasFullAccess
             && model.isWarmAvailable
-            && model.stagePhase != .recording
-            && model.stagePhase != .transcribing
+            && !isStageActive
             && !showTranslationNote
 
         return ZStack(alignment: .leading) {
@@ -712,6 +790,12 @@ struct KeyboardSurfaceView: View {
             .accessibilityLabel("Full Access is off. \(KeyboardSetupCopy.fullAccessPath)")
             .hexTrayReveal(showNoAccess, reduceMotion: reduceMotion, offsetY: 2)
 
+            Text("Starting…")
+                .font(.system(size: 13, weight: .regular))
+                .foregroundStyle(p.textMuted)
+                .lineLimit(1)
+                .hexTrayReveal(showStartingStatus, reduceMotion: reduceMotion, offsetY: 2)
+
             HStack(spacing: 6) {
                 HexStatusDot(color: HexTheme.danger, size: 6.5)
                 KeyboardRecordingClockText(clock: model.clock, color: p.textBase)
@@ -719,7 +803,7 @@ struct KeyboardSurfaceView: View {
             .hexTrayReveal(showRecordingClock, reduceMotion: reduceMotion, offsetY: 2)
 
             Group {
-                if let message = model.statusMessage {
+                if let message = model.statusMessage ?? (showStoppedNote ? model.stoppedNote.map({ "\($0.title). \($0.detail)" }) : nil) {
                     HStack(spacing: 6) {
                         if model.stagePhase == .failed {
                             HexStatusDot(color: HexTheme.danger, size: 6)
@@ -739,7 +823,7 @@ struct KeyboardSurfaceView: View {
                     }
                 }
             }
-            .hexTrayReveal(showWarmStatus, reduceMotion: reduceMotion, offsetY: 2)
+            .hexTrayReveal(showWarmStatus || showStoppedNote, reduceMotion: reduceMotion, offsetY: 2)
 
             Group {
                 if let note = model.translationNote {
@@ -817,6 +901,31 @@ struct KeyboardSurfaceView: View {
         // the switch shows (it needs Full Access).
         .layoutPriority(1)
         .accessibilityLabel("Dictation language: \(label)")
+    }
+
+    private func noiseReductionTrigger(palette p: KeyboardChromePalette) -> some View {
+        Button {
+            model.onKeyFeedback?()
+            noiseReductionEnabled.toggle()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: noiseReductionEnabled ? "waveform.badge.mic" : "waveform")
+                    .font(.system(size: 12, weight: .medium))
+                Text("降噪")
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .foregroundStyle(noiseReductionEnabled ? Color.blue : p.textMuted)
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+            .background(noiseReductionEnabled ? p.chipActiveFill : Color.clear, in: Capsule())
+        }
+        .buttonStyle(TopBarTriggerButtonStyle(palette: p))
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(2)
+        .accessibilityLabel("Noise reduction")
+        .accessibilityValue(noiseReductionEnabled ? "On" : "Off")
     }
 
     private func languageTrayBar(palette p: KeyboardChromePalette) -> some View {
@@ -1066,14 +1175,16 @@ struct KeyboardSurfaceView: View {
 
     private var primaryStage: some View {
         let p = palette
+        let showStarting = model.stagePhase == .starting
         let showRecordingControls = model.stagePhase == .recording
+        let showCancelControl = showStarting || showRecordingControls
         let showIdleTrigger = model.stagePhase == .idle || model.stagePhase == .failed
         let spec = idleTriggerSpec
 
-        let leadInset: Float = showRecordingControls
+        let leadInset: Float = showCancelControl
             ? Float(Self.wellInset + Self.cancelWidth + 6)
             : 0.0
-        let trailInset: Float = if showRecordingControls {
+        let trailInset: Float = if showCancelControl {
             Float(Self.wellInset + Self.doneWidth + 6)
         } else if showIdleTrigger {
             Float(Self.wellInset + spec.width + 6)
@@ -1081,12 +1192,18 @@ struct KeyboardSurfaceView: View {
             0.0
         }
 
+        let restingTint = waveformTint(for: .idle) ?? (
+            p.isDark
+                ? Color(red: 0.93, green: 0.91, blue: 0.86)
+                : Color(red: 0.55, green: 0.46, blue: 0.33)
+        )
+
         return ZStack {
             HexRecessedWell(isDark: p.isDark)
 
-            if defersDotScopeUntilActive && !isStageActive {
+            if defersDotScopeUntilActive && model.dotScopePhase == .idle {
                 KeyboardRestingDotBar(
-                    isDark: p.isDark,
+                    tint: restingTint,
                     leadingInset: CGFloat(leadInset),
                     trailingInset: CGFloat(trailInset)
                 )
@@ -1097,7 +1214,11 @@ struct KeyboardSurfaceView: View {
                     phase: model.dotScopePhase,
                     tuning: .bar(leadingInset: leadInset, trailingInset: trailInset, fade: 28.0, spacing: 3.5),
                     drawPlate: false,
-                    loudnessProvider: { [weak model] in model?.liveLoudnessDB ?? -62.0 }
+                    loudnessProvider: { [weak model] in
+                        let db = model?.liveLoudnessDB ?? -62.0
+                        return whisperModeEnabled ? min(0.0, db + 12.0) : db
+                    },
+                    customColor: waveformTint(for: model.dotScopePhase)
                 )
                 .clipShape(Capsule())
                 .allowsHitTesting(false)
@@ -1120,7 +1241,7 @@ struct KeyboardSurfaceView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel("Cancel dictation")
                 .hexControlReveal(
-                    showRecordingControls,
+                    showCancelControl,
                     reduceMotion: reduceMotion,
                     scale: 0.90,
                     blur: 2.5,
@@ -1129,26 +1250,30 @@ struct KeyboardSurfaceView: View {
 
                 Spacer(minLength: 0)
 
-                Button {
-                    model.onKeyFeedback?()
-                    model.onStopTap?()
-                } label: {
-                    Text("Done")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(p.textBase)
+                ZStack(alignment: .trailing) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(p.textMuted)
                         .frame(width: Self.doneWidth, height: Self.controlHeight)
-                        .background(p.controlProminentFill, in: Capsule())
-                        .frame(minHeight: Self.wellHeight, alignment: .trailing)
-                        .contentShape(Rectangle())
+                        .background(p.controlSubtleFill, in: Capsule())
+                        .accessibilityLabel("Starting microphone")
+                        .hexControlReveal(showStarting, reduceMotion: reduceMotion, scale: 0.90, blur: 2.5, anchor: .trailing)
+
+                    Button {
+                        model.onKeyFeedback?()
+                        model.onStopTap?()
+                    } label: {
+                        Text("Done")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(p.textBase)
+                            .frame(width: Self.doneWidth, height: Self.controlHeight)
+                            .background(p.controlProminentFill, in: Capsule())
+                            .frame(minHeight: Self.wellHeight, alignment: .trailing)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .hexControlReveal(showRecordingControls, reduceMotion: reduceMotion, scale: 0.90, blur: 2.5, anchor: .trailing)
                 }
-                .buttonStyle(.plain)
-                .hexControlReveal(
-                    showRecordingControls,
-                    reduceMotion: reduceMotion,
-                    scale: 0.90,
-                    blur: 2.5,
-                    anchor: .trailing
-                )
             }
             .padding(.horizontal, Self.wellInset)
 
@@ -1250,16 +1375,22 @@ struct KeyboardSurfaceView: View {
     private func handleIdleStageTap() {
         if !model.hasFullAccess {
             model.onOpenURL?(KeyboardLaunchRequest.setup.url)
-        } else if !model.dictatesThroughHex || model.stagePhase == .failed {
+        } else if whisperModeEnabled, let local = model.onLocalDictateTap {
+            // Whisper mode stays on the keyboard's locally processed audio path.
+            local()
+        } else if model.stagePhase == .failed {
             if let local = model.onLocalDictateTap {
                 local()
-            } else if model.quickWakeEnabled {
-                model.onDictationUnavailable?()
             } else {
-                model.onOpenURL?(model.coldStartURL)
+                model.onDictationUnavailable?()
             }
-        } else {
+        } else if model.dictatesThroughHex {
             model.onDictateTap?()
+        } else if let local = model.onLocalDictateTap {
+            // Quick wake and unavailable warm sessions remain entirely in the keyboard.
+            local()
+        } else {
+            model.onDictationUnavailable?()
         }
     }
 
@@ -1267,7 +1398,7 @@ struct KeyboardSurfaceView: View {
 
     /// The bar's punctuation keys, the commonest first: as many as leave the space bar
     /// `minSpaceWidth` (five on a 402 pt iPhone, three on the SE beside its globe).
-    private static let punctuation = [",", ".", "?", "!", "'", "\"", "@", "#"]
+    private static let punctuation = ["."]
     private static let punctuationKeyWidth: CGFloat = 30
     private static let minSpaceWidth: CGFloat = 60
     private static let keyHeight: CGFloat = 42
@@ -1276,17 +1407,10 @@ struct KeyboardSurfaceView: View {
     private var glyphOpacity: Double { isTrackpadActive ? 0 : 1 }
 
     private var utilityRow: some View {
-        ViewThatFits(in: .horizontal) {
-            utilityKeys(punctuation: 8)
-            utilityKeys(punctuation: 6)
-            utilityKeys(punctuation: 5)
-            utilityKeys(punctuation: 4)
-            utilityKeys(punctuation: 3)
-            utilityKeys(punctuation: 2)
-        }
+        utilityKeys()
     }
 
-    private func utilityKeys(punctuation count: Int) -> some View {
+    private func utilityKeys() -> some View {
         let p = palette
         return HStack(spacing: 5) {
             if model.needsGlobeKey {
@@ -1300,23 +1424,30 @@ struct KeyboardSurfaceView: View {
                     .shadow(color: p.keyShadow, radius: 0.5, x: 0, y: 1)
             }
 
-            if model.showsEmojiKey {
-                Button {
-                    model.onKeyFeedback?()
-                    model.onEmojiTap?()
-                } label: {
-                    Image(systemName: "face.smiling")
-                        .font(.system(size: 17, weight: .regular))
-                        .foregroundStyle(p.textBase)
-                        .opacity(glyphOpacity)
-                        .frame(width: 38, height: 42)
-                        .contentShape(RoundedRectangle(cornerRadius: HexTheme.controlRadius, style: .continuous))
+            Button {
+                model.onKeyFeedback?()
+                whisperModeEnabled.toggle()
+            } label: {
+                HStack(spacing: 5) {
+                    Image(systemName: whisperModeEnabled ? "ear.and.waveform" : "ear")
+                        .font(.system(size: 15, weight: .medium))
+                    Text("悄悄话")
+                        .font(.system(size: 13, weight: .medium))
                 }
-                .buttonStyle(KeyboardKeyButtonStyle(palette: p))
-                .accessibilityLabel("Emoji")
+                .foregroundStyle(whisperModeEnabled ? Color.white : p.textBase)
+                .opacity(glyphOpacity)
+                .frame(width: 72, height: 42)
+                .background(
+                    whisperModeEnabled ? Color.blue.opacity(0.78) : p.keyFill,
+                    in: RoundedRectangle(cornerRadius: HexTheme.controlRadius, style: .continuous)
+                )
+                .contentShape(RoundedRectangle(cornerRadius: HexTheme.controlRadius, style: .continuous))
             }
+            .buttonStyle(KeyboardKeyButtonStyle(palette: p))
+            .accessibilityLabel("Whisper mode")
+            .accessibilityValue(whisperModeEnabled ? "On" : "Off")
 
-            ForEach(Self.punctuation.prefix(count), id: \.self) { mark in
+            ForEach(Self.punctuation, id: \.self) { mark in
                 Button {
                     model.onKeyFeedback?()
                     model.onInsertText?(mark)

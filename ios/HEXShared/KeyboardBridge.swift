@@ -3,6 +3,7 @@ import Foundation
 nonisolated enum KeyboardDictationState: String, Codable, Sendable {
     case offline
     case ready
+    case starting
     case recording
     case transcribing
     case failed
@@ -257,7 +258,7 @@ nonisolated struct KeyboardSnapshot: Codable, Equatable, Sendable {
     func isAvailable(at now: TimeInterval) -> Bool {
         let heartbeatFresh = now - heartbeat < 3.0 && heartbeat > 0
         guard heartbeatFresh else { return false }
-        if state == .recording || state == .transcribing {
+        if state == .starting || state == .recording || state == .transcribing {
             return true
         }
         return expiresAt > now
@@ -291,7 +292,7 @@ nonisolated struct KeyboardSnapshot: Codable, Equatable, Sendable {
     /// A recording or transcription Hex stopped heartbeating for. Nothing will finish it, and
     /// a new keyboard process reads it the same way: the heartbeat is wall-clock time.
     func isOrphanedJob(at now: TimeInterval) -> Bool {
-        guard state == .recording || state == .transcribing else { return false }
+        guard state == .starting || state == .recording || state == .transcribing else { return false }
         return heartbeat <= 0 || now - heartbeat > Self.orphanedJobTimeout
     }
 
@@ -371,6 +372,8 @@ nonisolated struct KeyboardHeldDictation: Codable, Equatable, Sendable {
     /// The field it was started in (`UITextDocumentProxy.documentIdentifier`), when UIKit named it.
     let document: UUID?
     let finishedAt: TimeInterval
+    /// Where the recording stopped when the keyboard closed during it.
+    var stoppedAfter: TimeInterval? = nil
 
     /// How long after it finished it still goes straight into its own field.
     static let insertWindow: TimeInterval = 30
@@ -405,10 +408,20 @@ nonisolated enum KeyboardJobWatchdog {
     static let captureSilence: TimeInterval = 6
     /// Apple Speech takes seconds for a long dictation; this is far past any of them.
     static let transcription: TimeInterval = 120
+    /// How long a capture the page says another sound interrupted may wait to come back.
+    static let captureInterruption: TimeInterval = 15
 
-    /// `lastProgress`: the stage's start, or the capture's last audio.
-    static func isStalled(_ stage: Stage, lastProgress: TimeInterval, now: TimeInterval) -> Bool {
-        now - lastProgress > (stage == .recording ? captureSilence : transcription)
+    /// `interruptedSince` makes the silence watchdog pause while WebKit is waiting for iOS audio.
+    static func isStalled(
+        _ stage: Stage,
+        lastProgress: TimeInterval,
+        interruptedSince: TimeInterval? = nil,
+        now: TimeInterval
+    ) -> Bool {
+        if stage == .recording, let interruptedSince {
+            return now - interruptedSince > captureInterruption
+        }
+        return now - lastProgress > (stage == .recording ? captureSilence : transcription)
     }
 }
 
@@ -484,6 +497,7 @@ struct KeyboardBridge {
         static let fullAccessOff = "keyboard.fullAccessOff"
         static let appMicrophoneAllowed = "app.microphoneAllowed"
         static let quickWakeEnabled = "settings.quickWakeEnabled"
+        static let noiseReductionEnabled = "settings.noiseReductionEnabled"
         static let lastEmptyDictationAt = "keyboard.lastEmptyDictationAt"
         static let heldDictation = "keyboard.heldDictation"
         static let shownAt = "keyboard.shownAt"
@@ -492,10 +506,16 @@ struct KeyboardBridge {
 
     private let defaults: UserDefaults?
     private let encoder = JSONEncoder()
+    private static let legacyQwenCleanupVersion = "settings.legacyQwenCleanupVersion"
     private let decoder = JSONDecoder()
 
     init(defaults: UserDefaults? = UserDefaults(suiteName: Self.appGroup)) {
         self.defaults = defaults
+        // Remove the API key left by older Qwen3-ASR builds; the engine and setting are gone.
+        if let defaults, defaults.integer(forKey: Self.legacyQwenCleanupVersion) < 1 {
+            defaults.removeObject(forKey: "settings.qwenAPIKey")
+            defaults.set(1, forKey: Self.legacyQwenCleanupVersion)
+        }
     }
 
     func send(
@@ -658,6 +678,12 @@ struct KeyboardBridge {
         nonmutating set { defaults?.set(newValue, forKey: Key.quickWakeEnabled) }
     }
 
+    /// Background-noise suppression for dictation capture, independent of Whisper mode.
+    var noiseReductionEnabled: Bool {
+        get { defaults?.bool(forKey: Key.noiseReductionEnabled) ?? false }
+        nonmutating set { defaults?.set(newValue, forKey: Key.noiseReductionEnabled) }
+    }
+
     /// Whether Hex has the microphone, as the app last read it. Only the app sets this. A
     /// keyboard process keeps the permission it read when it started (iOS doesn't update it
     /// there), so a keyboard opened before Hex was allowed the microphone needs the app's word.
@@ -735,5 +761,201 @@ struct KeyboardBridge {
     func snapshot() -> KeyboardSnapshot {
         guard let data = defaults?.data(forKey: Key.snapshot) else { return .offline }
         return (try? decoder.decode(KeyboardSnapshot.self, from: data)) ?? .offline
+    }
+}
+
+
+/// An opaque, sRGB colour shared by the app and keyboard extension.
+nonisolated struct LiveWaveformRGB: Codable, Equatable, Sendable {
+    let red: UInt8
+    let green: UInt8
+    let blue: UInt8
+
+    init(red: UInt8, green: UInt8, blue: UInt8) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+    }
+
+    init?(hex: String?) {
+        guard let hex else { return nil }
+        let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard value.count == 6, let packed = UInt32(value, radix: 16) else { return nil }
+        self.red = UInt8((packed >> 16) & 0xFF)
+        self.green = UInt8((packed >> 8) & 0xFF)
+        self.blue = UInt8(packed & 0xFF)
+    }
+
+    var hex: String {
+        String(format: "#%02X%02X%02X", red, green, blue)
+    }
+
+    var redUnit: Double { Double(red) / 255.0 }
+    var greenUnit: Double { Double(green) / 255.0 }
+    var blueUnit: Double { Double(blue) / 255.0 }
+}
+
+nonisolated enum LiveWaveformColorState: Sendable {
+    case idle
+    case recording
+    case processing
+}
+
+/// All waveform states travel together as one App Group value.
+nonisolated struct LiveWaveformPalette: Codable, Equatable, Sendable {
+    var idle: LiveWaveformRGB?
+    var recording: LiveWaveformRGB?
+    var processing: LiveWaveformRGB?
+
+    var isEmpty: Bool {
+        idle == nil && recording == nil && processing == nil
+    }
+
+    func color(for state: LiveWaveformColorState) -> LiveWaveformRGB? {
+        switch state {
+        case .idle: idle
+        case .recording: recording
+        case .processing: processing
+        }
+    }
+}
+
+/// Persists one RGB palette in the shared App Group and migrates the previous HEX keys.
+/// Synchronization occurs before the Darwin notification, so the keyboard cannot wake up
+/// and immediately read an older cached value.
+nonisolated struct LiveWaveformColorSettings {
+    static let didChangeNotification = Notification.Name("LiveWaveformColorSettings.didChange")
+    private static let darwinNotification = "anomaly.hex.mobile.liveWaveformColor.changed"
+    private static let paletteKey = "settings.liveWaveformPalette.v1"
+
+    /// Previous independent keys and the earlier one-colour key, retained for migration.
+    static let idleKey = "settings.liveWaveformColor.idle"
+    static let recordingKey = "settings.liveWaveformColor.recording"
+    static let processingKey = "settings.liveWaveformColor.processing"
+    static let key = "settings.liveWaveformColor"
+
+    private static let changeForwarder: Void = {
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            nil,
+            { _, _, _, _, _ in
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: didChangeNotification, object: nil)
+                }
+            },
+            darwinNotification as CFString,
+            nil,
+            .deliverImmediately
+        )
+    }()
+
+    private let defaults: UserDefaults?
+
+    init(defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) {
+        self.defaults = defaults
+    }
+
+    static func observeChanges() {
+        _ = changeForwarder
+    }
+
+    var palette: LiveWaveformPalette {
+        get { readPalette() }
+        nonmutating set { writePalette(newValue, notify: true) }
+    }
+
+    var idle: LiveWaveformRGB? {
+        get { palette.idle }
+        nonmutating set { update(\.idle, to: newValue) }
+    }
+
+    var recording: LiveWaveformRGB? {
+        get { palette.recording }
+        nonmutating set { update(\.recording, to: newValue) }
+    }
+
+    var processing: LiveWaveformRGB? {
+        get { palette.processing }
+        nonmutating set { update(\.processing, to: newValue) }
+    }
+
+    /// HEX accessors keep source compatibility with builds that used separate string keys.
+    var idleHex: String? {
+        get { idle?.hex }
+        nonmutating set { idle = LiveWaveformRGB(hex: newValue) }
+    }
+
+    var recordingHex: String? {
+        get { recording?.hex }
+        nonmutating set { recording = LiveWaveformRGB(hex: newValue) }
+    }
+
+    var processingHex: String? {
+        get { processing?.hex }
+        nonmutating set { processing = LiveWaveformRGB(hex: newValue) }
+    }
+
+    /// Legacy shared-colour property. New writes fan out to idle and recording.
+    var hex: String? {
+        get {
+            _ = defaults?.synchronize()
+            return defaults?.string(forKey: Self.key)
+        }
+        nonmutating set {
+            let color = LiveWaveformRGB(hex: newValue)
+            var next = palette
+            next.idle = color
+            next.recording = color
+            writePalette(next, notify: true)
+        }
+    }
+
+    private func update(
+        _ keyPath: WritableKeyPath<LiveWaveformPalette, LiveWaveformRGB?>,
+        to color: LiveWaveformRGB?
+    ) {
+        var next = palette
+        next[keyPath: keyPath] = color
+        writePalette(next, notify: true)
+    }
+
+    private func readPalette() -> LiveWaveformPalette {
+        guard let defaults else {
+            return LiveWaveformPalette(idle: nil, recording: nil, processing: nil)
+        }
+        _ = defaults.synchronize()
+
+        if let data = defaults.data(forKey: Self.paletteKey),
+           let value = try? JSONDecoder().decode(LiveWaveformPalette.self, from: data) {
+            return value
+        }
+
+        let migrated = LiveWaveformPalette(
+            idle: LiveWaveformRGB(hex: defaults.string(forKey: Self.idleKey) ?? defaults.string(forKey: Self.key)),
+            recording: LiveWaveformRGB(hex: defaults.string(forKey: Self.recordingKey) ?? defaults.string(forKey: Self.key)),
+            processing: LiveWaveformRGB(hex: defaults.string(forKey: Self.processingKey))
+        )
+        if !migrated.isEmpty {
+            writePalette(migrated, notify: false)
+        }
+        return migrated
+    }
+
+    private func writePalette(_ value: LiveWaveformPalette, notify: Bool) {
+        guard let defaults, let data = try? JSONEncoder().encode(value) else { return }
+        defaults.set(data, forKey: Self.paletteKey)
+        _ = defaults.synchronize()
+        guard notify else { return }
+
+        // Refresh a preview hosted in this process immediately; the Darwin notification
+        // below is still required to refresh the separate keyboard-extension process.
+        NotificationCenter.default.post(name: Self.didChangeNotification, object: nil)
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName(Self.darwinNotification as CFString),
+            nil,
+            nil,
+            true
+        )
     }
 }

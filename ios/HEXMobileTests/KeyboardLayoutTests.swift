@@ -5,7 +5,7 @@ import XCTest
 final class KeyboardLayoutTests: XCTestCase {
     private let portraitWidths: [CGFloat] = [320, 375, 393, 402, 430, 440]
     private let layers: [KeyboardLayer] = [.letters, .numbers, .symbols]
-    private let fields: [KeyboardFieldKind] = [.text, .url, .email]
+    private let fields: [KeyboardFieldKind] = [.text, .url, .email, .webSearch]
     /// Every layout here is Apple's iOS 27 keyboard, read on 27.0 and 27.2 simulators, while CI's
     /// newest simulator runtime is iOS 26.5. Pin the version the expectations describe
     /// (`KeyboardLanguage.systemMajorVersion` exists for this; the before-27 Ukrainian test sets
@@ -557,6 +557,14 @@ final class KeyboardLayoutTests: XCTestCase {
         XCTAssertEqual(
             bottomRow(KeyboardLayout(width: 393, field: .url)),
             [.layerSwitch(.numbers), .space, .character("."), .character("/"), .returnKey]
+        )
+        XCTAssertEqual(
+            bottomRow(KeyboardLayout(width: 393, field: .webSearch)),
+            [.layerSwitch(.numbers), .space, .character("."), .returnKey]
+        )
+        XCTAssertEqual(
+            bottomRow(KeyboardLayout(width: 393, field: .webSearch, showsEmoji: true)),
+            [.layerSwitch(.numbers), .emoji, .space, .character("."), .returnKey]
         )
     }
 
@@ -1915,6 +1923,9 @@ final class KeyboardLayoutTests: XCTestCase {
         XCTAssertEqual(automatic("pl-PL", modes: ["en-US"]), .polish)
         XCTAssertEqual(automatic("pl_PL"), .polish)
         XCTAssertEqual(automatic(nil, modes: ["emoji", "pl_PL", "en-US"]), .polish)
+        // Hex declares itself multilingual in Info.plist, not as an extra English keyboard.
+        XCTAssertEqual(automatic(nil, modes: ["mul", "fr_FR", "emoji"], preferred: ["fr-FR"]), .french)
+        XCTAssertEqual(automatic(nil, modes: ["mul", "emoji"], preferred: ["fr-FR"]), .french)
         XCTAssertEqual(automatic(nil, preferred: ["pl-PL", "en-US"]), .polish)
         XCTAssertEqual(automatic("ro-RO", modes: ["en-US"]), .romanian)
         XCTAssertEqual(automatic("ro_RO"), .romanian)
@@ -2094,6 +2105,11 @@ final class KeyboardLayoutTests: XCTestCase {
         XCTAssertEqual(
             KeyboardLanguage.suggested(inputModes: ["en-GB", "emoji", "fr-FR", "en-US"], preferred: ["ru-RU", "fr-CA", "he-IL"]),
             [.english, .french, .russian, .frenchCanadian]
+        XCTAssertEqual(
+            KeyboardLanguage.suggested(inputModes: ["fr_FR", "emoji", "mul"], preferred: ["fr-FR"]),
+            [.french],
+            "Hex multilingual mode must not appear as English"
+        )
         )
         let supported = ["en-US", "en-GB", "fr-FR", "fr-CA", "ru-RU", "nb-NO", "pt-BR", "pt-PT"]
         XCTAssertEqual(KeyboardLanguage.english.dictationLanguage(supported: supported, preferred: ["en-GB", "fr-FR"]), "en-GB")

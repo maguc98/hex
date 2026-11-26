@@ -1,7 +1,7 @@
 import Foundation
 
-/// How hard the keys' haptic tap is (Settings › Keyboard › Strength). Medium is meant to match
-/// Apple's keyboard (testers found Hex's, a 0.65 light impact, too weak beside it).
+/// How hard the keys' haptic tap is (Settings › Keyboard › Strength). Light by default: testers
+/// found Medium, the default until TestFlight in November 2026, too strong.
 nonisolated enum KeyHapticStrength: String, CaseIterable, Sendable {
     case light
     case medium
@@ -105,9 +105,11 @@ struct FullKeyboardSettings {
     /// `experiments.fullKeyboard`, from when the full keyboard was an experiment: unset or
     /// true is the full keyboard and false the dictation bar, so testers who never touched
     /// the experiment get the full keyboard and those who turned it off keep the bar.
+    /// Full keyboard is temporarily hidden from the product UI. Keep its implementation and
+    /// stored setting for future restoration, but always select the dictation bar by default.
     var isEnabled: Bool {
-        get { defaults?.object(forKey: Key.fullKeyboard) as? Bool ?? true }
-        nonmutating set { defaults?.set(newValue, forKey: Key.fullKeyboard) }
+        get { false }
+        nonmutating set { defaults?.set(false, forKey: Key.fullKeyboard) }
     }
 
     /// Settings › Keyboard › Auto-capitalization, as Apple's switch of the same name. On by
@@ -185,10 +187,10 @@ struct FullKeyboardSettings {
         nonmutating set { defaults?.set(newValue, forKey: Key.haptics) }
     }
 
-    /// Settings › Keyboard › Strength, under Haptics: how hard each key's tap is. Medium, the
-    /// default, is meant to feel like Apple's keyboard.
+    /// Settings › Keyboard › Strength, under Haptics: how hard each key's tap is. Light until
+    /// you choose one; a choice is kept, whichever it is.
     var hapticStrength: KeyHapticStrength {
-        get { defaults?.string(forKey: Key.hapticStrength).flatMap(KeyHapticStrength.init(rawValue:)) ?? .medium }
+        get { defaults?.string(forKey: Key.hapticStrength).flatMap(KeyHapticStrength.init(rawValue:)) ?? .light }
         nonmutating set { defaults?.set(newValue.rawValue, forKey: Key.hapticStrength) }
     }
 
@@ -390,6 +392,53 @@ struct FullKeyboardSettings {
             case "off": joinsKeyboardWhenUnfolded = false
             default: break
             }
+        }
+    }
+}
+
+
+/// The keyboard's low-volume Whisper mode. Stored in the shared App Group so the key,
+/// waveform and recording pipeline all read the same setting.
+@MainActor
+struct KeyboardWhisperSettings {
+    static let key = "settings.keyboardWhisperMode"
+    private let defaults: UserDefaults?
+
+    init(defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) {
+        self.defaults = defaults
+    }
+
+    var isEnabled: Bool {
+        get { defaults?.bool(forKey: Self.key) ?? false }
+        nonmutating set { defaults?.set(newValue, forKey: Self.key) }
+    }
+}
+
+/// Colors for the live dictation preview: tentative words and settled words can be styled
+/// independently. Nil means use the keyboard's appearance-aware default.
+@MainActor
+struct LiveWordsColorSettings {
+    static let inProgressKey = "settings.liveWordsInProgressColor"
+    static let completedKey = "settings.liveWordsCompletedColor"
+    private let defaults: UserDefaults?
+
+    init(defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) {
+        self.defaults = defaults
+    }
+
+    var inProgressHex: String? {
+        get { defaults?.string(forKey: Self.inProgressKey) }
+        nonmutating set {
+            if let newValue { defaults?.set(newValue, forKey: Self.inProgressKey) }
+            else { defaults?.removeObject(forKey: Self.inProgressKey) }
+        }
+    }
+
+    var completedHex: String? {
+        get { defaults?.string(forKey: Self.completedKey) }
+        nonmutating set {
+            if let newValue { defaults?.set(newValue, forKey: Self.completedKey) }
+            else { defaults?.removeObject(forKey: Self.completedKey) }
         }
     }
 }

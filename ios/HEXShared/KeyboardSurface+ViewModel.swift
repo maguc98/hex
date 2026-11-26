@@ -16,6 +16,7 @@ final class KeyboardViewModel: ObservableObject {
 
     enum StagePhase: Equatable {
         case idle
+        case starting
         case recording
         case transcribing
         case failed
@@ -30,6 +31,8 @@ final class KeyboardViewModel: ObservableObject {
     static let commandAckTimeout: TimeInterval = 1.6
 
     let clock = KeyboardClockModel()
+    /// The words so far while the keyboard records with live words on (`LiveDictationPreviewHost`).
+    let liveText = LiveDictationText()
 
     @Published var hasFullAccess = true
     @Published private(set) var quickWakeEnabled = false
@@ -79,6 +82,49 @@ final class KeyboardViewModel: ObservableObject {
     /// the keyboard came back in another field): the full keyboard's strip and the dictation
     /// bar's top row offer Paste dictation, which calls `onPasteDictation`.
     @Published var offeredDictation: String?
+    /// The most recently inserted voice result that still has a staged local audio sample.
+    @Published private(set) var speechLearningResultID: String?
+    @Published private(set) var didLearnSpeechSample = false
+
+    var canLearnSpeechSample: Bool {
+        hasFullAccess && stagePhase == .idle && speechLearningResultID != nil
+    }
+
+    /// Duration shown beside Paste dictation when the keyboard closed during recording.
+    @Published private(set) var offeredDictationStoppedAfter: TimeInterval?
+    private var stoppedNoteWork: Task<Void, Never>?
+    static let stoppedNoteDuration: Duration = .seconds(8)
+
+    var stoppedNote: (title: String, detail: String)? {
+        guard hasFullAccess, offeredDictation != nil, let offeredDictationStoppedAfter else { return nil }
+        return KeyboardInterruptedRecording.note(stoppedAfter: offeredDictationStoppedAfter)
+    }
+
+    func showStoppedNote(_ stoppedAfter: TimeInterval?) {
+        stoppedNoteWork?.cancel()
+        offeredDictationStoppedAfter = stoppedAfter
+        guard stoppedAfter != nil else { return }
+        stoppedNoteWork = Task { [weak self] in
+            try? await Task.sleep(for: Self.stoppedNoteDuration)
+            guard !Task.isCancelled else { return }
+            self?.offeredDictationStoppedAfter = nil
+        }
+    }
+
+    func offerSpeechLearning(resultID: String?) {
+        guard speechLearningResultID != resultID else { return }
+        withAnimation(HexMotion.stageAnimation(reduceMotion: UIAccessibility.isReduceMotionEnabled)) {
+            speechLearningResultID = resultID
+            didLearnSpeechSample = false
+        }
+    }
+
+    func markSpeechSampleLearned() {
+        guard speechLearningResultID != nil else { return }
+        withAnimation(.easeOut(duration: 0.18)) {
+            didLearnSpeechSample = true
+        }
+    }
 
     // Non-published live telemetry read directly by `DotScopeHostView` / button tap handlers
     // so 25–30 Hz polling never invalidates SwiftUI views mid-spring.
@@ -121,6 +167,7 @@ final class KeyboardViewModel: ObservableObject {
     var onReturn: (() -> Void)?
     var onOpenURL: ((URL) -> Void)?
     var onPasteDictation: (() -> Void)?
+    var onLearnSpeechSample: (() -> Void)?
     /// The dictation bar's light haptic for each press; the keyboard allows it with Full
     /// Access and Experiments › Haptics, as the full keyboard's keys.
     var onKeyFeedback: (() -> Void)?
@@ -175,6 +222,8 @@ final class KeyboardViewModel: ObservableObject {
         switch stagePhase {
         case .idle:
             return .idle
+        case .starting:
+            return .idle // Keep the scope calm until the first real microphone buffer.
         case .recording:
             return .recording
         case .transcribing:
@@ -227,9 +276,9 @@ final class KeyboardViewModel: ObservableObject {
             pendingCommand = nil
         } else if let pending = pendingCommand {
             let expired = now - pending.sentAt >= Self.commandAckTimeout
-            let acknowledged = (pending.kind == .start && newSnapshot.state == .recording)
-                || (pending.kind == .stop && newSnapshot.state != .recording)
-                || (pending.kind == .cancel && newSnapshot.state != .recording)
+            let acknowledged = (pending.kind == .start && (newSnapshot.state == .starting || newSnapshot.state == .recording))
+                || (pending.kind == .stop && newSnapshot.state != .starting && newSnapshot.state != .recording)
+                || (pending.kind == .cancel && newSnapshot.state != .starting && newSnapshot.state != .recording)
             if expired || acknowledged {
                 pendingCommand = nil
             }
@@ -237,8 +286,6 @@ final class KeyboardViewModel: ObservableObject {
 
         let recordingElapsed: TimeInterval? = if newSnapshot.state == .recording {
             newSnapshot.recordingElapsed(at: now)
-        } else if let pending = pendingCommand, pending.kind == .start {
-            max(0, now - pending.sentAt)
         } else {
             nil
         }
@@ -331,14 +378,18 @@ final class KeyboardViewModel: ObservableObject {
                 return .idle
             case .stop where snap.state == .recording:
                 return .transcribing
+            case .start where snap.state == .starting:
+                return .starting
             case .start where snap.state != .recording:
-                return .recording
+                return .starting
             default:
                 break
             }
         }
 
         switch snap.state {
+        case .starting:
+            return .starting
         case .recording:
             return .recording
         case .transcribing:

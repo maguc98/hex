@@ -762,9 +762,11 @@ final class DictationController {
         CleanupTagger.prepareIfEnabled(style: effectiveStyle, language: language)
         let vocabularyTerms = customVocabularySettings.activeTerms
         let personalCorrections = learnedDictationCorrections(language)
+        let learnedPhrases = SpeechLearningStore().recognitionHints(language: language)
         let recognitionHints = DictationCorrections.recognitionHints(
-            vocabulary: vocabularyTerms,
-            corrections: personalCorrections
+            vocabulary: learnedPhrases + vocabularyTerms,
+            corrections: personalCorrections,
+            language: language
         )
         let sharesHeard = typingJournalSettings.isEnabled
 
@@ -933,6 +935,18 @@ final class DictationController {
                 if keyboardJobID != nil {
                     self.keyboardResultID = UUID().uuidString
                     self.keyboardResult = formatted
+                    // Learning keeps the actual WAV independently of the typing-insights setting.
+                    // A translated result is not a valid pronunciation/text pair.
+                    if translated == nil, !formatted.isEmpty, let resultID = self.keyboardResultID {
+                        _ = SpeechLearningStore().stagePendingAudio(
+                            from: captureURL,
+                            resultID: resultID,
+                            text: formatted,
+                            heard: stages.heard,
+                            language: session.language,
+                            duration: finalDuration
+                        )
+                    }
                     // A translation's words can't be compared with what was heard.
                     self.keyboardResultHeard = session.sharesHeard && translated == nil ? stages.heard : nil
                     self.keyboardResultTranslationFailure = stages.translationFailure

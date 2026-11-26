@@ -16,7 +16,9 @@ extension DictationController {
             prepareBeforeAppleSpeechAtLaunch(hasCachedModel: hasCachedModel)
             return
         }
-        if hasCachedModel && !parakeetInterrupted {
+        if hasCachedModel && !parakeetInterrupted
+            && DictationRecognitionModeSettings().mode == .fast
+            && SpeechLanguagePicker.isEnglish(Self.wantedLanguage()) {
             engineName = "Parakeet V2"
             prepareModel()
             return
@@ -184,6 +186,17 @@ extension DictationController {
     private func prepareBeforeAppleSpeechAtLaunch(hasCachedModel: Bool) {
         let choice = SpeechEngineChoice.current
         let wanted = Self.wantedLanguage()
+        if DictationRecognitionModeSettings().mode == .accurate,
+           SpeechLanguagePicker.isEnglish(wanted),
+           OnDeviceSpeechLanguages.resolve(settings: LanguageSettings()) != nil {
+            engineName = "Apple Speech"
+            languageNotice = nil
+            if SFSpeechRecognizer.authorizationStatus() == .authorized {
+                keyboardBridge.setModelInstalled(true)
+                prepareModel()
+            }
+            return
+        }
         switch choice.engine(for: wanted, appleSpeechPicks: false) {
         case .parakeet:
             engineName = "Parakeet V2"
@@ -227,6 +240,11 @@ extension DictationController {
         guard #available(iOS 26.0, *) else {
             return transcriberBeforeAppleSpeech(choice: choice)
         }
+        if DictationRecognitionModeSettings().mode == .fast,
+           SpeechLanguagePicker.isEnglish(wantedLanguage()),
+           choice.parakeetFitsBesideAppleSpeech {
+            return ParakeetTranscriber()
+        }
         if let language = await appleSpeechLanguage(
             picked: AppleSpeechTranscriber.preferredLanguage(),
             parakeetFits: choice.parakeetFitsBesideAppleSpeech
@@ -247,6 +265,11 @@ extension DictationController {
     ) -> any LocalTranscribing {
         let settings = LanguageSettings(defaults: UserDefaults(suiteName: suite))
         let wanted = wantedLanguage(settings: settings)
+        if DictationRecognitionModeSettings().mode == .accurate,
+           SpeechLanguagePicker.isEnglish(wanted),
+           let language = resolve(settings) {
+            return OnDeviceSpeechTranscriber(language: language, access: access, suite: suite)
+        }
         guard choice.engine(for: wanted, appleSpeechPicks: false) == .onDeviceRecognizer else {
             return ParakeetTranscriber()
         }

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Settings › Dictation: how Hex writes what you say, and the microphone.
 struct DictationSettingsPage: View {
@@ -10,7 +11,14 @@ struct DictationSettingsPage: View {
     @State private var formatLists = DictationListSettings().isEnabled
     @State private var spokenPunctuation = DictationPunctuationSettings().isEnabled
     @State private var endsWithPeriod = DictationPeriodSettings().isEnabled
+    @State private var showsWhatISay = LiveDictationSettings().showsPreview
+    @State private var typesAsISpeak = LiveDictationSettings().typesIntoField
     @State private var quickWake = KeyboardBridge().quickWakeEnabled
+    @State private var recognitionMode = DictationRecognitionModeSettings().mode
+    @State private var pageAnimations = InterfaceMotionSettings().isEnabled
+    @State private var waveformIdleColor = Color(red: 0.86, green: 0.83, blue: 0.77)
+    @State private var waveformRecordingColor = Color(red: 0.86, green: 0.83, blue: 0.77)
+    @State private var waveformProcessingColor = Color(red: 0.25, green: 0.62, blue: 1.0)
 
     var body: some View {
         SettingsPageScaffold(title: "Dictation") {
@@ -74,6 +82,87 @@ struct DictationSettingsPage: View {
                 )
 
                 DictationLanguageRow(dictation: dictation)
+
+                SettingsDivider()
+
+                HStack(spacing: 12) {
+                    SettingsRowLabel(
+                        title: String(localized: "Recognition mode"),
+                        detail: recognitionMode.detail
+                    )
+                    Spacer(minLength: 8)
+                    Menu {
+                        ForEach(DictationRecognitionMode.allCases, id: \.self) { candidate in
+                            Button {
+                                recognitionMode = candidate
+                            } label: {
+                                if recognitionMode == candidate {
+                                    Label(candidate.title, systemImage: "checkmark")
+                                } else {
+                                    Text(candidate.title)
+                                }
+                            }
+                        }
+                    } label: {
+                        SettingsMenuValue(value: recognitionMode.title)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
+                .frame(minHeight: 50)
+
+                SettingsDivider()
+
+                SettingsToggleRow(
+                    title: String(localized: "Page animations"),
+                    detail: String(localized: "Animate transitions and controls"),
+                    isOn: $pageAnimations
+                )
+            }
+
+            // While the keyboard records by itself (iOS 26 and later): its live words.
+            if #available(iOS 26.0, *) {
+                SettingsCard {
+                    SettingsToggleRow(title: String(localized: "Show what I say"), isOn: $showsWhatISay)
+
+                    SettingsDivider()
+
+                    SettingsToggleRow(
+                        title: String(localized: "Type as I speak"),
+                        detail: String(localized: "Words can change until you stop"),
+                        isOn: $typesAsISpeak
+                    )
+
+                    SettingsDivider()
+
+                    waveformColorRow(
+                        title: String(localized: "Idle waveform color"),
+                        detail: String(localized: "When no speech is detected"),
+                        color: $waveformIdleColor
+                    ) { color in
+                        LiveWaveformColorSettings().idle = Self.rgb(from: color)
+                    }
+
+                    SettingsDivider()
+
+                    waveformColorRow(
+                        title: String(localized: "Speaking waveform color"),
+                        detail: String(localized: "While your voice is being detected"),
+                        color: $waveformRecordingColor
+                    ) { color in
+                        LiveWaveformColorSettings().recording = Self.rgb(from: color)
+                    }
+
+                    SettingsDivider()
+
+                    waveformColorRow(
+                        title: String(localized: "Finished animation color"),
+                        detail: String(localized: "The final processing animation"),
+                        color: $waveformProcessingColor
+                    ) { color in
+                        LiveWaveformColorSettings().processing = Self.rgb(from: color)
+                    }
+                }
             }
 
             SettingsCard {
@@ -187,18 +276,149 @@ struct DictationSettingsPage: View {
         .onChange(of: endsWithPeriod) { _, enabled in
             DictationPeriodSettings().isEnabled = enabled
         }
-        .onChange(of: quickWake) { _, enabled in
+        .onChange(of: showsWhatISay) { _, enabled in
+            LiveDictationSettings().showsPreview = enabled
+        }
+        .onChange(of: typesAsISpeak) { _, enabled in
+            LiveDictationSettings().typesIntoField = enabled
+        }
+         .onChange(of: quickWake) { _, enabled in
             dictation.setQuickWakeEnabled(enabled)
         }
-        .onAppear {
-            cleanupTagger = CleanupTaggerSettings().isEnabled
-            customVocabulary = CustomVocabularySettings().isEnabled
-            lowercase = DictationLowercaseSettings().isEnabled
-            formatLists = DictationListSettings().isEnabled
-            spokenPunctuation = DictationPunctuationSettings().isEnabled
-            endsWithPeriod = DictationPeriodSettings().isEnabled
-            quickWake = KeyboardBridge().quickWakeEnabled
+        .onChange(of: recognitionMode) { _, mode in
+            DictationRecognitionModeSettings().mode = mode
+            switch dictation.phase {
+            case .recording, .transcribing, .requestingPermission:
+                dictation.pendingLanguagePreparation = true
+            case .modelRequired, .preparingModel, .ready, .failed:
+                dictation.prepareModel()
+            }
         }
+        .onChange(of: pageAnimations) { _, enabled in
+            InterfaceMotionSettings().isEnabled = enabled
+        }
+        .onAppear { loadSettings() }
+    }
+
+    private func loadSettings() {
+        cleanupTagger = CleanupTaggerSettings().isEnabled
+        customVocabulary = CustomVocabularySettings().isEnabled
+        lowercase = DictationLowercaseSettings().isEnabled
+        formatLists = DictationListSettings().isEnabled
+        spokenPunctuation = DictationPunctuationSettings().isEnabled
+        endsWithPeriod = DictationPeriodSettings().isEnabled
+        showsWhatISay = LiveDictationSettings().showsPreview
+        typesAsISpeak = LiveDictationSettings().typesIntoField
+        quickWake = KeyboardBridge().quickWakeEnabled
+        recognitionMode = DictationRecognitionModeSettings().mode
+        pageAnimations = InterfaceMotionSettings().isEnabled
+        let waveformPalette = LiveWaveformColorSettings().palette
+        waveformIdleColor = Self.color(from: waveformPalette.idle, fallback: Color(red: 0.86, green: 0.83, blue: 0.77))
+        waveformRecordingColor = Self.color(from: waveformPalette.recording, fallback: Color(red: 0.86, green: 0.83, blue: 0.77))
+        waveformProcessingColor = Self.color(from: waveformPalette.processing, fallback: Color(red: 0.25, green: 0.62, blue: 1.0))
+    }
+
+    private func waveformColorRow(
+        title: String,
+        detail: String,
+        color: Binding<Color>,
+        onColorChanged: @escaping (Color) -> Void
+    ) -> some View {
+        HStack(spacing: 12) {
+            SettingsRowLabel(title: title, detail: detail)
+            Spacer(minLength: 8)
+            WaveformColorPreview(color: color.wrappedValue)
+            ColorPicker(
+                "",
+                selection: Binding(
+                    get: { color.wrappedValue },
+                    set: { newColor in
+                        color.wrappedValue = newColor
+                        onColorChanged(newColor)
+                    }
+                ),
+                supportsOpacity: false
+            )
+            .labelsHidden()
+            .frame(width: 44)
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 54)
+    }
+
+    private static func color(from rgb: LiveWaveformRGB?, fallback: Color) -> Color {
+        guard let rgb else { return fallback }
+        return Color(.sRGB, red: rgb.redUnit, green: rgb.greenUnit, blue: rgb.blueUnit, opacity: 1)
+    }
+
+    private static func rgb(from color: Color) -> LiveWaveformRGB? {
+        let uiColor = UIColor(color)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 1
+
+        if uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
+            return LiveWaveformRGB(
+                red: channel(red),
+                green: channel(green),
+                blue: channel(blue)
+            )
+        }
+
+        // ColorPicker can return a colour outside the direct RGB representation.
+        // Convert it explicitly to sRGB instead of silently persisting nil and falling
+        // back to the keyboard's built-in pearl/blue colours.
+        guard
+            let sRGB = CGColorSpace(name: CGColorSpace.sRGB),
+            let converted = uiColor.cgColor.converted(
+                to: sRGB,
+                intent: .defaultIntent,
+                options: nil
+            ),
+            let components = converted.components
+        else {
+            return nil
+        }
+
+        if components.count >= 3 {
+            red = components[0]
+            green = components[1]
+            blue = components[2]
+        } else if components.count == 2 {
+            red = components[0]
+            green = components[0]
+            blue = components[0]
+        } else {
+            return nil
+        }
+
+        return LiveWaveformRGB(
+            red: channel(red),
+            green: channel(green),
+            blue: channel(blue)
+        )
+    }
+
+    private static func channel(_ value: CGFloat) -> UInt8 {
+        UInt8((min(1, max(0, value)) * 255).rounded())
+    }
+}
+
+private struct WaveformColorPreview: View {
+    let color: Color
+    var body: some View {
+        HStack(alignment: .center, spacing: 3) {
+            Capsule().fill(color).frame(width: 3, height: 7)
+            Capsule().fill(color).frame(width: 3, height: 13)
+            Capsule().fill(color).frame(width: 3, height: 19)
+            Capsule().fill(color).frame(width: 3, height: 11)
+            Capsule().fill(color).frame(width: 3, height: 16)
+            Capsule().fill(color).frame(width: 3, height: 8)
+            Capsule().fill(color).frame(width: 3, height: 14)
+        }
+        .frame(width: 34, height: 28)
+        .accessibilityHidden(true)
     }
 }
 
@@ -271,7 +491,7 @@ struct KeyboardSettingsPage: View {
     /// `KeyboardSetupMonitor.fullAccessOn`.
     let fullAccessOn: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var fullKeyboard = FullKeyboardSettings().isEnabled
+    @State private var fullKeyboard = false
     @State private var autoCapitalization = FullKeyboardSettings().autoCapitalization
     @State private var hexKeyOnLeft = FullKeyboardSettings().hexKeyOnLeft
     @State private var numberRow = FullKeyboardSettings().numberRow
@@ -296,24 +516,7 @@ struct KeyboardSettingsPage: View {
     var body: some View {
         SettingsPageScaffold(title: "Keyboard") {
             SettingsCard {
-                HStack(spacing: 12) {
-                    SettingsRowLabel(
-                        title: String(localized: "Keyboard"),
-                        detail: fullKeyboard ? nil : fullAccessNeed
-                    )
-                    Spacer(minLength: 8)
-                    SettingsSegments(
-                        items: KeyboardChoice.allCases,
-                        selected: fullKeyboard ? .full : .dictationBar,
-                        label: \.label,
-                        onSelect: { choice in
-                            fullKeyboard = choice == .full
-                        }
-                    )
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .frame(minHeight: 50)
+                // Keyboard mode selector intentionally hidden: Hex opens in dictation-bar mode.
 
                 if !fullKeyboard {
                     SettingsDivider()
@@ -460,6 +663,10 @@ struct KeyboardSettingsPage: View {
         .animation(HexMotion.settleAnimation(reduceMotion: reduceMotion), value: fullKeyboard)
         .animation(HexMotion.settleAnimation(reduceMotion: reduceMotion), value: autocorrect)
         .animation(HexMotion.settleAnimation(reduceMotion: reduceMotion), value: emoji)
+        .onAppear {
+            fullKeyboard = false
+            FullKeyboardSettings().isEnabled = false
+        }
         .onChange(of: fullKeyboard) { _, enabled in
             FullKeyboardSettings().isEnabled = enabled
         }

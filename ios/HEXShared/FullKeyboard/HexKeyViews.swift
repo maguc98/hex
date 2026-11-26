@@ -193,6 +193,9 @@ final class HexKeyControl: UIControl {
 @MainActor
 final class HexKeyRecordingPanel: UIView {
     var palette = FullKeyboardPalette(isDark: false) { didSet { if palette != oldValue { applyPalette() } } }
+    var waveformPalette = LiveWaveformPalette(idle: nil, recording: nil, processing: nil) {
+        didSet { applyWaveformTint() }
+    }
     var onDone: (() -> Void)?
     var onCancel: (() -> Void)?
     var onCycleStyle: (() -> Void)?
@@ -257,15 +260,33 @@ final class HexKeyRecordingPanel: UIView {
         scope.tearDown()
     }
 
-    func update(phase: DotScopePhase, style: DictationStyle) {
+    private func applyWaveformTint() {
+        let color: LiveWaveformRGB?
+        switch scope.phase {
+        case .idle:
+            color = waveformPalette.idle
+        case .recording:
+            color = waveformPalette.recording
+        case .processing:
+            color = waveformPalette.processing
+        case .hidden, .failed:
+            color = nil
+        }
+        scope.customTint = color.map {
+            UIColor(red: CGFloat($0.redUnit), green: CGFloat($0.greenUnit), blue: CGFloat($0.blueUnit), alpha: 1)
+        }
+    }
+
+    func update(phase: DotScopePhase, style: DictationStyle, isStarting: Bool = false) {
         isTranscribing = phase == .processing
         scope.phase = phase
+        applyWaveformTint()
         // The scope, then two round buttons, ✕ and ✓; once the recording stops the ✓ turns into
         // the spinner in the same spot, so there's one place to look, and ✕ still cancels.
         doneButton.symbol = isTranscribing ? nil : "checkmark"
         doneButton.isPrimary = true
         doneButton.isEnabled = !isTranscribing
-        doneButton.accessibilityLabel = isTranscribing ? "Transcribing" : "Done"
+        doneButton.accessibilityLabel = isStarting ? "Starting microphone" : (isTranscribing ? "Transcribing" : "Done")
         if isTranscribing { doneSpinner.startAnimating() } else { doneSpinner.stopAnimating() }
         let config = UIImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
         styleButton.setImage(

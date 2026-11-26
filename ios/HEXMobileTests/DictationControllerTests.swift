@@ -1814,6 +1814,15 @@ final class DictationControllerTests: XCTestCase {
             KeyboardParakeetBudget.allowsLoad(multilingual: false, footprint: 20 * mb, available: 0),
             "no limit where iOS sets none (the simulator)"
         )
+        XCTAssertTrue(KeyboardParakeetBudget.allowsTranscription(
+            multilingual: false, footprint: 60 * mb, available: 117 * mb, audioSeconds: 90
+        ))
+        XCTAssertFalse(KeyboardParakeetBudget.allowsTranscription(
+            multilingual: false, footprint: 60 * mb, available: 117 * mb, audioSeconds: 91
+        ), "long dictations stream through Apple Speech")
+        XCTAssertFalse(KeyboardParakeetBudget.allowsTranscription(
+            multilingual: false, footprint: 60 * mb, available: 117 * mb, audioSeconds: 60
+        ), "the room left must also cover the buffered recording")
     }
 
     func testParakeetsFilesMoveIntoTheAppGroupRatherThanDownloadingAgain() throws {

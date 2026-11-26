@@ -3,6 +3,26 @@ import XCTest
 
 @MainActor
 final class DotScopeTests: XCTestCase {
+    func testCustomWaveformTintNormalizesToShaderSRGBChannels() {
+        let source = UIColor(
+            red: 0.91,
+            green: 0.08,
+            blue: 0.44,
+            alpha: 1
+        )
+
+        let components = DotScopeHostView.sRGBComponents(for: source)
+        XCTAssertNotNil(components)
+        XCTAssertEqual(components?.x ?? 0, 0.91, accuracy: 0.01)
+        XCTAssertEqual(components?.y ?? 0, 0.08, accuracy: 0.01)
+        XCTAssertEqual(components?.z ?? 0, 0.44, accuracy: 0.01)
+
+        let gray = DotScopeHostView.sRGBComponents(for: UIColor(white: 0.42, alpha: 1))
+        XCTAssertNotNil(gray)
+        XCTAssertEqual(gray?.x ?? 0, gray?.y ?? 1, accuracy: 0.01)
+        XCTAssertEqual(gray?.y ?? 0, gray?.z ?? 1, accuracy: 0.01)
+    }
+
     func testAnalyticalSpringIsFrameRateIndependent() {
         let spec = DotSpringSpec(duration: 0.30, bounce: 0.15)
         var fast = DotSpring(at: 0)
