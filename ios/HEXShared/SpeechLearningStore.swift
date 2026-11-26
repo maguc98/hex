@@ -2,9 +2,13 @@ import Foundation
 
 nonisolated struct SpeechLearningSample: Codable, Equatable, Identifiable, Sendable {
     let id: String
+    /// What was actually spoken, in `language`; this is the phrase used as a recognition hint.
     let text: String
     let heard: String?
     let language: String
+    /// The paired translation, when the user dictated with Translate what I say enabled.
+    let translatedText: String?
+    let translatedLanguage: String?
     let createdAt: TimeInterval
     let duration: TimeInterval
     let audioFileName: String
@@ -15,14 +19,17 @@ nonisolated struct SpeechLearningPending: Codable, Equatable, Sendable {
     let text: String
     let heard: String?
     let language: String
+    let translatedText: String?
+    let translatedLanguage: String?
     let createdAt: TimeInterval
     let expiresAt: TimeInterval
     let duration: TimeInterval
     let audioFileName: String
 }
 
-/// User-confirmed pronunciation examples, shared by the app and keyboard through their App Group.
-/// A finished recording is staged briefly; only tapping Learn moves it into the durable local library.
+/// User-confirmed speech examples shared by the app and keyboard through their App Group.
+/// A translated dictation keeps its spoken sentence and translation together; recognition hints
+/// always use the spoken-language sentence, never the translated text.
 nonisolated struct SpeechLearningStore {
     static let pendingLifetime: TimeInterval = 45
     static let maximumSamples = 12
@@ -63,10 +70,14 @@ nonisolated struct SpeechLearningStore {
         resultID: String,
         text: String,
         heard: String?,
+        translatedText: String? = nil,
+        translatedLanguage: String? = nil,
         language: String,
         duration: TimeInterval
     ) -> Bool {
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleanTranslation = translatedText?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pairedTranslation = cleanTranslation?.isEmpty == false ? cleanTranslation : nil
         guard validID(resultID), !cleanText.isEmpty,
               duration > 0, duration <= Self.maximumSampleDuration,
               fileManager.fileExists(atPath: sourceURL.path),
@@ -90,6 +101,8 @@ nonisolated struct SpeechLearningStore {
             text: cleanText,
             heard: heard,
             language: language,
+            translatedText: pairedTranslation,
+            translatedLanguage: pairedTranslation == nil ? nil : translatedLanguage,
             createdAt: now(),
             expiresAt: now() + Self.pendingLifetime,
             duration: max(0, duration),
@@ -145,6 +158,8 @@ nonisolated struct SpeechLearningStore {
             text: record.text,
             heard: record.heard,
             language: record.language,
+            translatedText: record.translatedText,
+            translatedLanguage: record.translatedLanguage,
             createdAt: record.createdAt,
             duration: record.duration,
             audioFileName: destinationName

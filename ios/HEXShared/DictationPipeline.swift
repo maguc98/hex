@@ -169,6 +169,8 @@ nonisolated struct DictationPipeline: Sendable {
         /// After `refine`.
         var cleaned: String
         var translated: String?
+        /// The target language used for this translation; nil when no translation succeeded.
+        var translatedLanguage: String?
         /// Why it went in as spoken while Translate what I say was on.
         var translationFailure: TranslationFailure?
         /// What Hex inserts.
@@ -224,6 +226,7 @@ nonisolated struct DictationPipeline: Sendable {
             tagged: tagged,
             cleaned: cleaned,
             translated: translated,
+            translatedLanguage: translated == nil ? nil : translation.targetLanguage,
             translationFailure: outcome.failure,
             formatted: format(translated ?? cleaned, language: formatLanguage)
         )

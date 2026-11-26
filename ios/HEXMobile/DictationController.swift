@@ -935,14 +935,18 @@ final class DictationController {
                 if keyboardJobID != nil {
                     self.keyboardResultID = UUID().uuidString
                     self.keyboardResult = formatted
-                    // Learning keeps the actual WAV independently of the typing-insights setting.
-                    // A translated result is not a valid pronunciation/text pair.
-                    if translated == nil, !formatted.isEmpty, let resultID = self.keyboardResultID {
+                    // Keep the spoken sentence paired with its translation and original WAV.
+                    // The stored text remains in the spoken language so recognition hints are valid.
+                    let spokenSentence = translated == nil ? formatted : stages.cleaned
+                    if !spokenSentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                       let resultID = self.keyboardResultID {
                         _ = SpeechLearningStore().stagePendingAudio(
                             from: captureURL,
                             resultID: resultID,
-                            text: formatted,
+                            text: spokenSentence,
                             heard: stages.heard,
+                            translatedText: translated == nil ? nil : formatted,
+                            translatedLanguage: stages.translatedLanguage,
                             language: session.language,
                             duration: finalDuration
                         )

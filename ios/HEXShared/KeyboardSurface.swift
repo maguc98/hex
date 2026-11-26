@@ -733,7 +733,7 @@ struct KeyboardSurfaceView: View {
         .disabled(learned)
         .transition(.opacity.combined(with: .scale(scale: 0.94)))
         .accessibilityLabel(learned ? "Speech sample learned" : "Learn this speech sample")
-        .accessibilityHint("Saves the current sentence and its audio on this iPhone")
+        .accessibilityHint("Saves the spoken sentence, its translation when available, and audio on this iPhone")
     }
 
     private func styleTrayBar(palette p: KeyboardChromePalette) -> some View {
