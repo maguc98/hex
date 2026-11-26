@@ -517,8 +517,35 @@ struct ContentView: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            if dictation.learningSaveFailed {
+                Label("学习记录暂存失败，请重新听写后再试。", systemImage: "exclamationmark.triangle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(HexTheme.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             HStack(spacing: 6) {
                 Spacer()
+
+                if dictation.didSaveCurrentTranscriptToLearning {
+                    Label("已加入学习", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(HexTheme.success)
+                        .padding(.horizontal, 12)
+                        .frame(height: 30)
+                        .background(HexTheme.success.opacity(0.12), in: Capsule())
+                } else if dictation.isLearningSampleReady {
+                    Button {
+                        _ = dictation.saveCurrentTranscriptToLearning()
+                    } label: {
+                        Label("加入学习", systemImage: "book.closed.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.white)
+                            .padding(.horizontal, 12)
+                            .frame(height: 30)
+                            .background(HexTheme.success, in: Capsule())
+                    }
+                }
 
                 Button(dictation.copied ? String(localized: "Copied") : String(localized: "Copy")) {
                     dictation.copyTranscript()
