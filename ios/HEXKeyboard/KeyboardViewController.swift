@@ -9,6 +9,7 @@ final class KeyboardViewController: UIInputViewController {
     private let localDictation = KeyboardLocalDictation()
     private var pollTimer: Timer?
     private var lastSpeechLearningCleanupAt: TimeInterval = 0
+    private var lastSpeechLearningCheckAt: TimeInterval = 0
     private var coldStartJobID = UUID().uuidString
     private var lastURLRefreshBucket: Int = 0
     private var lastFullAccessReport: KeyboardFullAccessReport?
@@ -1038,9 +1039,13 @@ final class KeyboardViewController: UIInputViewController {
         // short-lived original WAV is still staged in the local App Group.
         let learningStore = SpeechLearningStore()
         let insertedID = bridge.lastInsertedResultID
-        if !(viewModel.didLearnSpeechSample && viewModel.speechLearningResultID == insertedID) {
+        let learningOfferChanged = viewModel.speechLearningResultID != insertedID
+        let learningCheckIsDue = now - lastSpeechLearningCheckAt >= 5
+        if !(viewModel.didLearnSpeechSample && viewModel.speechLearningResultID == insertedID),
+           learningOfferChanged || learningCheckIsDue {
             let learningID = insertedID.flatMap { learningStore.hasPending(resultID: $0) ? $0 : nil }
             viewModel.offerSpeechLearning(resultID: learningID)
+            lastSpeechLearningCheckAt = now
         }
 
         syncLanguageState()
