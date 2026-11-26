@@ -139,7 +139,9 @@ struct DictationSettingsPage: View {
                         title: String(localized: "Idle waveform color"),
                         detail: String(localized: "When no speech is detected"),
                         color: $waveformIdleColor
-                    )
+                    ) { color in
+                        LiveWaveformColorSettings().idle = Self.rgb(from: color)
+                    }
 
                     SettingsDivider()
 
@@ -147,7 +149,9 @@ struct DictationSettingsPage: View {
                         title: String(localized: "Speaking waveform color"),
                         detail: String(localized: "While your voice is being detected"),
                         color: $waveformRecordingColor
-                    )
+                    ) { color in
+                        LiveWaveformColorSettings().recording = Self.rgb(from: color)
+                    }
 
                     SettingsDivider()
 
@@ -155,7 +159,9 @@ struct DictationSettingsPage: View {
                         title: String(localized: "Finished animation color"),
                         detail: String(localized: "The final processing animation"),
                         color: $waveformProcessingColor
-                    )
+                    ) { color in
+                        LiveWaveformColorSettings().processing = Self.rgb(from: color)
+                    }
                 }
             }
 
@@ -276,16 +282,7 @@ struct DictationSettingsPage: View {
         .onChange(of: typesAsISpeak) { _, enabled in
             LiveDictationSettings().typesIntoField = enabled
         }
-        .onChange(of: waveformIdleColor) { _, color in
-            LiveWaveformColorSettings().idle = Self.rgb(from: color)
-        }
-        .onChange(of: waveformRecordingColor) { _, color in
-            LiveWaveformColorSettings().recording = Self.rgb(from: color)
-        }
-        .onChange(of: waveformProcessingColor) { _, color in
-            LiveWaveformColorSettings().processing = Self.rgb(from: color)
-        }
-        .onChange(of: quickWake) { _, enabled in
+         .onChange(of: quickWake) { _, enabled in
             dictation.setQuickWakeEnabled(enabled)
         }
         .onChange(of: recognitionMode) { _, mode in
@@ -321,14 +318,29 @@ struct DictationSettingsPage: View {
         waveformProcessingColor = Self.color(from: waveformPalette.processing, fallback: Color(red: 0.25, green: 0.62, blue: 1.0))
     }
 
-    private func waveformColorRow(title: String, detail: String, color: Binding<Color>) -> some View {
+    private func waveformColorRow(
+        title: String,
+        detail: String,
+        color: Binding<Color>,
+        onColorChanged: @escaping (Color) -> Void
+    ) -> some View {
         HStack(spacing: 12) {
             SettingsRowLabel(title: title, detail: detail)
             Spacer(minLength: 8)
             WaveformColorPreview(color: color.wrappedValue)
-            ColorPicker("", selection: color, supportsOpacity: false)
-                .labelsHidden()
-                .frame(width: 44)
+            ColorPicker(
+                "",
+                selection: Binding(
+                    get: { color.wrappedValue },
+                    set: { newColor in
+                        color.wrappedValue = newColor
+                        onColorChanged(newColor)
+                    }
+                ),
+                supportsOpacity: false
+            )
+            .labelsHidden()
+            .frame(width: 44)
         }
         .padding(.horizontal, 16)
         .frame(minHeight: 54)
@@ -345,11 +357,51 @@ struct DictationSettingsPage: View {
         var green: CGFloat = 0
         var blue: CGFloat = 0
         var alpha: CGFloat = 1
-        guard uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
-        func channel(_ value: CGFloat) -> UInt8 {
-            UInt8((min(1, max(0, value)) * 255).rounded())
+
+        if uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha) {
+            return LiveWaveformRGB(
+                red: channel(red),
+                green: channel(green),
+                blue: channel(blue)
+            )
         }
-        return LiveWaveformRGB(red: channel(red), green: channel(green), blue: channel(blue))
+
+        // ColorPicker can return a colour outside the direct RGB representation.
+        // Convert it explicitly to sRGB instead of silently persisting nil and falling
+        // back to the keyboard's built-in pearl/blue colours.
+        guard
+            let sRGB = CGColorSpace(name: CGColorSpace.sRGB),
+            let converted = uiColor.cgColor.converted(
+                to: sRGB,
+                intent: .defaultIntent,
+                options: nil
+            ),
+            let components = converted.components
+        else {
+            return nil
+        }
+
+        if components.count >= 3 {
+            red = components[0]
+            green = components[1]
+            blue = components[2]
+        } else if components.count == 2 {
+            red = components[0]
+            green = components[0]
+            blue = components[0]
+        } else {
+            return nil
+        }
+
+        return LiveWaveformRGB(
+            red: channel(red),
+            green: channel(green),
+            blue: channel(blue)
+        )
+    }
+
+    private static func channel(_ value: CGFloat) -> UInt8 {
+        UInt8((min(1, max(0, value)) * 255).rounded())
     }
 }
 
