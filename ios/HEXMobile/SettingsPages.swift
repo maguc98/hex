@@ -300,32 +300,25 @@ struct DictationSettingsPage: View {
         .onChange(of: pageAnimations) { _, enabled in
             InterfaceMotionSettings().isEnabled = enabled
         }
-        .onAppear {
-            cleanupTagger = CleanupTaggerSettings().isEnabled
-            customVocabulary = CustomVocabularySettings().isEnabled
-            lowercase = DictationLowercaseSettings().isEnabled
-            formatLists = DictationListSettings().isEnabled
-            spokenPunctuation = DictationPunctuationSettings().isEnabled
-            endsWithPeriod = DictationPeriodSettings().isEnabled
-            showsWhatISay = LiveDictationSettings().showsPreview
-            typesAsISpeak = LiveDictationSettings().typesIntoField
-            quickWake = KeyboardBridge().quickWakeEnabled
-            recognitionMode = DictationRecognitionModeSettings().mode
-            pageAnimations = InterfaceMotionSettings().isEnabled
-            let waveformColors = LiveWaveformColorSettings()
-            waveformIdleColor = Self.color(
-                from: waveformColors.idleHex,
-                fallback: Color(red: 0.86, green: 0.83, blue: 0.77)
-            )
-            waveformRecordingColor = Self.color(
-                from: waveformColors.recordingHex,
-                fallback: Color(red: 0.86, green: 0.83, blue: 0.77)
-            )
-            waveformProcessingColor = Self.color(
-                from: waveformColors.processingHex,
-                fallback: Color(red: 0.25, green: 0.62, blue: 1.0)
-            )
-        }
+        .onAppear { loadSettings() }
+    }
+
+    private func loadSettings() {
+        cleanupTagger = CleanupTaggerSettings().isEnabled
+        customVocabulary = CustomVocabularySettings().isEnabled
+        lowercase = DictationLowercaseSettings().isEnabled
+        formatLists = DictationListSettings().isEnabled
+        spokenPunctuation = DictationPunctuationSettings().isEnabled
+        endsWithPeriod = DictationPeriodSettings().isEnabled
+        showsWhatISay = LiveDictationSettings().showsPreview
+        typesAsISpeak = LiveDictationSettings().typesIntoField
+        quickWake = KeyboardBridge().quickWakeEnabled
+        recognitionMode = DictationRecognitionModeSettings().mode
+        pageAnimations = InterfaceMotionSettings().isEnabled
+        let waveformColors = LiveWaveformColorSettings()
+        waveformIdleColor = Self.color(from: waveformColors.idleHex, fallback: Color(red: 0.86, green: 0.83, blue: 0.77))
+        waveformRecordingColor = Self.color(from: waveformColors.recordingHex, fallback: Color(red: 0.86, green: 0.83, blue: 0.77))
+        waveformProcessingColor = Self.color(from: waveformColors.processingHex, fallback: Color(red: 0.25, green: 0.62, blue: 1.0))
     }
 
     private func waveformColorRow(title: String, detail: String, color: Binding<Color>) -> some View {
