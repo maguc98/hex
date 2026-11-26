@@ -464,9 +464,13 @@ private struct KeyboardRestingDotBar: View {
                     let litUpper = exp(-pow(y - upper, 2) / 2.2)
                     let litLower = exp(-pow(y - lower, 2) / 2.2)
                     let power = min(1.0, 1.0 - (1.0 - litUpper) * (1.0 - litLower))
-                    let alpha = (0.05 + 0.40 * power) * edge
+                    // The keyboard extension uses this Canvas while idle to avoid
+                    // creating a Metal layer at launch. Keep the selected hue visible even
+                    // at rest; the previous 5%-floor opacity made custom colours look like
+                    // the same neutral grey on a translucent keyboard backdrop.
+                    let alpha = (0.13 + 0.55 * power) * edge
                     guard alpha > 0.01 else { continue }
-                    let radius = (0.16 + 0.21 * power) * pitch
+                    let radius = (0.19 + 0.24 * power) * pitch
                     context.fill(
                         Path(
                             ellipseIn: CGRect(
