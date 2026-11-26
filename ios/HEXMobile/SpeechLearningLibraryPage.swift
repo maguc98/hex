@@ -113,9 +113,9 @@ struct SpeechLearningLibraryPage: View {
         HStack(alignment: .top, spacing: 10) {
             Text(number)
                 .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(HexTheme.accent)
+                .foregroundStyle(HexTheme.success)
                 .frame(width: 24, height: 24)
-                .background(HexTheme.accent.opacity(0.12), in: Circle())
+                .background(HexTheme.success.opacity(0.12), in: Circle())
             VStack(alignment: .leading, spacing: 3) {
                 Text(title)
                     .font(.system(size: 13, weight: .medium))
