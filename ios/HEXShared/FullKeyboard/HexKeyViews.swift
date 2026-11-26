@@ -271,7 +271,7 @@ final class HexKeyRecordingPanel: UIView {
             state = .processing
         }
         scope.customTint = waveformPalette.color(for: state).map {
-            UIColor(red: $0.redUnit, green: $0.greenUnit, blue: $0.blueUnit, alpha: 1)
+            UIColor(red: CGFloat($0.redUnit), green: CGFloat($0.greenUnit), blue: CGFloat($0.blueUnit), alpha: 1)
         }
     }
 
