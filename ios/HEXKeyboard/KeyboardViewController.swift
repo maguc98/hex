@@ -684,6 +684,15 @@ final class KeyboardViewController: UIInputViewController {
             self?.fullKeyboard?.engine.textDidChange()
         }
         viewModel.onPasteDictation = { [weak self] in self?.pasteOfferedDictation() }
+        viewModel.onLearnSpeechSample = { [weak self] in
+            guard let self, let resultID = self.viewModel.speechLearningResultID else { return }
+            if SpeechLearningStore().confirmPending(resultID: resultID) {
+                self.viewModel.markSpeechSampleLearned()
+                self.barHaptics.impactOccurred(intensity: 0.45)
+            } else {
+                self.viewModel.offerSpeechLearning(resultID: nil)
+            }
+        }
         viewModel.onDictateTap = { [weak self] in self?.startWarmDictation() }
         viewModel.onDictationUnavailable = { [weak self] in
             guard let self else { return }
@@ -1018,6 +1027,13 @@ final class KeyboardViewController: UIInputViewController {
             coldStartJobID = UUID().uuidString
         }
         refreshOfferedDictation(app: appSnapshot, now: now)
+
+        // Only offer Learn for the exact result that was inserted, and only while its
+        // short-lived original WAV is still staged in the local App Group.
+        let learningStore = SpeechLearningStore()
+        let insertedID = bridge.lastInsertedResultID
+        let learningID = insertedID.flatMap { learningStore.hasPending(resultID: $0) ? $0 : nil }
+        viewModel.offerSpeechLearning(resultID: learningID)
 
         syncLanguageState()
 
