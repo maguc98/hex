@@ -32,6 +32,25 @@ final class KeyboardBridgeTests: XCTestCase {
         XCTAssertEqual(reloaded.processingHex, "#778899")
     }
 
+    func testLiveWaveformColorWritePostsImmediateLocalRefreshNotification() {
+        let suiteName = "hex.tests.liveWaveformNotification.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let changed = expectation(description: "Local waveform preview receives the new palette")
+        let token = NotificationCenter.default.addObserver(
+            forName: LiveWaveformColorSettings.didChangeNotification,
+            object: nil,
+            queue: nil
+        ) { _ in
+            changed.fulfill()
+        }
+        defer { NotificationCenter.default.removeObserver(token) }
+
+        LiveWaveformColorSettings(defaults: defaults).idleHex = "#E11D74"
+        wait(for: [changed], timeout: 1.0)
+    }
+
     func testLiveWaveformColorsReadLegacySharedColorAndMigrateToRGBPalette() {
         let suiteName = "hex.tests.liveWaveformLegacyColor.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
