@@ -109,3 +109,5 @@ jobs:
 
 # Rebuilt from verified build 131; validate recognition modes, live typing and keyboard routing.
 # Rebuild after removing stale speech-engine selector references from KeyboardSurface.
+
+# Trigger a fresh iOS archive after the three-state waveform colour controls.
