@@ -64,10 +64,11 @@ nonisolated enum AppleSpeechTwoLanguage {
         _ audioURL: URL,
         pair: Pair,
         vocabulary: [String],
-        lingeringModels: Bool
+        lingeringModels: Bool,
+        mode: DictationRecognitionMode = .accurate
     ) async -> Transcript? {
-        let primaryTranscriber = transcriber(for: pair.primary)
-        let secondaryTranscriber = transcriber(for: pair.secondary)
+        let primaryTranscriber = transcriber(for: pair.primary, mode: mode)
+        let secondaryTranscriber = transcriber(for: pair.secondary, mode: mode)
         let primaryAnalyzer = analyzer(primaryTranscriber, lingeringModels: lingeringModels)
         let secondaryAnalyzer = analyzer(secondaryTranscriber, lingeringModels: lingeringModels)
 
@@ -244,11 +245,15 @@ nonisolated enum AppleSpeechTwoLanguage {
     }
 
     /// One dictation's module: `SpeechTranscriber` with the attributes the merge reads.
-    private static func transcriber(for locale: Locale) -> SpeechTranscriber {
+    private static func transcriber(
+        for locale: Locale,
+        mode: DictationRecognitionMode = .accurate
+    ) -> SpeechTranscriber {
         SpeechTranscriber(
             locale: locale,
             transcriptionOptions: [],
-            reportingOptions: [],
+            // Keep final-only results for ordered two-language merging.
+            reportingOptions: mode == .fast ? [.fastResults] : [],
             attributeOptions: [.audioTimeRange, .transcriptionConfidence]
         )
     }
