@@ -52,6 +52,8 @@ final class AppleLiveTranscriber: LiveTranscriptSource {
     /// Audio held while the analyzer gets ready; aligned with the outer language/model lookup
     /// window so a cold start does not give up after only a few seconds.
     static let maximumPendingSeconds: Double = 8
+    /// At 4,096 frames per WebKit callback, 64 queued buffers cap the analyzer backlog at about 5.5 s at 48 kHz.
+    static let maximumBufferedAudioChunks = 64
 
     init?(locale: Locale, module: Module, sampleRate: Double, log: @escaping (String) -> Void) {
         guard let format = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: sampleRate, channels: 1, interleaved: true) else {
@@ -61,7 +63,10 @@ final class AppleLiveTranscriber: LiveTranscriptSource {
         self.module = module
         self.log = log
         inputFormat = format
-        (input, continuation) = AsyncStream.makeStream(of: AnalyzerInput.self, bufferingPolicy: .unbounded)
+        (input, continuation) = AsyncStream.makeStream(
+            of: AnalyzerInput.self,
+            bufferingPolicy: .bufferingOldest(Self.maximumBufferedAudioChunks)
+        )
         start()
     }
 
@@ -200,7 +205,18 @@ final class AppleLiveTranscriber: LiveTranscriptSource {
         }
         let start = CMTime(value: fedFrames, timescale: CMTimeScale(format.sampleRate))
         fedFrames += AVAudioFramePosition(buffer.frameLength)
-        continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: start))
+        switch continuation.yield(AnalyzerInput(buffer: buffer, bufferStartTime: start)) {
+        case .enqueued:
+            break
+        case .dropped:
+            // Do not silently skip audio and deliver a misleading partial transcript. The
+            // recording itself continues; only its optional live preview gives up.
+            fail("speech analyzer audio queue is full")
+        case .terminated:
+            break
+        @unknown default:
+            break
+        }
     }
 
     private func receive(_ text: String, isFinal: Bool, range: CMTimeRange) {
