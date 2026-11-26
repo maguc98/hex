@@ -323,7 +323,7 @@ struct KeyboardSettingsPage: View {
     /// `KeyboardSetupMonitor.fullAccessOn`.
     let fullAccessOn: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var fullKeyboard = FullKeyboardSettings().isEnabled
+    @State private var fullKeyboard = false
     @State private var autoCapitalization = FullKeyboardSettings().autoCapitalization
     @State private var hexKeyOnLeft = FullKeyboardSettings().hexKeyOnLeft
     @State private var numberRow = FullKeyboardSettings().numberRow
@@ -348,24 +348,9 @@ struct KeyboardSettingsPage: View {
     var body: some View {
         SettingsPageScaffold(title: "Keyboard") {
             SettingsCard {
-                HStack(spacing: 12) {
-                    SettingsRowLabel(
-                        title: String(localized: "Keyboard"),
-                        detail: fullKeyboard ? nil : fullAccessNeed
-                    )
-                    Spacer(minLength: 8)
-                    SettingsSegments(
-                        items: KeyboardChoice.allCases,
-                        selected: fullKeyboard ? .full : .dictationBar,
-                        label: \.label,
-                        onSelect: { choice in
-                            fullKeyboard = choice == .full
-                        }
-                    )
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-                .frame(minHeight: 50)
+                // Keyboard mode selector intentionally hidden: Hex opens in dictation-bar mode.
+                fullKeyboard = false
+                FullKeyboardSettings().isEnabled = false
 
                 if !fullKeyboard {
                     SettingsDivider()
