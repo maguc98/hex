@@ -664,6 +664,10 @@ struct KeyboardSurfaceView: View {
 
             Spacer(minLength: 4)
 
+            if model.canLearnSpeechSample {
+                speechLearningChip(palette: p)
+            }
+
             if showsPasteDictation {
                 pasteDictationChip(palette: p)
                 Spacer(minLength: 4)
@@ -703,6 +707,32 @@ struct KeyboardSurfaceView: View {
         }
         .buttonStyle(TopBarChipButtonStyle())
         .layoutPriority(1)
+    }
+
+    /// Learns the just-inserted result in place; tapping never starts another recording.
+    private func speechLearningChip(palette p: KeyboardChromePalette) -> some View {
+        let learned = model.didLearnSpeechSample
+        return Button {
+            guard !learned else { return }
+            model.onKeyFeedback?()
+            model.onLearnSpeechSample?()
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: learned ? "checkmark" : "sparkles")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(learned ? "已学习" : "学习")
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(p.textBase)
+            .padding(.horizontal, 9)
+            .frame(height: 26)
+            .background(learned ? p.chipIdleFill : p.chipActiveFill, in: Capsule())
+        }
+        .buttonStyle(TopBarChipButtonStyle())
+        .disabled(learned)
+        .accessibilityLabel(learned ? "Speech sample learned" : "Learn this speech sample")
+        .accessibilityHint("Saves the current sentence and its audio on this iPhone")
     }
 
     private func styleTrayBar(palette p: KeyboardChromePalette) -> some View {
