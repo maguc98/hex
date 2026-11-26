@@ -50,6 +50,7 @@ final class FullKeyboardView: UIView {
     /// The capsule that grows from the Hex mark across the strip into the recording bar.
     private let morph = UIView()
     private var recordingPanel: HexKeyRecordingPanel?
+    private var waveformPalette = LiveWaveformColorSettings().palette
     /// The words so far over the keys while recording (Show words as you speak).
     let livePreview = LiveDictationPreviewHost()
     private var styleMenu: HexStyleMenuView?
@@ -158,6 +159,14 @@ final class FullKeyboardView: UIView {
         plane = KeyboardKeyPlaneView(engine: engine)
         super.init(frame: .zero)
         backgroundColor = .clear
+        LiveWaveformColorSettings.observeChanges()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(reloadWaveformColors),
+            name: LiveWaveformColorSettings.didChangeNotification,
+            object: nil
+        )
+        reloadWaveformColors()
 
         // Under the glass panel's rim, under every key: the keys' pop-ups overflow this
         // view, which must never clip them, so the panel is a subview, not this view's fill.
@@ -944,6 +953,11 @@ final class FullKeyboardView: UIView {
         return KeyboardStripNotice(title: TranslationFailure.note, detail: note.fix, button: String(localized: "Open Hex"))
     }
 
+    @objc private func reloadWaveformColors() {
+        waveformPalette = LiveWaveformColorSettings().palette
+        recordingPanel?.waveformPalette = waveformPalette
+    }
+
     private func refreshRecordingPanel() {
         guard let panel = recordingPanel, showsRecording else { return }
         panel.update(
@@ -963,6 +977,7 @@ final class FullKeyboardView: UIView {
             hideUndo()
             let panel = recordingPanel ?? makeRecordingPanel()
             panel.palette = palette
+            panel.waveformPalette = waveformPalette
             panel.frame = recordingPanelFrame
             refreshRecordingPanel()
             panel.isHidden = false
