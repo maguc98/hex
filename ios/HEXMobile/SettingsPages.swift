@@ -16,7 +16,9 @@ struct DictationSettingsPage: View {
     @State private var quickWake = KeyboardBridge().quickWakeEnabled
     @State private var recognitionMode = DictationRecognitionModeSettings().mode
     @State private var pageAnimations = InterfaceMotionSettings().isEnabled
-    @State private var waveformColor = Color(red: 0.86, green: 0.83, blue: 0.77)
+    @State private var waveformIdleColor = Color(red: 0.86, green: 0.83, blue: 0.77)
+    @State private var waveformRecordingColor = Color(red: 0.86, green: 0.83, blue: 0.77)
+    @State private var waveformProcessingColor = Color(red: 0.25, green: 0.62, blue: 1.0)
 
     var body: some View {
         SettingsPageScaffold(title: "Dictation") {
@@ -133,19 +135,27 @@ struct DictationSettingsPage: View {
 
                     SettingsDivider()
 
-                    HStack(spacing: 12) {
-                        SettingsRowLabel(
-                            title: String(localized: "Waveform color"),
-                            detail: String(localized: "Live microphone waveform, not transcript text")
-                        )
-                        Spacer(minLength: 8)
-                        WaveformColorPreview(color: waveformColor)
-                        ColorPicker("", selection: $waveformColor, supportsOpacity: false)
-                            .labelsHidden()
-                            .frame(width: 44)
-                    }
-                    .padding(.horizontal, 16)
-                    .frame(minHeight: 50)
+                    waveformColorRow(
+                        title: String(localized: "Idle waveform color"),
+                        detail: String(localized: "When no speech is detected"),
+                        color: $waveformIdleColor
+                    )
+
+                    SettingsDivider()
+
+                    waveformColorRow(
+                        title: String(localized: "Speaking waveform color"),
+                        detail: String(localized: "While your voice is being detected"),
+                        color: $waveformRecordingColor
+                    )
+
+                    SettingsDivider()
+
+                    waveformColorRow(
+                        title: String(localized: "Finished animation color"),
+                        detail: String(localized: "The final processing animation"),
+                        color: $waveformProcessingColor
+                    )
                 }
             }
 
@@ -266,8 +276,14 @@ struct DictationSettingsPage: View {
         .onChange(of: typesAsISpeak) { _, enabled in
             LiveDictationSettings().typesIntoField = enabled
         }
-        .onChange(of: waveformColor) { _, color in
-            LiveWaveformColorSettings().hex = Self.hexString(color)
+        .onChange(of: waveformIdleColor) { _, color in
+            LiveWaveformColorSettings().idleHex = Self.hexString(color)
+        }
+        .onChange(of: waveformRecordingColor) { _, color in
+            LiveWaveformColorSettings().recordingHex = Self.hexString(color)
+        }
+        .onChange(of: waveformProcessingColor) { _, color in
+            LiveWaveformColorSettings().processingHex = Self.hexString(color)
         }
         .onChange(of: quickWake) { _, enabled in
             dictation.setQuickWakeEnabled(enabled)
@@ -296,11 +312,33 @@ struct DictationSettingsPage: View {
             quickWake = KeyboardBridge().quickWakeEnabled
             recognitionMode = DictationRecognitionModeSettings().mode
             pageAnimations = InterfaceMotionSettings().isEnabled
-            waveformColor = Self.color(
-                from: LiveWaveformColorSettings().hex,
+            let waveformColors = LiveWaveformColorSettings()
+            waveformIdleColor = Self.color(
+                from: waveformColors.idleHex,
                 fallback: Color(red: 0.86, green: 0.83, blue: 0.77)
             )
+            waveformRecordingColor = Self.color(
+                from: waveformColors.recordingHex,
+                fallback: Color(red: 0.86, green: 0.83, blue: 0.77)
+            )
+            waveformProcessingColor = Self.color(
+                from: waveformColors.processingHex,
+                fallback: Color(red: 0.25, green: 0.62, blue: 1.0)
+            )
         }
+    }
+
+    private func waveformColorRow(title: String, detail: String, color: Binding<Color>) -> some View {
+        HStack(spacing: 12) {
+            SettingsRowLabel(title: title, detail: detail)
+            Spacer(minLength: 8)
+            WaveformColorPreview(color: color.wrappedValue)
+            ColorPicker("", selection: color, supportsOpacity: false)
+                .labelsHidden()
+                .frame(width: 44)
+        }
+        .padding(.horizontal, 16)
+        .frame(minHeight: 54)
     }
 
     private static func color(from hex: String?, fallback: Color) -> Color {
