@@ -22,8 +22,9 @@ permissions:
   contents: read
 
 concurrency:
+  # Keep only the newest build for this branch/PR; cancel superseded builds.
   group: ${{ github.workflow }}-${{ github.ref }}-macos26
-  queue: max
+  cancel-in-progress: true
 
 jobs:
   build:
