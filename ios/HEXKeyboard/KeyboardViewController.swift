@@ -689,7 +689,7 @@ final class KeyboardViewController: UIInputViewController {
             guard let self, let resultID = self.viewModel.speechLearningResultID else { return }
             if SpeechLearningStore().confirmPending(resultID: resultID) {
                 self.viewModel.markSpeechSampleLearned()
-                self.barHaptics.impactOccurred(intensity: 0.45)
+                UIAccessibility.post(notification: .announcement, argument: "已学习")
             } else {
                 self.viewModel.offerSpeechLearning(resultID: nil)
             }
