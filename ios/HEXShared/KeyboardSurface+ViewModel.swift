@@ -113,13 +113,17 @@ final class KeyboardViewModel: ObservableObject {
 
     func offerSpeechLearning(resultID: String?) {
         guard speechLearningResultID != resultID else { return }
-        speechLearningResultID = resultID
-        didLearnSpeechSample = false
+        withAnimation(HexMotion.stageAnimation(reduceMotion: UIAccessibility.isReduceMotionEnabled)) {
+            speechLearningResultID = resultID
+            didLearnSpeechSample = false
+        }
     }
 
     func markSpeechSampleLearned() {
         guard speechLearningResultID != nil else { return }
-        didLearnSpeechSample = true
+        withAnimation(.easeOut(duration: 0.18)) {
+            didLearnSpeechSample = true
+        }
     }
 
     // Non-published live telemetry read directly by `DotScopeHostView` / button tap handlers
