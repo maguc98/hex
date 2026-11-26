@@ -16,6 +16,34 @@ final class KeyboardBridgeTests: XCTestCase {
         XCTAssertFalse(KeyboardBridge(defaults: defaults).quickWakeEnabled)
     }
 
+    func testLiveWaveformColorsPersistIndependentlyAcrossSettingsInstances() {
+        let suiteName = "hex.tests.liveWaveformColors.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        let settings = LiveWaveformColorSettings(defaults: defaults)
+        settings.idleHex = "#112233"
+        settings.recordingHex = "#445566"
+        settings.processingHex = "#778899"
+
+        let reloaded = LiveWaveformColorSettings(defaults: defaults)
+        XCTAssertEqual(reloaded.idleHex, "#112233")
+        XCTAssertEqual(reloaded.recordingHex, "#445566")
+        XCTAssertEqual(reloaded.processingHex, "#778899")
+    }
+
+    func testLiveWaveformColorsReadLegacySharedColorForIdleAndRecording() {
+        let suiteName = "hex.tests.liveWaveformLegacyColor.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set("#AABBCC", forKey: LiveWaveformColorSettings.key)
+
+        let settings = LiveWaveformColorSettings(defaults: defaults)
+        XCTAssertEqual(settings.idleHex, "#AABBCC")
+        XCTAssertEqual(settings.recordingHex, "#AABBCC")
+        XCTAssertNil(settings.processingHex)
+    }
+
     func testQuickWakePrefersKeyboardOverAnAvailableWarmSession() {
         let now = 1_000.0
         let model = KeyboardViewModel()

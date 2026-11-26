@@ -767,6 +767,27 @@ struct KeyboardBridge {
 
 /// Separate colours for the three visible waveform states in the keyboard dictation well.
 nonisolated struct LiveWaveformColorSettings {
+    static let didChangeNotification = Notification.Name("LiveWaveformColorSettings.didChange")
+    private static let darwinNotification = "anomaly.hex.mobile.liveWaveformColor.changed"
+    private static let changeForwarder: Void = {
+        CFNotificationCenterAddObserver(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            nil,
+            { _, _, _, _, _ in
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: didChangeNotification, object: nil)
+                }
+            },
+            darwinNotification as CFString,
+            nil,
+            .deliverImmediately
+        )
+    }()
+
+    static func observeChanges() {
+        _ = changeForwarder
+    }
+
     static let idleKey = "settings.liveWaveformColor.idle"
     static let recordingKey = "settings.liveWaveformColor.recording"
     static let processingKey = "settings.liveWaveformColor.processing"
@@ -794,7 +815,20 @@ nonisolated struct LiveWaveformColorSettings {
         nonmutating set { set(newValue, for: Self.key) }
     }
     private func set(_ value: String?, for key: String) {
-        if let value, !value.isEmpty { defaults?.set(value, forKey: key) }
-        else { defaults?.removeObject(forKey: key) }
+        guard let defaults else { return }
+        if let value, !value.isEmpty {
+            guard defaults.string(forKey: key) != value else { return }
+            defaults.set(value, forKey: key)
+        } else {
+            guard defaults.object(forKey: key) != nil else { return }
+            defaults.removeObject(forKey: key)
+        }
+        CFNotificationCenterPostNotification(
+            CFNotificationCenterGetDarwinNotifyCenter(),
+            CFNotificationName(Self.darwinNotification as CFString),
+            nil,
+            nil,
+            true
+        )
     }
 }

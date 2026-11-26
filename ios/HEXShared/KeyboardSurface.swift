@@ -423,7 +423,7 @@ enum KeyboardSetupCopy {
 /// device, command queue, render pipelines, `CAMetalLayer`, display link, or
 /// idle simulation steps before the first frame.
 private struct KeyboardRestingDotBar: View {
-    let isDark: Bool
+    let tint: Color
     let leadingInset: CGFloat
     let trailingInset: CGFloat
 
@@ -436,9 +436,6 @@ private struct KeyboardRestingDotBar: View {
     var body: some View {
         let lead = Double(max(0, leadingInset))
         let trail = Double(max(0, trailingInset))
-        let tint: (red: Double, green: Double, blue: Double) = isDark
-            ? (red: 0.93, green: 0.91, blue: 0.86)
-            : (red: 0.55, green: 0.46, blue: 0.33)
         return Canvas { context, size in
             let pitch = Double(Self.pitch)
             let firstX = lead + 3
@@ -479,7 +476,7 @@ private struct KeyboardRestingDotBar: View {
                                 height: radius * 2
                             )
                         ),
-                        with: .color(Color(red: tint.red, green: tint.green, blue: tint.blue, opacity: alpha))
+                        with: .color(tint.opacity(alpha))
                     )
                 }
             }
@@ -535,6 +532,13 @@ struct KeyboardSurfaceView: View {
         )
     }
 
+    private func reloadWaveformColors() {
+        let colors = LiveWaveformColorSettings()
+        waveformIdleColorHex = colors.idleHex
+        waveformRecordingColorHex = colors.recordingHex
+        waveformProcessingColorHex = colors.processingHex
+    }
+
     private static let wellHeight: CGFloat = 44
     private static let controlHeight: CGFloat = 34
     private static let wellInset: CGFloat = 5
@@ -583,10 +587,11 @@ struct KeyboardSurfaceView: View {
         .onAppear {
             whisperModeEnabled = KeyboardWhisperSettings().isEnabled
             noiseReductionEnabled = KeyboardBridge().noiseReductionEnabled
-            let waveformColors = LiveWaveformColorSettings()
-            waveformIdleColorHex = waveformColors.idleHex
-            waveformRecordingColorHex = waveformColors.recordingHex
-            waveformProcessingColorHex = waveformColors.processingHex
+            LiveWaveformColorSettings.observeChanges()
+            reloadWaveformColors()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: LiveWaveformColorSettings.didChangeNotification)) { _ in
+            reloadWaveformColors()
         }
         .onChange(of: whisperModeEnabled) { _, enabled in
             KeyboardWhisperSettings().isEnabled = enabled
@@ -1158,12 +1163,18 @@ struct KeyboardSurfaceView: View {
             0.0
         }
 
+        let restingTint = waveformTint(for: .idle) ?? (
+            p.isDark
+                ? Color(red: 0.93, green: 0.91, blue: 0.86)
+                : Color(red: 0.55, green: 0.46, blue: 0.33)
+        )
+
         return ZStack {
             HexRecessedWell(isDark: p.isDark)
 
-            if defersDotScopeUntilActive && !isStageActive {
+            if defersDotScopeUntilActive && model.dotScopePhase == .idle {
                 KeyboardRestingDotBar(
-                    isDark: p.isDark,
+                    tint: restingTint,
                     leadingInset: CGFloat(leadInset),
                     trailingInset: CGFloat(trailInset)
                 )
