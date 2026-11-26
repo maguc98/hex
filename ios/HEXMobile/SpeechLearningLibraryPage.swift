@@ -8,6 +8,7 @@ struct SpeechLearningLibraryPage: View {
     @State private var player: AVAudioPlayer?
     @State private var playingID: String?
     @State private var deleteTarget: SpeechLearningSample?
+    @State private var showingDeleteConfirmation = false
 
     private var store: SpeechLearningStore { SpeechLearningStore() }
 
@@ -68,13 +69,16 @@ struct SpeechLearningLibraryPage: View {
             }
         }
         .onAppear(perform: reload)
-        .confirmationDialog("Delete this learning record?", item: $deleteTarget, titleVisibility: .visible) { sample in
+        .confirmationDialog("Delete this learning record?", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("Delete", role: .destructive) {
-                _ = store.deleteSample(id: sample.id)
-                reload()
+                if let sample = deleteTarget {
+                    _ = store.deleteSample(id: sample.id)
+                    reload()
+                }
+                deleteTarget = nil
             }
-            Button("Cancel", role: .cancel) {}
-        } message: { sample in
+            Button("Cancel", role: .cancel) { deleteTarget = nil }
+        } message: {
             Text("The sentence and its audio recording will be removed.")
         }
         .animation(HexMotion.settleAnimation(reduceMotion: reduceMotion), value: records.count)
@@ -122,6 +126,7 @@ struct SpeechLearningLibraryPage: View {
                     Spacer()
                     Button(role: .destructive) {
                         deleteTarget = sample
+                    showingDeleteConfirmation = true
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 14))
