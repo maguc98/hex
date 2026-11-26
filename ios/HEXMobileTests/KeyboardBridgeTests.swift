@@ -3,6 +3,85 @@ import XCTest
 
 @MainActor
 final class KeyboardBridgeTests: XCTestCase {
+    func testSpeechLearningStoresAudioOnlyAfterConfirmationAndOffersPhraseHints() throws {
+        let suiteName = "hex.tests.speechLearning.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hex-speech-learning-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hex-speech-learning-source-\(UUID().uuidString).wav")
+        try Data("local audio sample".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        let text = "这部电影里面的人物塑造得非常真实。"
+        let resultID = UUID().uuidString
+        let store = SpeechLearningStore(defaults: defaults, directoryURL: root, now: { 1_000 })
+
+        XCTAssertTrue(store.stagePendingAudio(
+            from: source,
+            resultID: resultID,
+            text: text,
+            heard: text,
+            language: "zh-CN",
+            duration: 2.4
+        ))
+        XCTAssertTrue(store.hasPending(resultID: resultID))
+        XCTAssertTrue(store.samples().isEmpty, "A staged sample is not learned until the user confirms it.")
+
+        XCTAssertTrue(store.confirmPending(resultID: resultID))
+        XCTAssertFalse(store.hasPending(resultID: resultID))
+        XCTAssertEqual(store.samples().first?.text, text)
+        XCTAssertEqual(store.recognitionHints(language: "zh-Hans"), [text])
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent("Samples/\(resultID).wav").path
+        ))
+        XCTAssertFalse(store.confirmPending(resultID: resultID), "The same pending audio cannot be learned twice.")
+    }
+
+    func testUnconfirmedSpeechLearningAudioExpiresAndIsDeleted() throws {
+        let suiteName = "hex.tests.speechLearningExpiry.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hex-speech-learning-expiry-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let source = FileManager.default.temporaryDirectory
+            .appendingPathComponent("hex-speech-learning-expiry-source-\(UUID().uuidString).wav")
+        try Data("temporary audio".utf8).write(to: source)
+        defer { try? FileManager.default.removeItem(at: source) }
+
+        var currentTime: TimeInterval = 2_000
+        let resultID = UUID().uuidString
+        let store = SpeechLearningStore(
+            defaults: defaults,
+            directoryURL: root,
+            now: { currentTime }
+        )
+        XCTAssertTrue(store.stagePendingAudio(
+            from: source,
+            resultID: resultID,
+            text: "人物",
+            heard: "人物",
+            language: "zh-CN",
+            duration: 1
+        ))
+
+        currentTime += SpeechLearningStore.pendingLifetime + 1
+        XCTAssertFalse(store.hasPending(resultID: resultID))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: root.appendingPathComponent("Pending/\(resultID).wav").path
+        ))
+        XCTAssertTrue(store.samples().isEmpty)
+    }
+
     func testQuickWakePreferencePersistsAcrossBridgeInstances() {
         let suiteName = "hex.tests.quickWake.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
