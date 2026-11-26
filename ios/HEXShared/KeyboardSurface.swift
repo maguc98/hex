@@ -511,10 +511,19 @@ struct KeyboardSurfaceView: View {
     @State private var isTrackpadActive = false
     @State private var whisperModeEnabled = false
     @State private var noiseReductionEnabled = false
-    @State private var waveformColorHex: String?
+    @State private var waveformIdleColorHex: String?
+    @State private var waveformRecordingColorHex: String?
+    @State private var waveformProcessingColorHex: String?
 
-    private var waveformTint: Color? {
-        guard let hex = waveformColorHex else { return nil }
+    private func waveformTint(for phase: DotScopePhase) -> Color? {
+        let hex: String?
+        switch phase {
+        case .idle: hex = waveformIdleColorHex
+        case .recording: hex = waveformRecordingColorHex
+        case .processing: hex = waveformProcessingColorHex
+        case .hidden, .failed: hex = waveformRecordingColorHex
+        }
+        guard let hex else { return nil }
         let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
         guard value.count == 6, let rgb = UInt32(value, radix: 16) else { return nil }
         return Color(
@@ -574,7 +583,10 @@ struct KeyboardSurfaceView: View {
         .onAppear {
             whisperModeEnabled = KeyboardWhisperSettings().isEnabled
             noiseReductionEnabled = KeyboardBridge().noiseReductionEnabled
-            waveformColorHex = LiveWaveformColorSettings().hex
+            let waveformColors = LiveWaveformColorSettings()
+            waveformIdleColorHex = waveformColors.idleHex
+            waveformRecordingColorHex = waveformColors.recordingHex
+            waveformProcessingColorHex = waveformColors.processingHex
         }
         .onChange(of: whisperModeEnabled) { _, enabled in
             KeyboardWhisperSettings().isEnabled = enabled
@@ -1166,7 +1178,7 @@ struct KeyboardSurfaceView: View {
                         let db = model?.liveLoudnessDB ?? -62.0
                         return whisperModeEnabled ? min(0.0, db + 12.0) : db
                     },
-                    customColor: waveformTint
+                    customColor: waveformTint(for: model.dotScopePhase)
                 )
                 .clipShape(Capsule())
                 .allowsHitTesting(false)
