@@ -765,18 +765,36 @@ struct KeyboardBridge {
 }
 
 
-/// The shared color for the keyboard's live microphone waveform, never transcript text.
+/// Separate colours for the three visible waveform states in the keyboard dictation well.
 nonisolated struct LiveWaveformColorSettings {
+    static let idleKey = "settings.liveWaveformColor.idle"
+    static let recordingKey = "settings.liveWaveformColor.recording"
+    static let processingKey = "settings.liveWaveformColor.processing"
+    /// Backward-compatible key from builds with one shared waveform colour.
     static let key = "settings.liveWaveformColor"
     private let defaults: UserDefaults?
     init(defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) {
         self.defaults = defaults
     }
+    var idleHex: String? {
+        get { defaults?.string(forKey: Self.idleKey) ?? defaults?.string(forKey: Self.key) }
+        nonmutating set { set(newValue, for: Self.idleKey) }
+    }
+    var recordingHex: String? {
+        get { defaults?.string(forKey: Self.recordingKey) ?? defaults?.string(forKey: Self.key) }
+        nonmutating set { set(newValue, for: Self.recordingKey) }
+    }
+    var processingHex: String? {
+        get { defaults?.string(forKey: Self.processingKey) }
+        nonmutating set { set(newValue, for: Self.processingKey) }
+    }
+    /// Legacy shared colour property.
     var hex: String? {
         get { defaults?.string(forKey: Self.key) }
-        nonmutating set {
-            if let newValue, !newValue.isEmpty { defaults?.set(newValue, forKey: Self.key) }
-            else { defaults?.removeObject(forKey: Self.key) }
-        }
+        nonmutating set { set(newValue, for: Self.key) }
+    }
+    private func set(_ value: String?, for key: String) {
+        if let value, !value.isEmpty { defaults?.set(value, forKey: key) }
+        else { defaults?.removeObject(forKey: key) }
     }
 }
