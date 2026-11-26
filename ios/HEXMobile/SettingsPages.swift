@@ -349,8 +349,6 @@ struct KeyboardSettingsPage: View {
         SettingsPageScaffold(title: "Keyboard") {
             SettingsCard {
                 // Keyboard mode selector intentionally hidden: Hex opens in dictation-bar mode.
-                fullKeyboard = false
-                FullKeyboardSettings().isEnabled = false
 
                 if !fullKeyboard {
                     SettingsDivider()
@@ -497,6 +495,10 @@ struct KeyboardSettingsPage: View {
         .animation(HexMotion.settleAnimation(reduceMotion: reduceMotion), value: fullKeyboard)
         .animation(HexMotion.settleAnimation(reduceMotion: reduceMotion), value: autocorrect)
         .animation(HexMotion.settleAnimation(reduceMotion: reduceMotion), value: emoji)
+        .onAppear {
+            fullKeyboard = false
+            FullKeyboardSettings().isEnabled = false
+        }
         .onChange(of: fullKeyboard) { _, enabled in
             FullKeyboardSettings().isEnabled = enabled
         }
