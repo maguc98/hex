@@ -277,13 +277,13 @@ struct DictationSettingsPage: View {
             LiveDictationSettings().typesIntoField = enabled
         }
         .onChange(of: waveformIdleColor) { _, color in
-            LiveWaveformColorSettings().idleHex = Self.hexString(color)
+            LiveWaveformColorSettings().idle = Self.rgb(from: color)
         }
         .onChange(of: waveformRecordingColor) { _, color in
-            LiveWaveformColorSettings().recordingHex = Self.hexString(color)
+            LiveWaveformColorSettings().recording = Self.rgb(from: color)
         }
         .onChange(of: waveformProcessingColor) { _, color in
-            LiveWaveformColorSettings().processingHex = Self.hexString(color)
+            LiveWaveformColorSettings().processing = Self.rgb(from: color)
         }
         .onChange(of: quickWake) { _, enabled in
             dictation.setQuickWakeEnabled(enabled)
@@ -315,10 +315,10 @@ struct DictationSettingsPage: View {
         quickWake = KeyboardBridge().quickWakeEnabled
         recognitionMode = DictationRecognitionModeSettings().mode
         pageAnimations = InterfaceMotionSettings().isEnabled
-        let waveformColors = LiveWaveformColorSettings()
-        waveformIdleColor = Self.color(from: waveformColors.idleHex, fallback: Color(red: 0.86, green: 0.83, blue: 0.77))
-        waveformRecordingColor = Self.color(from: waveformColors.recordingHex, fallback: Color(red: 0.86, green: 0.83, blue: 0.77))
-        waveformProcessingColor = Self.color(from: waveformColors.processingHex, fallback: Color(red: 0.25, green: 0.62, blue: 1.0))
+        let waveformPalette = LiveWaveformColorSettings().palette
+        waveformIdleColor = Self.color(from: waveformPalette.idle, fallback: Color(red: 0.86, green: 0.83, blue: 0.77))
+        waveformRecordingColor = Self.color(from: waveformPalette.recording, fallback: Color(red: 0.86, green: 0.83, blue: 0.77))
+        waveformProcessingColor = Self.color(from: waveformPalette.processing, fallback: Color(red: 0.25, green: 0.62, blue: 1.0))
     }
 
     private func waveformColorRow(title: String, detail: String, color: Binding<Color>) -> some View {
@@ -334,32 +334,22 @@ struct DictationSettingsPage: View {
         .frame(minHeight: 54)
     }
 
-    private static func color(from hex: String?, fallback: Color) -> Color {
-        guard let hex else { return fallback }
-        let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-        guard value.count == 6, let rgb = UInt32(value, radix: 16) else { return fallback }
-        return Color(
-            .sRGB,
-            red: Double((rgb >> 16) & 0xFF) / 255,
-            green: Double((rgb >> 8) & 0xFF) / 255,
-            blue: Double(rgb & 0xFF) / 255,
-            opacity: 1
-        )
+    private static func color(from rgb: LiveWaveformRGB?, fallback: Color) -> Color {
+        guard let rgb else { return fallback }
+        return Color(.sRGB, red: rgb.redUnit, green: rgb.greenUnit, blue: rgb.blueUnit, opacity: 1)
     }
 
-    private static func hexString(_ color: Color) -> String {
+    private static func rgb(from color: Color) -> LiveWaveformRGB? {
         let uiColor = UIColor(color)
-        var red: CGFloat = 1
-        var green: CGFloat = 1
-        var blue: CGFloat = 1
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
         var alpha: CGFloat = 1
-        uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
-        return String(
-            format: "#%02X%02X%02X",
-            Int((red * 255).rounded()),
-            Int((green * 255).rounded()),
-            Int((blue * 255).rounded())
-        )
+        guard uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else { return nil }
+        func channel(_ value: CGFloat) -> UInt8 {
+            UInt8((min(1, max(0, value)) * 255).rounded())
+        }
+        return LiveWaveformRGB(red: channel(red), green: channel(green), blue: channel(blue))
     }
 }
 

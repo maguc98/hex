@@ -765,10 +765,75 @@ struct KeyboardBridge {
 }
 
 
-/// Separate colours for the three visible waveform states in the keyboard dictation well.
+/// An opaque, sRGB colour shared by the app and keyboard extension.
+nonisolated struct LiveWaveformRGB: Codable, Equatable, Sendable {
+    let red: UInt8
+    let green: UInt8
+    let blue: UInt8
+
+    init(red: UInt8, green: UInt8, blue: UInt8) {
+        self.red = red
+        self.green = green
+        self.blue = blue
+    }
+
+    init?(hex: String?) {
+        guard let hex else { return nil }
+        let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard value.count == 6, let packed = UInt32(value, radix: 16) else { return nil }
+        self.red = UInt8((packed >> 16) & 0xFF)
+        self.green = UInt8((packed >> 8) & 0xFF)
+        self.blue = UInt8(packed & 0xFF)
+    }
+
+    var hex: String {
+        String(format: "#%02X%02X%02X", red, green, blue)
+    }
+
+    var redUnit: Double { Double(red) / 255.0 }
+    var greenUnit: Double { Double(green) / 255.0 }
+    var blueUnit: Double { Double(blue) / 255.0 }
+}
+
+nonisolated enum LiveWaveformColorState: Sendable {
+    case idle
+    case recording
+    case processing
+}
+
+/// All waveform states travel together as one App Group value.
+nonisolated struct LiveWaveformPalette: Codable, Equatable, Sendable {
+    var idle: LiveWaveformRGB?
+    var recording: LiveWaveformRGB?
+    var processing: LiveWaveformRGB?
+
+    var isEmpty: Bool {
+        idle == nil && recording == nil && processing == nil
+    }
+
+    func color(for state: LiveWaveformColorState) -> LiveWaveformRGB? {
+        switch state {
+        case .idle: idle
+        case .recording: recording
+        case .processing: processing
+        }
+    }
+}
+
+/// Persists one RGB palette in the shared App Group and migrates the previous HEX keys.
+/// Synchronization occurs before the Darwin notification, so the keyboard cannot wake up
+/// and immediately read an older cached value.
 nonisolated struct LiveWaveformColorSettings {
     static let didChangeNotification = Notification.Name("LiveWaveformColorSettings.didChange")
     private static let darwinNotification = "anomaly.hex.mobile.liveWaveformColor.changed"
+    private static let paletteKey = "settings.liveWaveformPalette.v1"
+
+    /// Previous independent keys and the earlier one-colour key, retained for migration.
+    static let idleKey = "settings.liveWaveformColor.idle"
+    static let recordingKey = "settings.liveWaveformColor.recording"
+    static let processingKey = "settings.liveWaveformColor.processing"
+    static let key = "settings.liveWaveformColor"
+
     private static let changeForwarder: Void = {
         CFNotificationCenterAddObserver(
             CFNotificationCenterGetDarwinNotifyCenter(),
@@ -784,45 +849,103 @@ nonisolated struct LiveWaveformColorSettings {
         )
     }()
 
+    private let defaults: UserDefaults?
+
+    init(defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) {
+        self.defaults = defaults
+    }
+
     static func observeChanges() {
         _ = changeForwarder
     }
 
-    static let idleKey = "settings.liveWaveformColor.idle"
-    static let recordingKey = "settings.liveWaveformColor.recording"
-    static let processingKey = "settings.liveWaveformColor.processing"
-    /// Backward-compatible key from builds with one shared waveform colour.
-    static let key = "settings.liveWaveformColor"
-    private let defaults: UserDefaults?
-    init(defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup)) {
-        self.defaults = defaults
+    var palette: LiveWaveformPalette {
+        get { readPalette() }
+        nonmutating set { writePalette(newValue, notify: true) }
     }
+
+    var idle: LiveWaveformRGB? {
+        get { palette.idle }
+        nonmutating set { update(\.idle, to: newValue) }
+    }
+
+    var recording: LiveWaveformRGB? {
+        get { palette.recording }
+        nonmutating set { update(\.recording, to: newValue) }
+    }
+
+    var processing: LiveWaveformRGB? {
+        get { palette.processing }
+        nonmutating set { update(\.processing, to: newValue) }
+    }
+
+    /// HEX accessors keep source compatibility with builds that used separate string keys.
     var idleHex: String? {
-        get { defaults?.string(forKey: Self.idleKey) ?? defaults?.string(forKey: Self.key) }
-        nonmutating set { set(newValue, for: Self.idleKey) }
+        get { idle?.hex }
+        nonmutating set { idle = LiveWaveformRGB(hex: newValue) }
     }
+
     var recordingHex: String? {
-        get { defaults?.string(forKey: Self.recordingKey) ?? defaults?.string(forKey: Self.key) }
-        nonmutating set { set(newValue, for: Self.recordingKey) }
+        get { recording?.hex }
+        nonmutating set { recording = LiveWaveformRGB(hex: newValue) }
     }
+
     var processingHex: String? {
-        get { defaults?.string(forKey: Self.processingKey) }
-        nonmutating set { set(newValue, for: Self.processingKey) }
+        get { processing?.hex }
+        nonmutating set { processing = LiveWaveformRGB(hex: newValue) }
     }
-    /// Legacy shared colour property.
+
+    /// Legacy shared-colour property. New writes fan out to idle and recording.
     var hex: String? {
-        get { defaults?.string(forKey: Self.key) }
-        nonmutating set { set(newValue, for: Self.key) }
-    }
-    private func set(_ value: String?, for key: String) {
-        guard let defaults else { return }
-        if let value, !value.isEmpty {
-            guard defaults.string(forKey: key) != value else { return }
-            defaults.set(value, forKey: key)
-        } else {
-            guard defaults.object(forKey: key) != nil else { return }
-            defaults.removeObject(forKey: key)
+        get {
+            _ = defaults?.synchronize()
+            return defaults?.string(forKey: Self.key)
         }
+        nonmutating set {
+            let color = LiveWaveformRGB(hex: newValue)
+            var next = palette
+            next.idle = color
+            next.recording = color
+            writePalette(next, notify: true)
+        }
+    }
+
+    private func update(
+        _ keyPath: WritableKeyPath<LiveWaveformPalette, LiveWaveformRGB?>,
+        to color: LiveWaveformRGB?
+    ) {
+        var next = palette
+        next[keyPath: keyPath] = color
+        writePalette(next, notify: true)
+    }
+
+    private func readPalette() -> LiveWaveformPalette {
+        guard let defaults else {
+            return LiveWaveformPalette(idle: nil, recording: nil, processing: nil)
+        }
+        _ = defaults.synchronize()
+
+        if let data = defaults.data(forKey: Self.paletteKey),
+           let value = try? JSONDecoder().decode(LiveWaveformPalette.self, from: data) {
+            return value
+        }
+
+        let migrated = LiveWaveformPalette(
+            idle: LiveWaveformRGB(hex: defaults.string(forKey: Self.idleKey) ?? defaults.string(forKey: Self.key)),
+            recording: LiveWaveformRGB(hex: defaults.string(forKey: Self.recordingKey) ?? defaults.string(forKey: Self.key)),
+            processing: LiveWaveformRGB(hex: defaults.string(forKey: Self.processingKey))
+        )
+        if !migrated.isEmpty {
+            writePalette(migrated, notify: false)
+        }
+        return migrated
+    }
+
+    private func writePalette(_ value: LiveWaveformPalette, notify: Bool) {
+        guard let defaults, let data = try? JSONEncoder().encode(value) else { return }
+        defaults.set(data, forKey: Self.paletteKey)
+        _ = defaults.synchronize()
+        guard notify else { return }
         CFNotificationCenterPostNotification(
             CFNotificationCenterGetDarwinNotifyCenter(),
             CFNotificationName(Self.darwinNotification as CFString),

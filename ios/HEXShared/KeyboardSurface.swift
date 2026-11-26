@@ -508,35 +508,29 @@ struct KeyboardSurfaceView: View {
     @State private var isTrackpadActive = false
     @State private var whisperModeEnabled = false
     @State private var noiseReductionEnabled = false
-    @State private var waveformIdleColorHex: String?
-    @State private var waveformRecordingColorHex: String?
-    @State private var waveformProcessingColorHex: String?
+    @State private var waveformPalette = LiveWaveformPalette(idle: nil, recording: nil, processing: nil)
 
+    /// One RGB mapping feeds the resting Canvas and the active Metal scope.
     private func waveformTint(for phase: DotScopePhase) -> Color? {
-        let hex: String?
+        let state: LiveWaveformColorState
         switch phase {
-        case .idle: hex = waveformIdleColorHex
-        case .recording: hex = waveformRecordingColorHex
-        case .processing: hex = waveformProcessingColorHex
-        case .hidden, .failed: hex = waveformRecordingColorHex
+        case .idle: state = .idle
+        case .recording: state = .recording
+        case .processing: state = .processing
+        case .hidden, .failed: return nil
         }
-        guard let hex else { return nil }
-        let value = hex.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
-        guard value.count == 6, let rgb = UInt32(value, radix: 16) else { return nil }
+        guard let rgb = waveformPalette.color(for: state) else { return nil }
         return Color(
             .sRGB,
-            red: Double((rgb >> 16) & 0xFF) / 255,
-            green: Double((rgb >> 8) & 0xFF) / 255,
-            blue: Double(rgb & 0xFF) / 255,
+            red: rgb.redUnit,
+            green: rgb.greenUnit,
+            blue: rgb.blueUnit,
             opacity: 1
         )
     }
 
     private func reloadWaveformColors() {
-        let colors = LiveWaveformColorSettings()
-        waveformIdleColorHex = colors.idleHex
-        waveformRecordingColorHex = colors.recordingHex
-        waveformProcessingColorHex = colors.processingHex
+        waveformPalette = LiveWaveformColorSettings().palette
     }
 
     private static let wellHeight: CGFloat = 44

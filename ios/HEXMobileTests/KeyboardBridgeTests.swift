@@ -32,16 +32,28 @@ final class KeyboardBridgeTests: XCTestCase {
         XCTAssertEqual(reloaded.processingHex, "#778899")
     }
 
-    func testLiveWaveformColorsReadLegacySharedColorForIdleAndRecording() {
+    func testLiveWaveformColorsReadLegacySharedColorAndMigrateToRGBPalette() {
         let suiteName = "hex.tests.liveWaveformLegacyColor.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
         defaults.set("#AABBCC", forKey: LiveWaveformColorSettings.key)
+        defaults.set("#102030", forKey: LiveWaveformColorSettings.processingKey)
 
         let settings = LiveWaveformColorSettings(defaults: defaults)
-        XCTAssertEqual(settings.idleHex, "#AABBCC")
-        XCTAssertEqual(settings.recordingHex, "#AABBCC")
-        XCTAssertNil(settings.processingHex)
+        let migrated = settings.palette
+        XCTAssertEqual(migrated.idle?.hex, "#AABBCC")
+        XCTAssertEqual(migrated.recording?.hex, "#AABBCC")
+        XCTAssertEqual(migrated.processing?.hex, "#102030")
+        XCTAssertNotNil(defaults.data(forKey: "settings.liveWaveformPalette.v1"))
+    }
+
+    func testLiveWaveformRGBRoundTripsExactSixDigitHex() {
+        let source = LiveWaveformRGB(hex: "#12A4FE")
+        XCTAssertEqual(source?.red, 0x12)
+        XCTAssertEqual(source?.green, 0xA4)
+        XCTAssertEqual(source?.blue, 0xFE)
+        XCTAssertEqual(source?.hex, "#12A4FE")
+        XCTAssertNil(LiveWaveformRGB(hex: "#12AF"))
     }
 
     func testQuickWakePrefersKeyboardOverAnAvailableWarmSession() {
