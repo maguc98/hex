@@ -1037,13 +1037,14 @@ final class KeyboardViewController: UIInputViewController {
 
         // Only offer Learn for the exact result that was inserted, and only while its
         // short-lived original WAV is still staged in the local App Group.
-        let learningStore = SpeechLearningStore()
         let insertedID = bridge.lastInsertedResultID
         let learningOfferChanged = viewModel.speechLearningResultID != insertedID
         let learningCheckIsDue = now - lastSpeechLearningCheckAt >= 5
         if !(viewModel.didLearnSpeechSample && viewModel.speechLearningResultID == insertedID),
            learningOfferChanged || learningCheckIsDue {
-            let learningID = insertedID.flatMap { learningStore.hasPending(resultID: $0) ? $0 : nil }
+            let learningID = insertedID.flatMap {
+                SpeechLearningStore().hasPending(resultID: $0) ? $0 : nil
+            }
             viewModel.offerSpeechLearning(resultID: learningID)
             lastSpeechLearningCheckAt = now
         }
