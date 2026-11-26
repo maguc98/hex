@@ -193,6 +193,9 @@ final class HexKeyControl: UIControl {
 @MainActor
 final class HexKeyRecordingPanel: UIView {
     var palette = FullKeyboardPalette(isDark: false) { didSet { if palette != oldValue { applyPalette() } } }
+    var waveformPalette = LiveWaveformPalette(idle: nil, recording: nil, processing: nil) {
+        didSet { applyWaveformTint() }
+    }
     var onDone: (() -> Void)?
     var onCancel: (() -> Void)?
     var onCycleStyle: (() -> Void)?
@@ -257,9 +260,25 @@ final class HexKeyRecordingPanel: UIView {
         scope.tearDown()
     }
 
+    private func applyWaveformTint() {
+        let state: LiveWaveformColorState
+        switch scope.phase {
+        case .idle, .hidden, .failed:
+            state = .idle
+        case .recording:
+            state = .recording
+        case .processing:
+            state = .processing
+        }
+        scope.customTint = waveformPalette.color(for: state).map {
+            UIColor(red: $0.redUnit, green: $0.greenUnit, blue: $0.blueUnit, alpha: 1)
+        }
+    }
+
     func update(phase: DotScopePhase, style: DictationStyle, isStarting: Bool = false) {
         isTranscribing = phase == .processing
         scope.phase = phase
+        applyWaveformTint()
         // The scope, then two round buttons, ✕ and ✓; once the recording stops the ✓ turns into
         // the spinner in the same spot, so there's one place to look, and ✕ still cancels.
         doneButton.symbol = isTranscribing ? nil : "checkmark"
