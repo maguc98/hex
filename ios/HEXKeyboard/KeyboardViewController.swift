@@ -930,6 +930,10 @@ final class KeyboardViewController: UIInputViewController {
         syncTypingLogEnabled()
         let effectiveFullAccess = dictationAccess(now: now)
         syncLocalDictationAvailability(access: effectiveFullAccess)
+        // Settings can change the selected keyboard while Hex is already active. Re-mount
+        // the surface on each bridge sync so the full keyboard and dictation bar switch
+        // without requiring the user to dismiss and reopen the keyboard.
+        mountSurface()
 
         guard effectiveFullAccess else {
             viewModel.applyBridgeState(
