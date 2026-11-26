@@ -947,7 +947,12 @@ final class KeyboardLocalDictation {
         )
         Self.transcribingJobs.insert(jobID)
         transcription = Task { [weak self] in
-            defer { Self.transcribingJobs.remove(jobID) }
+            defer {
+                Self.transcribingJobs.remove(jobID)
+                if !(job?.interrupted ?? false) {
+                    try? FileManager.default.removeItem(at: url)
+                }
+            }
             let started = Date()
             do {
                 let (heard, language, engine) = try await KeyboardTranscription.transcribe(url, hints: hints, audioSeconds: seconds)
@@ -987,9 +992,6 @@ final class KeyboardLocalDictation {
                         language: locale,
                         duration: seconds
                     )
-                }
-                if !(job?.interrupted ?? false) {
-                    try? FileManager.default.removeItem(at: url)
                 }
                 guard let self, !(job?.interrupted ?? false) else {
                     // The keyboard hid before it finished, or is gone: the next one delivers it.
