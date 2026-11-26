@@ -3,6 +3,7 @@ import SwiftUI
 /// The home screen's four settings pages.
 enum SettingsPage: String, Hashable, CaseIterable {
     case dictation
+    case learning
     case keyboard
     case privacy
     case experiments
@@ -10,6 +11,7 @@ enum SettingsPage: String, Hashable, CaseIterable {
     var title: String {
         switch self {
         case .dictation: String(localized: "Dictation")
+        case .learning: String(localized: "Learning")
         case .keyboard: String(localized: "Keyboard")
         case .privacy: String(localized: "Privacy")
         case .experiments: String(localized: "Experiments")
@@ -19,6 +21,7 @@ enum SettingsPage: String, Hashable, CaseIterable {
     var icon: String {
         switch self {
         case .dictation: "waveform"
+        case .learning: "book.closed.fill"
         case .keyboard: "keyboard"
         case .privacy: "lock"
         case .experiments: "testtube.2"

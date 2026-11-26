@@ -199,6 +199,22 @@ nonisolated struct SpeechLearningStore {
         readSamples().sorted { $0.createdAt > $1.createdAt }
     }
 
+    func audioURL(for sample: SpeechLearningSample) -> URL? {
+        guard let dir = directory(named: "Samples", create: false) else { return nil }
+        let url = dir.appendingPathComponent(sample.audioFileName)
+        return fileManager.fileExists(atPath: url.path) ? url : nil
+    }
+
+    @discardableResult
+    func deleteSample(id: String) -> Bool {
+        guard let sample = readSamples().first(where: { $0.id == id }) else { return false }
+        if let dir = directory(named: "Samples", create: false) {
+            try? fileManager.removeItem(at: dir.appendingPathComponent(sample.audioFileName))
+        }
+        write(readSamples().filter { $0.id != id }, forKey: Key.samples)
+        return true
+    }
+
     private func readPending() -> [SpeechLearningPending] {
         guard let data = defaults?.data(forKey: Key.pending) else { return [] }
         return (try? decoder.decode([SpeechLearningPending].self, from: data)) ?? []

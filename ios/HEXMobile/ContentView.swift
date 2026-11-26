@@ -310,6 +310,8 @@ struct ContentView: View {
         switch page {
         case .dictation:
             DictationSettingsPage(dictation: dictation)
+        case .learning:
+            SpeechLearningLibraryPage()
         case .keyboard:
             KeyboardSettingsPage(fullAccessOn: setupMonitor.fullAccessOn)
         case .privacy:
