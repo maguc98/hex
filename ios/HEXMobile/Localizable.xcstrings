@@ -4350,7 +4350,7 @@
           }
         }
       }
-    }
+    },
     "Accurate" : {
       "localizations" : {
         "zh-Hans" : {
@@ -4420,7 +4420,7 @@
           }
         }
       }
-    },
+    }
   },
   "version" : "1.0"
 }
