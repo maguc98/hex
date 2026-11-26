@@ -1362,12 +1362,20 @@ struct KeyboardSurfaceView: View {
     private func handleIdleStageTap() {
         if !model.hasFullAccess {
             model.onOpenURL?(KeyboardLaunchRequest.setup.url)
-        } else if let local = model.onLocalDictateTap {
-            // Use the in-keyboard capture for both ordinary and whisper dictation.
-            // Whisper gain/noise processing stays in the local capture pipeline.
+        } else if whisperModeEnabled, let local = model.onLocalDictateTap {
+            // Whisper mode stays on the keyboard's locally processed audio path.
             local()
+        } else if model.stagePhase == .failed {
+            if let local = model.onLocalDictateTap {
+                local()
+            } else {
+                model.onDictationUnavailable?()
+            }
         } else if model.dictatesThroughHex {
             model.onDictateTap?()
+        } else if let local = model.onLocalDictateTap {
+            // Quick wake and unavailable warm sessions remain entirely in the keyboard.
+            local()
         } else {
             model.onDictationUnavailable?()
         }
