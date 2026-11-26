@@ -46,15 +46,15 @@ final class KeyboardBridgeTests: XCTestCase {
         var blue: CGFloat = 0
         var alpha: CGFloat = 0
         XCTAssertTrue(panel.scope.customTint?.getRed(&red, green: &green, blue: &blue, alpha: &alpha) == true)
-        XCTAssertEqual(red, Double(0xE1) / 255.0, accuracy: 0.01)
-        XCTAssertEqual(green, Double(0x1D) / 255.0, accuracy: 0.01)
-        XCTAssertEqual(blue, Double(0x74) / 255.0, accuracy: 0.01)
+        XCTAssertEqual(red, CGFloat(0xE1) / 255.0, accuracy: 0.01)
+        XCTAssertEqual(green, CGFloat(0x1D) / 255.0, accuracy: 0.01)
+        XCTAssertEqual(blue, CGFloat(0x74) / 255.0, accuracy: 0.01)
 
         panel.update(phase: .processing, style: .polished)
         XCTAssertTrue(panel.scope.customTint?.getRed(&red, green: &green, blue: &blue, alpha: &alpha) == true)
-        XCTAssertEqual(red, Double(0x12) / 255.0, accuracy: 0.01)
-        XCTAssertEqual(green, Double(0xA4) / 255.0, accuracy: 0.01)
-        XCTAssertEqual(blue, Double(0xFE) / 255.0, accuracy: 0.01)
+        XCTAssertEqual(red, CGFloat(0x12) / 255.0, accuracy: 0.01)
+        XCTAssertEqual(green, CGFloat(0xA4) / 255.0, accuracy: 0.01)
+        XCTAssertEqual(blue, CGFloat(0xFE) / 255.0, accuracy: 0.01)
         panel.tearDown()
     }
 
