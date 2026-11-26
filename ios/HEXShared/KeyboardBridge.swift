@@ -506,10 +506,16 @@ struct KeyboardBridge {
 
     private let defaults: UserDefaults?
     private let encoder = JSONEncoder()
+    private static let legacyQwenCleanupVersion = "settings.legacyQwenCleanupVersion"
     private let decoder = JSONDecoder()
 
     init(defaults: UserDefaults? = UserDefaults(suiteName: Self.appGroup)) {
         self.defaults = defaults
+        // Remove the API key left by older Qwen3-ASR builds; the engine and setting are gone.
+        if let defaults, defaults.integer(forKey: Self.legacyQwenCleanupVersion) < 1 {
+            defaults.removeObject(forKey: "settings.qwenAPIKey")
+            defaults.set(1, forKey: Self.legacyQwenCleanupVersion)
+        }
     }
 
     func send(
