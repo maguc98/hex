@@ -6,6 +6,7 @@ on:
     branches:
       - dev
       - 'sync/**'
+      - 'rebuild/**'
     paths:
       - ".github/workflows/build-ios-unsigned.yml"
       - "ios/**"
@@ -57,6 +58,15 @@ jobs:
           xcodebuild -resolvePackageDependencies \
             -project HEXMobile.xcodeproj \
             -scheme HEXMobile
+
+      - name: Install Metal Toolchain
+        run: |
+          set -euo pipefail
+          xcodebuild -downloadComponent MetalToolchain
+          xcrun --find metal
+          metal_path="$(xcrun --find metal)"
+          test -x "$metal_path"
+          "$metal_path" -v
 
       - name: Build unsigned iOS archive
         working-directory: ios
