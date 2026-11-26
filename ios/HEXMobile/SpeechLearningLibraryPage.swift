@@ -34,21 +34,40 @@ struct SpeechLearningLibraryPage: View {
                 .padding(16)
             }
 
+            SettingsCard {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text("How to use")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(HexTheme.textBase)
+                    learningStep(number: "1", title: "Switch to Hex Keyboard", detail: "Return to any text field and select the Hex keyboard.")
+                    learningStep(number: "2", title: "Dictate a sentence", detail: "Speak a sentence and finish dictation so the text is inserted.")
+                    learningStep(number: "3", title: "Tap “学习”", detail: "Tap the “学习 ✨” chip in the keyboard's top row within about 45 seconds.")
+                    learningStep(number: "4", title: "Come back here", detail: "The saved sentence, translation (if available), and audio will appear in this library.")
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock")
+                        Text("The Learn chip is temporary. If it disappears, dictate the sentence again.")
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(HexTheme.warning)
+                }
+                .padding(16)
+            }
+
             if records.isEmpty {
                 SettingsCard {
-                    VStack(spacing: 12) {
+                    VStack(spacing: 10) {
                         Image(systemName: "waveform.and.mic")
-                            .font(.system(size: 30))
+                            .font(.system(size: 26))
                             .foregroundStyle(HexTheme.textMuted)
                         Text("No learning records yet")
-                            .font(.system(size: 16, weight: .medium))
+                            .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(HexTheme.textBase)
-                        Text("After dictation, save a sentence to Learning. Your original sentence, translation and short audio recording will appear here.")
-                            .font(.system(size: 13))
+                        Text("Nothing is saved yet. Follow the steps above to add your first sentence.")
+                            .font(.system(size: 12))
                             .multilineTextAlignment(.center)
                             .foregroundStyle(HexTheme.textMuted)
                     }
-                    .padding(22)
+                    .padding(18)
                     .frame(maxWidth: .infinity)
                 }
             } else {
@@ -82,6 +101,25 @@ struct SpeechLearningLibraryPage: View {
             Text("The sentence and its audio recording will be removed.")
         }
         .animation(HexMotion.settleAnimation(reduceMotion: reduceMotion), value: records.count)
+    }
+
+    private func learningStep(number: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text(number)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(HexTheme.accent)
+                .frame(width: 24, height: 24)
+                .background(HexTheme.accent.opacity(0.12), in: Circle())
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(HexTheme.textBase)
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(HexTheme.textMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 
     private func recordCard(_ sample: SpeechLearningSample) -> some View {
