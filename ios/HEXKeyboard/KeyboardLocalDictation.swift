@@ -882,7 +882,7 @@ final class KeyboardLocalDictation {
                 let resultID = UUID().uuidString
                 let spokenSentence = steps.translated == nil ? steps.formatted : steps.cleaned
                 if !spokenSentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    _ = SpeechLearningStore().stagePendingAudio(
+                    let staged = SpeechLearningStore().stagePendingAudio(
                         from: record.url,
                         resultID: resultID,
                         text: spokenSentence,
@@ -892,6 +892,7 @@ final class KeyboardLocalDictation {
                         language: language.identifier,
                         duration: record.seconds
                     )
+                    KeyboardProbeLog.shared.write("recovered dictation Learning candidate staged=\(staged)")
                 }
                 Self.hold(
                     resultID: resultID,
@@ -989,7 +990,7 @@ final class KeyboardLocalDictation {
                 let learnable = translated == nil ? steps.heard : nil
                 let spokenSentence = translated == nil ? text : steps.cleaned
                 if !spokenSentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    _ = SpeechLearningStore().stagePendingAudio(
+                    let staged = SpeechLearningStore().stagePendingAudio(
                         from: url,
                         resultID: resultID,
                         text: spokenSentence,
@@ -999,6 +1000,7 @@ final class KeyboardLocalDictation {
                         language: locale,
                         duration: seconds
                     )
+                    KeyboardProbeLog.shared.write("local dictation Learning candidate staged=\(staged), duration=\(String(format: "%.1f", seconds))s")
                 }
                 guard let self, !(job?.interrupted ?? false) else {
                     // The keyboard hid before it finished, or is gone: the next one delivers it.
