@@ -41,6 +41,7 @@ final class VoiceLearningProfileTests: XCTestCase {
         XCTAssertTrue(store.saveTextSample(
             id: voiceID,
             text: "My personal voice phrase",
+            heard: nil,
             language: "en-US"
         ))
 
