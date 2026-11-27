@@ -1150,6 +1150,7 @@ struct KeyboardSurfaceView: View {
         let showIdleTrigger = model.stagePhase == .idle || model.stagePhase == .failed
         let spec = idleTriggerSpec
         let learned = model.didLearnSpeechSample
+        let saveFailed = model.speechLearningSaveFailed
 
         let leadInset: Float = showCancelControl
             ? Float(Self.wellInset + Self.cancelWidth + 6)
@@ -1289,8 +1290,11 @@ struct KeyboardSurfaceView: View {
                     model.onKeyFeedback?()
                     model.onLearnSpeechSample?()
                 } label: {
-                    Label(learned ? "已加入" : "加入学习",
-                          systemImage: learned ? "checkmark.circle.fill" : "book.closed.fill")
+                    Label(
+                        saveFailed ? "重试保存" : (learned ? "已加入" : "加入学习"),
+                        systemImage: saveFailed ? "arrow.clockwise.circle.fill" :
+                            (learned ? "checkmark.circle.fill" : "book.closed.fill")
+                    )
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(learned ? p.textMuted : p.textBase)
                         .padding(.horizontal, 11)
@@ -1299,7 +1303,7 @@ struct KeyboardSurfaceView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!model.canLearnSpeechSample || learned)
-                .accessibilityLabel(learned ? "已加入学习" : "加入学习")
+                .accessibilityLabel(saveFailed ? "重试保存学习记录" : (learned ? "已加入学习" : "加入学习"))
                 .accessibilityHint("保存这句话、译文和录音")
 
                 Spacer(minLength: 0)
