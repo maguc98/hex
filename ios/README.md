@@ -34,6 +34,25 @@ the keyboard alike (a TestFlight tester who turned it off dictated, iOS 27.0.1, 
 Before iOS 26 Hex asks for it as it gets `SFSpeechRecognizer` ready (setup, or Set up),
 never at a launch by itself.
 
+## Personal Voice Learning
+
+The iOS app home has a **声音学习** entry. It guides the user through three
+short, language-scoped voice samples (natural pace, softer speech, and faster
+speech), each paired with an editable sentence. Recordings are kept in the
+existing local speech-learning store and can be played back, replaced, or
+cleared. The paired sentences are prioritized in the contextual-hint list sent
+to recognizers that support hints (Apple Speech); Parakeet currently ignores
+that hint list. This is not acoustic-model fine-tuning, a speaker embedding,
+or voice cloning.
+
+**嘈杂环境增强** selects iOS's `voiceChat` audio-session mode for subsequent
+app captures. It is a system voice-processing mode, not a dedicated neural
+source-separation model, and the result depends on the microphone and
+environment. When the App Group is available, the setting is synchronized with
+the keyboard's existing noise-reduction preference. If the App Group is
+unavailable, the app-local preference and voice profile remain usable by the
+app, while the keyboard cannot read app-local fallback records.
+
 ## Capabilities
 
 - **One-tap keyboard dictation (`HEXKeyboard`):**
