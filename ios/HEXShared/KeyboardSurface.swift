@@ -1172,7 +1172,12 @@ struct KeyboardSurfaceView: View {
         return ZStack {
             HexRecessedWell(isDark: p.isDark)
 
-            if defersDotScopeUntilActive && model.dotScopePhase == .idle {
+            // A failed session still presents the idle action (Set up / Dictate).
+            // Keep the lightweight resting waveform mounted in that state too: routing
+            // the failed phase into the Metal scope can leave this well visually empty
+            // when the failed scope has no drawable to present.
+            if defersDotScopeUntilActive
+                && (model.dotScopePhase == .idle || model.dotScopePhase == .failed) {
                 KeyboardRestingDotBar(
                     tint: restingTint,
                     leadingInset: CGFloat(leadInset),
