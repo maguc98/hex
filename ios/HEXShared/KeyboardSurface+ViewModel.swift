@@ -86,6 +86,12 @@ final class KeyboardViewModel: ObservableObject {
     @Published private(set) var speechLearningResultID: String?
     @Published private(set) var didLearnSpeechSample = false
     @Published private(set) var speechLearningSaveFailed = false
+    private(set) var speechLearningText: String?
+    private(set) var speechLearningHeard: String?
+    private(set) var speechLearningLanguage: String?
+    private(set) var speechLearningTranslation: String?
+    private(set) var speechLearningTranslationLanguage: String?
+    private(set) var speechLearningDuration: TimeInterval = 0
 
     var canLearnSpeechSample: Bool {
         hasFullAccess && (stagePhase == .idle || stagePhase == .failed) && speechLearningResultID != nil
@@ -112,12 +118,34 @@ final class KeyboardViewModel: ObservableObject {
         }
     }
 
-    func offerSpeechLearning(resultID: String?) {
-        guard speechLearningResultID != resultID else { return }
+    func offerSpeechLearning(
+        resultID: String?,
+        text: String? = nil,
+        heard: String? = nil,
+        language: String? = nil,
+        translatedText: String? = nil,
+        translatedLanguage: String? = nil,
+        duration: TimeInterval = 0
+    ) {
+        if speechLearningResultID == resultID {
+            if let text { speechLearningText = text }
+            if let heard { speechLearningHeard = heard }
+            if let language { speechLearningLanguage = language }
+            if let translatedText { speechLearningTranslation = translatedText }
+            if let translatedLanguage { speechLearningTranslationLanguage = translatedLanguage }
+            if duration > 0 { speechLearningDuration = duration }
+            return
+        }
         withAnimation(HexMotion.stageAnimation(reduceMotion: UIAccessibility.isReduceMotionEnabled)) {
             speechLearningResultID = resultID
             didLearnSpeechSample = false
             speechLearningSaveFailed = false
+            speechLearningText = resultID == nil ? nil : text
+            speechLearningHeard = resultID == nil ? nil : heard
+            speechLearningLanguage = resultID == nil ? nil : language
+            speechLearningTranslation = resultID == nil ? nil : translatedText
+            speechLearningTranslationLanguage = resultID == nil ? nil : translatedLanguage
+            speechLearningDuration = resultID == nil ? 0 : max(0, duration)
         }
     }
 
