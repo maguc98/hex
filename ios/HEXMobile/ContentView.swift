@@ -517,8 +517,15 @@ struct ContentView: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
+            if dictation.learningAudioStagingFailed {
+                Label("录音暂存失败；仍可点击「加入学习」保存原句和译文。", systemImage: "info.circle")
+                    .font(.system(size: 12))
+                    .foregroundStyle(HexTheme.textMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             if dictation.learningSaveFailed {
-                Label("录音暂存失败；重试仍可保存原句和译文。", systemImage: "exclamationmark.triangle")
+                Label("学习记录保存失败；请点击「重试加入学习」。", systemImage: "exclamationmark.triangle")
                     .font(.system(size: 12))
                     .foregroundStyle(HexTheme.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
