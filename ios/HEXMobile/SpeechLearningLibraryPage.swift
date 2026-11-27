@@ -33,7 +33,7 @@ struct SpeechLearningLibraryPage: View {
                         Text("句子学习")
                             .font(.system(size: 17, weight: .semibold))
                             .foregroundStyle(HexTheme.textBase)
-                        Text("已保存 \(records.count) 条 · 最多保存 12 条")
+                        Text("已保存 \(records.count) 条 · 不限条数")
                             .font(.system(size: 12))
                             .foregroundStyle(HexTheme.textMuted)
                     }
