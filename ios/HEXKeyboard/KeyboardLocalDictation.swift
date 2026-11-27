@@ -645,6 +645,7 @@ final class KeyboardLocalDictation {
                 }
             } else {
                 loudness = max(-62, rawDB)
+            }
         case .state(let state):
             guard isCapturing(jobID) else { return }
             let now = Date().timeIntervalSince1970
