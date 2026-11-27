@@ -689,10 +689,16 @@ final class KeyboardViewController: UIInputViewController {
         viewModel.onLearnSpeechSample = { [weak self] in
             guard let self, let resultID = self.viewModel.speechLearningResultID else { return }
             let store = SpeechLearningStore()
-            var hasPending = store.hasPending(resultID: resultID)
-            if !hasPending, let text = self.viewModel.speechLearningText {
-                hasPending = store.stagePendingText(
-                    resultID: resultID,
+            let hasPending = store.hasPending(resultID: resultID)
+            var saved = store.isSavedSample(id: resultID)
+            if !saved && hasPending {
+                saved = store.confirmPending(resultID: resultID) && store.isSavedSample(id: resultID)
+            }
+            // Use the direct text-only commit as the reliable fallback, not another pending
+            // staging round. It independently writes and verifies the shared manifest.
+            if !saved, let text = self.viewModel.speechLearningText {
+                saved = store.saveTextSample(
+                    id: resultID,
                     text: text,
                     heard: self.viewModel.speechLearningHeard,
                     translatedText: self.viewModel.speechLearningTranslation,
@@ -701,15 +707,13 @@ final class KeyboardViewController: UIInputViewController {
                     duration: self.viewModel.speechLearningDuration
                 )
             }
-            if (hasPending || store.isSavedSample(id: resultID)),
-               store.confirmPending(resultID: resultID),
-               store.isSavedSample(id: resultID) {
+            if saved && store.isSavedSample(id: resultID) {
                 self.viewModel.markSpeechSampleLearned()
                 UIAccessibility.post(notification: .announcement, argument: "已加入学习")
             } else {
-                // Keep the candidate and its text metadata so another tap can retry the write.
                 self.viewModel.markSpeechSampleSaveFailed()
-                UIAccessibility.post(notification: .announcement, argument: "保存失败，请重试")
+                UIAccessibility.post(notification: .announcement, argument: "保存失败：共享存储不可写或记录校验失败")
+                KeyboardProbeLog.shared.write("speech learning save failed: id=\(resultID), pending=\(hasPending), text=\(self.viewModel.speechLearningText != nil)")
             }
         }
         viewModel.onDictateTap = { [weak self] in self?.startWarmDictation() }
