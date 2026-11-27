@@ -690,9 +690,11 @@ final class KeyboardViewController: UIInputViewController {
             guard let self, let resultID = self.viewModel.speechLearningResultID else { return }
             if SpeechLearningStore().confirmPending(resultID: resultID) {
                 self.viewModel.markSpeechSampleLearned()
-                UIAccessibility.post(notification: .announcement, argument: "已学习")
+                UIAccessibility.post(notification: .announcement, argument: "已加入学习")
             } else {
-                self.viewModel.offerSpeechLearning(resultID: nil)
+                // Keep the action visible so the user can retry; never silently remove it.
+                self.viewModel.markSpeechSampleSaveFailed()
+                UIAccessibility.post(notification: .announcement, argument: "保存失败，请重试")
             }
         }
         viewModel.onDictateTap = { [weak self] in self?.startWarmDictation() }
@@ -1035,17 +1037,16 @@ final class KeyboardViewController: UIInputViewController {
         }
         refreshOfferedDictation(app: appSnapshot, now: now)
 
-        // Only offer Learn for the exact result that was inserted, and only while its
-        // short-lived original WAV is still staged in the local App Group.
+        // Associate the candidate with the exact inserted result ID. Do not gate visibility
+        // on the WAV file lookup: a missing/late audio copy must not hide the Learning action.
+        // Text and translation metadata are staged independently from the audio file.
         let insertedID = bridge.lastInsertedResultID
         let learningOfferChanged = viewModel.speechLearningResultID != insertedID
-        let learningCheckIsDue = now - lastSpeechLearningCheckAt >= 5
-        if !(viewModel.didLearnSpeechSample && viewModel.speechLearningResultID == insertedID),
-           learningOfferChanged || learningCheckIsDue {
-            let learningID = insertedID.flatMap {
-                SpeechLearningStore().hasPending(resultID: $0) ? $0 : nil
-            }
-            viewModel.offerSpeechLearning(resultID: learningID)
+        let learningCheckIsDue = now - lastSpeechLearningCheckAt >= 0.5
+        if learningOfferChanged || learningCheckIsDue {
+            let store = SpeechLearningStore()
+            let candidateID = insertedID.flatMap { store.isSavedSample(id: $0) ? nil : $0 }
+            viewModel.offerSpeechLearning(resultID: candidateID)
             lastSpeechLearningCheckAt = now
         }
 
@@ -1201,6 +1202,13 @@ final class KeyboardViewController: UIInputViewController {
         )
         observeDictationEdits(fromKeys: true)
         bridge.lastInsertedResultID = resultID
+        // Set the Learning candidate at the single insertion point shared by local,
+        // Hex-session and recovered/held dictations. The follow-up poll only reconciles it.
+        let alreadySaved = SpeechLearningStore().isSavedSample(id: resultID)
+        viewModel.offerSpeechLearning(resultID: alreadySaved ? nil : resultID)
+        KeyboardProbeLog.shared.write(
+            "speech learning candidate attached: source=\(source), id=\(resultID), saved=\(alreadySaved)"
+        )
         showTranslationNote(translationFailure)
     }
 
