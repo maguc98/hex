@@ -2,7 +2,7 @@ import Foundation
 
 nonisolated struct SpeechLearningSample: Codable, Equatable, Identifiable, Sendable {
     let id: String
-    /// What was actually spoken, in `language`; this is the phrase used as a recognition hint.
+    /// What was actually spoken, in \`language\`; this is the phrase used as a recognition hint.
     let text: String
     let heard: String?
     let language: String
@@ -27,6 +27,11 @@ nonisolated struct SpeechLearningPending: Codable, Equatable, Sendable {
     let audioFileName: String
 }
 
+private struct SpeechLearningDiskState: Codable, Equatable, Sendable {
+    var pending: [SpeechLearningPending] = []
+    var samples: [SpeechLearningSample] = []
+}
+
 /// User-confirmed speech examples shared by the app and keyboard through their App Group.
 /// A translated dictation keeps its spoken sentence and translation together; recognition hints
 /// always use the spoken-language sentence, never the translated text.
@@ -49,6 +54,7 @@ nonisolated struct SpeechLearningStore {
     private let now: () -> TimeInterval
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private let manifestName = "learning-store-v1.json"
 
     init(
         defaults: UserDefaults? = UserDefaults(suiteName: KeyboardBridge.appGroup),
@@ -62,8 +68,8 @@ nonisolated struct SpeechLearningStore {
         self.now = now
     }
 
-    /// Copies this result's original WAV into a short-lived App Group staging area.
-    /// The source can then be deleted by the transcription pipeline as it was before.
+    /// Copies the original audio when possible and persists the sentence independently.
+    /// A missing/unavailable WAV must never prevent the text and translation being saved.
     @discardableResult
     func stagePendingAudio(
         from sourceURL: URL,
@@ -78,12 +84,10 @@ nonisolated struct SpeechLearningStore {
         let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let cleanTranslation = translatedText?.trimmingCharacters(in: .whitespacesAndNewlines)
         let pairedTranslation = cleanTranslation?.isEmpty == false ? cleanTranslation : nil
-        guard validID(resultID), !cleanText.isEmpty, let defaults else { return false }
+        guard validID(resultID), !cleanText.isEmpty else { return false }
 
-        // A failed audio copy must not discard an otherwise valid learning sentence.
-        // Keep the transcript/translation candidate, and mark its audio as unavailable.
         var audioFileName = ""
-        if duration > 0, duration <= Self.maximumSampleDuration,
+        if duration.isFinite, duration > 0, duration <= Self.maximumSampleDuration,
            fileManager.fileExists(atPath: sourceURL.path),
            let attributes = try? fileManager.attributesOfItem(atPath: sourceURL.path),
            let size = attributes[.size] as? NSNumber,
@@ -100,7 +104,7 @@ nonisolated struct SpeechLearningStore {
             }
         }
 
-        pruneExpiredPending()
+        let createdAt = now()
         let record = SpeechLearningPending(
             id: resultID,
             text: cleanText,
@@ -108,21 +112,28 @@ nonisolated struct SpeechLearningStore {
             language: language,
             translatedText: pairedTranslation,
             translatedLanguage: pairedTranslation == nil ? nil : translatedLanguage,
-            createdAt: now(),
-            expiresAt: now() + Self.pendingLifetime,
+            createdAt: createdAt,
+            expiresAt: createdAt + Self.pendingLifetime,
             duration: min(max(duration.isFinite ? duration : 0, 0), Self.maximumSampleDuration),
             audioFileName: audioFileName
         )
-        var records = readPending().filter { $0.id != resultID }
-        records.append(record)
-        guard let data = try? encoder.encode(records) else {
-            if !audioFileName.isEmpty, let directory = directory(named: "Pending", create: false) {
-                try? fileManager.removeItem(at: directory.appendingPathComponent(audioFileName))
-            }
-            return false
+
+        var expiredAudioFiles: [String] = []
+        let committed = updateState { state -> Bool? in
+            expiredAudioFiles = state.pending
+                .filter { $0.expiresAt <= createdAt }
+                .map(\.audioFileName)
+                .filter { !$0.isEmpty }
+            state.pending.removeAll { $0.expiresAt <= createdAt || $0.id == resultID }
+            state.pending.append(record)
+            return true
+        } ?? false
+
+        if !committed, !audioFileName.isEmpty, let directory = directory(named: "Pending", create: false) {
+            try? fileManager.removeItem(at: directory.appendingPathComponent(audioFileName))
         }
-        defaults.set(data, forKey: Key.pending)
-        return true
+        removeAudioFiles(expiredAudioFiles, from: "Pending")
+        return committed && hasPending(resultID: resultID)
     }
 
     /// Removes expired, unconfirmed recordings. Safe to call periodically while the keyboard is visible.
@@ -130,86 +141,132 @@ nonisolated struct SpeechLearningStore {
         pruneExpiredPending()
     }
 
-    /// True only while the matching audio sample is still staged and can be confirmed.
+    /// True only while the matching text/translation candidate is still staged.
+    /// If its WAV vanished, convert it to a text-only candidate instead of dropping it.
     func hasPending(resultID: String) -> Bool {
-        pruneExpiredPending()
-        guard validID(resultID), let record = readPending().first(where: { $0.id == resultID }) else {
-            return false
-        }
-        guard record.expiresAt > now() else {
-            removePending(record)
-            return false
-        }
-        // Empty audioFileName is a text-only fallback. If a staged WAV disappeared, preserve
-        // the sentence and translation so the user can still add them to the library.
-        guard !record.audioFileName.isEmpty else { return true }
-        guard let directory = directory(named: "Pending", create: false),
-              fileManager.fileExists(atPath: directory.appendingPathComponent(record.audioFileName).path)
-        else {
-            let textOnly = SpeechLearningPending(
-                id: record.id, text: record.text, heard: record.heard, language: record.language,
-                translatedText: record.translatedText, translatedLanguage: record.translatedLanguage,
-                createdAt: record.createdAt, expiresAt: record.expiresAt,
-                duration: record.duration, audioFileName: ""
-            )
-            var records = readPending().filter { $0.id != record.id }
-            records.append(textOnly)
-            write(records, forKey: Key.pending)
-            return true
-        }
-        return true
-    }
+        guard validID(resultID) else { return false }
 
-    /// Promotes the exact audio/transcript pair only after the user taps Learn.
-    @discardableResult
-    func confirmPending(resultID: String) -> Bool {
-        guard hasPending(resultID: resultID),
-              let record = readPending().first(where: { $0.id == resultID }) else { return false }
+        var expiredAudioFile: String?
+        let present = updateState { state -> Bool? in
+            guard let index = state.pending.firstIndex(where: { $0.id == resultID }) else {
+                return false
+            }
+            let record = state.pending[index]
+            guard record.expiresAt > now() else {
+                expiredAudioFile = record.audioFileName
+                state.pending.remove(at: index)
+                return false
+            }
 
-        var samplesDirectory = directory(named: "Samples", create: false)
-        var savedAudioFileName = ""
-        if !record.audioFileName.isEmpty,
-           let pendingDirectory = directory(named: "Pending", create: false) {
-            samplesDirectory = directory(named: "Samples", create: true)
-            if let samplesDirectory {
-                let source = pendingDirectory.appendingPathComponent(record.audioFileName)
-                let destinationName = record.id + ".wav"
-                let destination = samplesDirectory.appendingPathComponent(destinationName)
-                try? fileManager.removeItem(at: destination)
-                do {
-                    try fileManager.moveItem(at: source, to: destination)
-                    savedAudioFileName = destinationName
-                } catch {
-                    // Preserve the study text even when the audio file cannot be moved.
-                    savedAudioFileName = ""
+            if !record.audioFileName.isEmpty {
+                let pendingDirectory = directory(named: "Pending", create: false)
+                let audioExists = pendingDirectory.map {
+                    fileManager.fileExists(atPath: $0.appendingPathComponent(record.audioFileName).path)
+                } ?? false
+                if !audioExists {
+                    state.pending[index] = SpeechLearningPending(
+                        id: record.id,
+                        text: record.text,
+                        heard: record.heard,
+                        language: record.language,
+                        translatedText: record.translatedText,
+                        translatedLanguage: record.translatedLanguage,
+                        createdAt: record.createdAt,
+                        expiresAt: record.expiresAt,
+                        duration: record.duration,
+                        audioFileName: ""
+                    )
                 }
             }
+            return true
+        } ?? false
+
+        if let expiredAudioFile, !expiredAudioFile.isEmpty {
+            removeAudioFiles([expiredAudioFile], from: "Pending")
         }
+        return present
+    }
 
-        let sample = SpeechLearningSample(
-            id: record.id,
-            text: record.text,
-            heard: record.heard,
-            language: record.language,
-            translatedText: record.translatedText,
-            translatedLanguage: record.translatedLanguage,
-            createdAt: record.createdAt,
-            duration: record.duration,
-            audioFileName: savedAudioFileName
-        )
-        var allSamples = readSamples().filter { $0.id != sample.id }
-        allSamples.append(sample)
-        allSamples.sort { $0.createdAt > $1.createdAt }
+    /// Commits a pending sample atomically, then verifies it by reading the shared store again.
+    /// The pending record is retained until the new sample manifest has been written and verified.
+    @discardableResult
+    func confirmPending(resultID: String) -> Bool {
+        guard validID(resultID) else { return false }
+        if isSavedSample(id: resultID) { return true }
+        guard hasPending(resultID: resultID),
+              let pending = readState().pending.first(where: { $0.id == resultID }) else { return false }
 
-        let retained = Array(allSamples.prefix(Self.maximumSamples))
-        let retainedNames = Set(retained.map(\.audioFileName))
-        for old in allSamples where !old.audioFileName.isEmpty && !retainedNames.contains(old.audioFileName) {
-            if let samplesDirectory {
-                try? fileManager.removeItem(at: samplesDirectory.appendingPathComponent(old.audioFileName))
+        var savedAudioFileName = ""
+        var copiedAudioURL: URL?
+        if !pending.audioFileName.isEmpty,
+           let pendingDirectory = directory(named: "Pending", create: false),
+           let samplesDirectory = directory(named: "Samples", create: true) {
+            let source = pendingDirectory.appendingPathComponent(pending.audioFileName)
+            let destinationName = pending.id + ".wav"
+            let destination = samplesDirectory.appendingPathComponent(destinationName)
+            try? fileManager.removeItem(at: destination)
+            do {
+                try fileManager.copyItem(at: source, to: destination)
+                savedAudioFileName = destinationName
+                copiedAudioURL = destination
+            } catch {
+                // Save the study sentence even if its optional audio cannot be copied.
+                savedAudioFileName = ""
             }
         }
-        write(retained, forKey: Key.samples)
-        removePending(record)
+
+        var pendingAudioFileToRemove: String?
+        var obsoleteSampleAudioFiles: [String] = []
+        let committed = updateState { state -> Bool? in
+            if state.samples.contains(where: { $0.id == resultID }) {
+                return true
+            }
+            guard let index = state.pending.firstIndex(where: { $0.id == resultID }) else {
+                return nil
+            }
+            let current = state.pending[index]
+            guard current.expiresAt > now() else { return nil }
+
+            pendingAudioFileToRemove = current.audioFileName
+            let finalAudioName = savedAudioFileName.isEmpty ? "" : savedAudioFileName
+            let sample = SpeechLearningSample(
+                id: current.id,
+                text: current.text,
+                heard: current.heard,
+                language: current.language,
+                translatedText: current.translatedText,
+                translatedLanguage: current.translatedLanguage,
+                createdAt: current.createdAt,
+                duration: current.duration,
+                audioFileName: finalAudioName
+            )
+
+            var allSamples = state.samples.filter { $0.id != sample.id }
+            allSamples.append(sample)
+            allSamples.sort { $0.createdAt > $1.createdAt }
+            let retained = Array(allSamples.prefix(Self.maximumSamples))
+            let retainedIDs = Set(retained.map(\.id))
+            obsoleteSampleAudioFiles = allSamples
+                .filter { !retainedIDs.contains($0.id) }
+                .map(\.audioFileName)
+                .filter { !$0.isEmpty }
+
+            state.samples = retained
+            state.pending.removeAll { $0.id == resultID }
+            return true
+        } ?? false
+
+        guard committed, isSavedSample(id: resultID) else {
+            if let copiedAudioURL {
+                try? fileManager.removeItem(at: copiedAudioURL)
+            }
+            return false
+        }
+
+        if let pendingAudioFileToRemove, !pendingAudioFileToRemove.isEmpty {
+            removeAudioFiles([pendingAudioFileToRemove], from: "Pending")
+        }
+        removeAudioFiles(obsoleteSampleAudioFiles, from: "Samples")
         return true
     }
 
@@ -218,7 +275,7 @@ nonisolated struct SpeechLearningStore {
         let requestedLanguage = language.map(Self.languageFamily)
         var seen = Set<String>()
         var hints: [String] = []
-        for sample in readSamples().sorted(by: { $0.createdAt > $1.createdAt }) {
+        for sample in readState().samples.sorted(by: { $0.createdAt > $1.createdAt }) {
             if let requestedLanguage, Self.languageFamily(sample.language) != requestedLanguage { continue }
             let phrase = sample.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard phrase.count >= 2, phrase.count <= Self.maximumHintLength else { continue }
@@ -231,59 +288,107 @@ nonisolated struct SpeechLearningStore {
     }
 
     func samples() -> [SpeechLearningSample] {
-        readSamples().sorted { $0.createdAt > $1.createdAt }
+        readState().samples.sorted { $0.createdAt > $1.createdAt }
     }
 
     func isSavedSample(id: String) -> Bool {
-        readSamples().contains { $0.id == id }
+        readState().samples.contains { $0.id == id }
     }
 
     func audioURL(for sample: SpeechLearningSample) -> URL? {
         guard !sample.audioFileName.isEmpty,
-              let dir = directory(named: "Samples", create: false) else { return nil }
-        let url = dir.appendingPathComponent(sample.audioFileName)
+              let directory = directory(named: "Samples", create: false) else { return nil }
+        let url = directory.appendingPathComponent(sample.audioFileName)
         return fileManager.fileExists(atPath: url.path) ? url : nil
     }
 
     @discardableResult
     func deleteSample(id: String) -> Bool {
-        guard let sample = readSamples().first(where: { $0.id == id }) else { return false }
-        if !sample.audioFileName.isEmpty, let dir = directory(named: "Samples", create: false) {
-            try? fileManager.removeItem(at: dir.appendingPathComponent(sample.audioFileName))
+        var removedAudioFile: String?
+        let removed = updateState { state -> Bool? in
+            guard let sample = state.samples.first(where: { $0.id == id }) else { return nil }
+            removedAudioFile = sample.audioFileName
+            state.samples.removeAll { $0.id == id }
+            return true
+        } ?? false
+        guard removed, !isSavedSample(id: id) else { return false }
+        if let removedAudioFile, !removedAudioFile.isEmpty {
+            removeAudioFiles([removedAudioFile], from: "Samples")
         }
-        write(readSamples().filter { $0.id != id }, forKey: Key.samples)
         return true
     }
 
-    private func readPending() -> [SpeechLearningPending] {
-        guard let data = defaults?.data(forKey: Key.pending) else { return [] }
-        return (try? decoder.decode([SpeechLearningPending].self, from: data)) ?? []
-    }
-
-    private func readSamples() -> [SpeechLearningSample] {
-        guard let data = defaults?.data(forKey: Key.samples) else { return [] }
-        return (try? decoder.decode([SpeechLearningSample].self, from: data)) ?? []
-    }
-
-    private func write<T: Encodable>(_ values: [T], forKey key: String) {
-        guard let data = try? encoder.encode(values) else { return }
-        defaults?.set(data, forKey: key)
-    }
-
-    private func removePending(_ record: SpeechLearningPending) {
-        if !record.audioFileName.isEmpty, let directory = directory(named: "Pending", create: false) {
-            try? fileManager.removeItem(at: directory.appendingPathComponent(record.audioFileName))
+    private func readState() -> SpeechLearningDiskState {
+        if let url = manifestURL(create: false),
+           let data = try? Data(contentsOf: url),
+           let state = try? decoder.decode(SpeechLearningDiskState.self, from: data) {
+            return state
         }
-        write(readPending().filter { $0.id != record.id }, forKey: Key.pending)
+        return legacyDefaultsState()
+    }
+
+    /// Performs a cross-process coordinated, atomic manifest update and reads it back before
+    /// returning success. The keyboard and app always consult this same App Group file.
+    private func updateState<T>(_ update: (inout SpeechLearningDiskState) -> T?) -> T? {
+        guard let manifest = manifestURL(create: true) else { return nil }
+        if !fileManager.fileExists(atPath: manifest.path) {
+            guard fileManager.createFile(atPath: manifest.path, contents: Data()) else { return nil }
+        }
+
+        var result: T?
+        var coordinationError: NSError?
+        let coordinator = NSFileCoordinator(filePresenter: nil)
+        coordinator.coordinate(writingItemAt: manifest, options: .forReplacing, error: &coordinationError) { coordinatedURL in
+            var state: SpeechLearningDiskState
+            if let data = try? Data(contentsOf: coordinatedURL),
+               let decoded = try? decoder.decode(SpeechLearningDiskState.self, from: data) {
+                state = decoded
+            } else {
+                state = legacyDefaultsState()
+            }
+
+            guard let value = update(&state),
+                  let data = try? encoder.encode(state) else { return }
+            do {
+                try data.write(to: coordinatedURL, options: .atomic)
+                let persistedData = try Data(contentsOf: coordinatedURL)
+                let persistedState = try decoder.decode(SpeechLearningDiskState.self, from: persistedData)
+                guard persistedState == state else { return }
+                result = value
+            } catch {
+                result = nil
+            }
+        }
+        guard coordinationError == nil else { return nil }
+        return result
+    }
+
+    private func legacyDefaultsState() -> SpeechLearningDiskState {
+        let pending = defaults?.data(forKey: Key.pending)
+            .flatMap { try? decoder.decode([SpeechLearningPending].self, from: $0) } ?? []
+        let samples = defaults?.data(forKey: Key.samples)
+            .flatMap { try? decoder.decode([SpeechLearningSample].self, from: $0) } ?? []
+        return SpeechLearningDiskState(pending: pending, samples: samples)
     }
 
     private func pruneExpiredPending() {
-        for record in readPending() where record.expiresAt <= now() {
-            removePending(record)
+        var expiredAudioFiles: [String] = []
+        let changed = updateState { state -> Bool? in
+            let retained = state.pending.filter { $0.expiresAt > now() }
+            guard retained.count != state.pending.count else { return nil }
+            expiredAudioFiles = state.pending
+                .filter { $0.expiresAt <= now() }
+                .map(\.audioFileName)
+                .filter { !$0.isEmpty }
+            state.pending = retained
+            return true
+        }
+        if changed == true {
+            removeAudioFiles(expiredAudioFiles, from: "Pending")
         }
     }
 
-    private func directory(named name: String, create: Bool) -> URL? {
+    private func rootDirectory(create: Bool) -> URL? {
         let root: URL
         if let suppliedDirectoryURL {
             root = suppliedDirectoryURL
@@ -293,6 +398,22 @@ nonisolated struct SpeechLearningStore {
             ) else { return nil }
             root = container.appendingPathComponent("Library/Application Support/HEXSpeechLearning", isDirectory: true)
         }
+        if create {
+            do {
+                try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+            } catch {
+                return nil
+            }
+        }
+        return root
+    }
+
+    private func manifestURL(create: Bool) -> URL? {
+        rootDirectory(create: create)?.appendingPathComponent(manifestName, isDirectory: false)
+    }
+
+    private func directory(named name: String, create: Bool) -> URL? {
+        guard let root = rootDirectory(create: create) else { return nil }
         let url = root.appendingPathComponent(name, isDirectory: true)
         if create {
             do {
@@ -302,6 +423,13 @@ nonisolated struct SpeechLearningStore {
             }
         }
         return url
+    }
+
+    private func removeAudioFiles(_ names: [String], from directoryName: String) {
+        guard !names.isEmpty, let directory = directory(named: directoryName, create: false) else { return }
+        for name in names where !name.isEmpty {
+            try? fileManager.removeItem(at: directory.appendingPathComponent(name))
+        }
     }
 
     private func validID(_ id: String) -> Bool {
