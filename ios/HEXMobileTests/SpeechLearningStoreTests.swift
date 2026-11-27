@@ -127,6 +127,51 @@ final class SpeechLearningStoreTests: XCTestCase {
         XCTAssertNotNil(store.audioURL(for: sample))
     }
 
+    func testSeparateAppAndKeyboardStoresShareVerifiedManifest() throws {
+        let audioURL = directory.appendingPathComponent("shared-capture.wav")
+        try Data(repeating: 7, count: 128).write(to: audioURL)
+        let libraryURL = directory.appendingPathComponent("shared-library", isDirectory: true)
+        let appStore = SpeechLearningStore(defaults: defaults, directoryURL: libraryURL)
+        let keyboardStore = SpeechLearningStore(defaults: nil, directoryURL: libraryURL)
+
+        XCTAssertTrue(appStore.stagePendingAudio(
+            from: audioURL,
+            resultID: "shared-1",
+            text: "保存后两个进程都应该读到。",
+            heard: "保存后两个进程都应该读到",
+            translatedText: "Both processes should see this after saving.",
+            translatedLanguage: "en",
+            language: "zh-CN",
+            duration: 3
+        ))
+
+        XCTAssertTrue(keyboardStore.confirmPending(resultID: "shared-1"))
+        XCTAssertTrue(appStore.isSavedSample(id: "shared-1"))
+        XCTAssertEqual(appStore.samples().map(\.id), ["shared-1"])
+        XCTAssertTrue(keyboardStore.confirmPending(resultID: "shared-1"), "Confirming the same result twice is idempotent.")
+        XCTAssertEqual(keyboardStore.samples().count, 1)
+    }
+
+    func testConfirmedRecordRemainsPendingUntilManifestCanBeReadBack() throws {
+        let audioURL = directory.appendingPathComponent("verification-capture.wav")
+        try Data(repeating: 9, count: 128).write(to: audioURL)
+        let libraryURL = directory.appendingPathComponent("verification-library", isDirectory: true)
+        let appStore = SpeechLearningStore(defaults: defaults, directoryURL: libraryURL)
+        let separateReader = SpeechLearningStore(defaults: nil, directoryURL: libraryURL)
+
+        XCTAssertTrue(appStore.stagePendingAudio(
+            from: audioURL,
+            resultID: "verified-1",
+            text: "这条记录必须能被重新读取。",
+            heard: nil,
+            language: "zh-CN",
+            duration: 2
+        ))
+        XCTAssertTrue(appStore.confirmPending(resultID: "verified-1"))
+        XCTAssertTrue(separateReader.isSavedSample(id: "verified-1"))
+        XCTAssertFalse(separateReader.hasPending(resultID: "verified-1"))
+    }
+
     func testLegacySavedSamplesDecodeWithoutTranslationFields() throws {
         let legacy = """
         [{"id":"legacy-1","text":"Good morning","heard":"good morning","language":"en-US","createdAt":1,"duration":1.2,"audioFileName":"legacy-1.wav"}]
