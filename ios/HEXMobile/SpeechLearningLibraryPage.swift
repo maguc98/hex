@@ -54,7 +54,7 @@ struct SpeechLearningLibraryPage: View {
                             .font(.system(size: 11))
                             .foregroundStyle(storageDiagnostic == "共享空间可读写" ? HexTheme.textMuted : HexTheme.danger)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text("键盘与 Hex App 必须共享同一个 App Group，才能互相读取学习记录。")
+                        Text("共享容器权限暂不可用。手动学习记录会保存在 Hex App 本机；键盘共享记录需要修复签名权限后才能同步。")
                             .font(.system(size: 11))
                             .foregroundStyle(HexTheme.textMuted)
                     }
@@ -255,7 +255,7 @@ struct SpeechLearningLibraryPage: View {
         guard !isManualRecording, let audioURL = manualRecordingURL else { return }
         let sentence = manualSentence.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !sentence.isEmpty else { return }
-        let duration = AVAudioPlayer(contentsOf: audioURL).duration
+        let duration = (try? AVAudioPlayer(contentsOf: audioURL).duration) ?? 0
         let id = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         if store.saveManualAudioSample(
             id: id,
