@@ -1282,41 +1282,6 @@ struct KeyboardSurfaceView: View {
                 anchor: .trailing
             )
 
-            // Keep the Learning action in the large voice well, beside Dictate / Set up.
-            // The outer row stays mounted; only its reveal state changes with the pending sample.
-            HStack(spacing: 0) {
-                Button {
-                    guard model.canLearnSpeechSample, !learned else { return }
-                    model.onKeyFeedback?()
-                    model.onLearnSpeechSample?()
-                } label: {
-                    Label(
-                        saveFailed ? "重试保存" : (learned ? "已加入" : "加入学习"),
-                        systemImage: saveFailed ? "arrow.clockwise.circle.fill" :
-                            (learned ? "checkmark.circle.fill" : "book.closed.fill")
-                    )
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(learned ? p.textMuted : p.textBase)
-                        .padding(.horizontal, 11)
-                        .frame(height: Self.controlHeight)
-                        .background(learned ? p.chipIdleFill : p.chipActiveFill, in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .disabled(!model.canLearnSpeechSample || learned)
-                .accessibilityLabel(saveFailed ? "重试保存学习记录" : (learned ? "已加入学习" : "加入学习"))
-                .accessibilityHint("保存这句话、译文和录音")
-
-                Spacer(minLength: 0)
-            }
-            .padding(.leading, Self.wellInset + 6)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .hexControlReveal(
-                model.canLearnSpeechSample,
-                reduceMotion: reduceMotion,
-                scale: 0.96,
-                blur: 1.5,
-                anchor: .leading
-            )
         }
         .frame(height: Self.wellHeight)
         .clipShape(Capsule())
