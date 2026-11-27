@@ -85,9 +85,10 @@ final class KeyboardViewModel: ObservableObject {
     /// The most recently inserted voice result that still has a staged local audio sample.
     @Published private(set) var speechLearningResultID: String?
     @Published private(set) var didLearnSpeechSample = false
+    @Published private(set) var speechLearningSaveFailed = false
 
     var canLearnSpeechSample: Bool {
-        hasFullAccess && stagePhase == .idle && speechLearningResultID != nil
+        hasFullAccess && (stagePhase == .idle || stagePhase == .failed) && speechLearningResultID != nil
     }
 
     /// Duration shown beside Paste dictation when the keyboard closed during recording.
@@ -116,6 +117,7 @@ final class KeyboardViewModel: ObservableObject {
         withAnimation(HexMotion.stageAnimation(reduceMotion: UIAccessibility.isReduceMotionEnabled)) {
             speechLearningResultID = resultID
             didLearnSpeechSample = false
+            speechLearningSaveFailed = false
         }
     }
 
@@ -123,6 +125,14 @@ final class KeyboardViewModel: ObservableObject {
         guard speechLearningResultID != nil else { return }
         withAnimation(.easeOut(duration: 0.18)) {
             didLearnSpeechSample = true
+            speechLearningSaveFailed = false
+        }
+    }
+
+    func markSpeechSampleSaveFailed() {
+        guard speechLearningResultID != nil else { return }
+        withAnimation(.easeOut(duration: 0.18)) {
+            speechLearningSaveFailed = true
         }
     }
 
