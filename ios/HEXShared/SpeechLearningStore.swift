@@ -420,7 +420,15 @@ nonisolated struct SpeechLearningStore {
         let requestedLanguage = language.map(Self.languageFamily)
         var seen = Set<String>()
         var hints: [String] = []
-        for sample in readState().samples.sorted(by: { $0.createdAt > $1.createdAt }) {
+        let orderedSamples = readState().samples.sorted { lhs, rhs in
+            let lhsIsVoiceProfile = VoiceLearningProfile.isVoiceSample(lhs)
+            let rhsIsVoiceProfile = VoiceLearningProfile.isVoiceSample(rhs)
+            if lhsIsVoiceProfile != rhsIsVoiceProfile {
+                return lhsIsVoiceProfile
+            }
+            return lhs.createdAt > rhs.createdAt
+        }
+        for sample in orderedSamples {
             if let requestedLanguage, Self.languageFamily(sample.language) != requestedLanguage { continue }
             let phrase = sample.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard phrase.count >= 2, phrase.count <= Self.maximumHintLength else { continue }
