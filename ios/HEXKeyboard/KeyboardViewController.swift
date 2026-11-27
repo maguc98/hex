@@ -1040,14 +1040,18 @@ final class KeyboardViewController: UIInputViewController {
         // Associate the candidate with the exact inserted result ID. Do not gate visibility
         // on the WAV file lookup: a missing/late audio copy must not hide the Learning action.
         // Text and translation metadata are staged independently from the audio file.
-        let insertedID = bridge.lastInsertedResultID
-        let learningOfferChanged = viewModel.speechLearningResultID != insertedID
-        let learningCheckIsDue = now - lastSpeechLearningCheckAt >= 0.5
-        if learningOfferChanged || learningCheckIsDue {
-            let store = SpeechLearningStore()
-            let candidateID = insertedID.flatMap { store.isSavedSample(id: $0) ? nil : $0 }
-            viewModel.offerSpeechLearning(resultID: candidateID)
-            lastSpeechLearningCheckAt = now
+        if let insertedID = bridge.lastInsertedResultID {
+            let isCurrentCandidate = viewModel.speechLearningResultID == nil
+                || viewModel.speechLearningResultID == insertedID
+            let hasAlreadyShownSuccess = viewModel.didLearnSpeechSample
+                && viewModel.speechLearningResultID == insertedID
+            let learningCheckIsDue = now - lastSpeechLearningCheckAt >= 0.5
+            if isCurrentCandidate, !hasAlreadyShownSuccess,
+               viewModel.speechLearningResultID == nil || learningCheckIsDue {
+                let candidateID = SpeechLearningStore().isSavedSample(id: insertedID) ? nil : insertedID
+                viewModel.offerSpeechLearning(resultID: candidateID)
+                lastSpeechLearningCheckAt = now
+            }
         }
 
         syncLanguageState()
