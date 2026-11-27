@@ -11,6 +11,12 @@ struct SpeechLearningLibraryPage: View {
     @State private var playingID: String?
     @State private var deleteTarget: SpeechLearningSample?
     @State private var showingDeleteConfirmation = false
+    @State private var manualSentence = ""
+    @State private var manualRecordingURL: URL?
+    @State private var recorder: AVAudioRecorder?
+    @State private var isManualRecording = false
+    @State private var manualSaveMessage: String?
+    @State private var manualLanguage = "zh-CN"
 
     private var store: SpeechLearningStore { SpeechLearningStore() }
 
@@ -55,6 +61,70 @@ struct SpeechLearningLibraryPage: View {
                     Spacer(minLength: 0)
                 }
                 .padding(14)
+            }
+
+            SettingsCard {
+                VStack(alignment: .leading, spacing: 13) {
+                    Text("手动创建学习")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(HexTheme.textBase)
+                    Text("输入要学习的句子，再录制自己的语音。即使键盘共享权限暂时不可用，也可以在 Hex App 内保存和复习。")
+                        .font(.system(size: 12))
+                        .foregroundStyle(HexTheme.textMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    TextField("输入句子……", text: $manualSentence, axis: .vertical)
+                        .lineLimit(3...6)
+                        .font(.system(size: 15))
+                        .foregroundStyle(HexTheme.textBase)
+                        .padding(12)
+                        .background(HexTheme.bgDeep, in: RoundedRectangle(cornerRadius: 12))
+                    HStack(spacing: 10) {
+                        Button {
+                            if isManualRecording {
+                                stopManualRecording()
+                            } else {
+                                startManualRecording()
+                            }
+                        } label: {
+                            Label(isManualRecording ? "结束录音" : "录制语音", systemImage: isManualRecording ? "stop.circle.fill" : "mic.circle.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(isManualRecording ? HexTheme.danger : HexTheme.textBase)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 44)
+                                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                        Button {
+                            saveManualSample()
+                        } label: {
+                            Label("保存学习", systemImage: "bookmark.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(HexTheme.bgDeep)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 44)
+                                .background(HexTheme.success, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(manualSentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || manualRecordingURL == nil || isManualRecording)
+                        .opacity(manualSentence.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || manualRecordingURL == nil || isManualRecording ? 0.45 : 1)
+                    }
+                    if let audioURL = manualRecordingURL {
+                        Label("已录制语音：\(audioURL.lastPathComponent)", systemImage: "waveform")
+                            .font(.system(size: 11))
+                            .foregroundStyle(HexTheme.success)
+                    }
+                    if isManualRecording {
+                        Label("正在录音，请说出这句话……", systemImage: "record.circle")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(HexTheme.danger)
+                    }
+                    if let manualSaveMessage {
+                        Text(manualSaveMessage)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(HexTheme.success)
+                    }
+                }
+                .padding(16)
             }
 
             SettingsCard {
@@ -134,6 +204,74 @@ struct SpeechLearningLibraryPage: View {
             Text("这句话及其录音都会被删除，且无法恢复。")
         }
         .animation(HexMotion.settleAnimation(reduceMotion: reduceMotion), value: records.count)
+    }
+
+    private func startManualRecording() {
+        manualSaveMessage = nil
+        let session = AVAudioSession.sharedInstance()
+        session.requestRecordPermission { granted in
+            DispatchQueue.main.async {
+                guard granted else {
+                    manualSaveMessage = "没有麦克风权限，请在系统设置中允许 Hex 使用麦克风。"
+                    return
+                }
+                do {
+                    try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker, .allowBluetooth])
+                    try session.setActive(true)
+                    let url = FileManager.default.temporaryDirectory
+                        .appendingPathComponent("HexLearning-\(UUID().uuidString).m4a")
+                    let settings: [String: Any] = [
+                        AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
+                        AVSampleRateKey: 44_100,
+                        AVNumberOfChannelsKey: 1,
+                        AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue
+                    ]
+                    let audioRecorder = try AVAudioRecorder(url: url, settings: settings)
+                    audioRecorder.prepareToRecord()
+                    guard audioRecorder.record() else {
+                        manualSaveMessage = "录音启动失败，请重试。"
+                        return
+                    }
+                    recorder = audioRecorder
+                    manualRecordingURL = url
+                    isManualRecording = true
+                } catch {
+                    manualSaveMessage = "无法开始录音：\(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    private func stopManualRecording() {
+        recorder?.stop()
+        recorder = nil
+        isManualRecording = false
+        if manualRecordingURL == nil {
+            manualSaveMessage = "录音没有保存，请重新录制。"
+        }
+    }
+
+    private func saveManualSample() {
+        guard !isManualRecording, let audioURL = manualRecordingURL else { return }
+        let sentence = manualSentence.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !sentence.isEmpty else { return }
+        let duration = AVAudioPlayer(contentsOf: audioURL).duration
+        let id = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        if store.saveManualAudioSample(
+            id: id,
+            text: sentence,
+            audioURL: audioURL,
+            language: manualLanguage,
+            duration: duration
+        ) {
+            manualSaveMessage = "已保存到学习库！"
+            manualSentence = ""
+            manualRecordingURL = nil
+            try? FileManager.default.removeItem(at: audioURL)
+            reload()
+        } else {
+            manualSaveMessage = "保存失败，请检查句子和录音后重试。"
+        }
     }
 
     private func learningStep(number: String, title: String, detail: String) -> some View {
