@@ -490,6 +490,14 @@ private struct KeyboardRestingDotBar: View {
     }
 }
 
+/// Selects the Metal-free idle visual whenever the keyboard extension defers the
+/// live scope and the stage is presenting its idle action, including after a failure.
+enum KeyboardStageWaveformPresentation {
+    static func usesRestingVisual(defersDotScopeUntilActive: Bool, phase: DotScopePhase) -> Bool {
+        defersDotScopeUntilActive && (phase == .idle || phase == .failed)
+    }
+}
+
 struct KeyboardSurfaceView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -1172,7 +1180,14 @@ struct KeyboardSurfaceView: View {
         return ZStack {
             HexRecessedWell(isDark: p.isDark)
 
-            if defersDotScopeUntilActive && model.dotScopePhase == .idle {
+            // A failed session still presents the idle action (Set up / Dictate).
+            // Keep the lightweight resting waveform mounted in that state too: routing
+            // the failed phase into the Metal scope can leave this well visually empty
+            // when the failed scope has no drawable to present.
+            if KeyboardStageWaveformPresentation.usesRestingVisual(
+                defersDotScopeUntilActive: defersDotScopeUntilActive,
+                phase: model.dotScopePhase
+            ) {
                 KeyboardRestingDotBar(
                     tint: restingTint,
                     leadingInset: CGFloat(leadInset),
