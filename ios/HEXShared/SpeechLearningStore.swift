@@ -234,6 +234,10 @@ nonisolated struct SpeechLearningStore {
         readSamples().sorted { $0.createdAt > $1.createdAt }
     }
 
+    func isSavedSample(id: String) -> Bool {
+        readSamples().contains { $0.id == id }
+    }
+
     func audioURL(for sample: SpeechLearningSample) -> URL? {
         guard !sample.audioFileName.isEmpty,
               let dir = directory(named: "Samples", create: false) else { return nil }
