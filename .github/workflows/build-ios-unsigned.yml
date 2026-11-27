@@ -99,6 +99,46 @@ jobs:
           unzip -l Hex-iOS-unsigned.ipa | grep -E 'Payload/HEX.app/(Info.plist|PlugIns/.*\.appex/Info.plist)' || true
           echo "Created unsigned IPA: $IPA_SIZE"
 
+      - name: Prepare App Group signing diagnostics
+        run: |
+          set -euo pipefail
+          mkdir -p Signing-Diagnostics
+          cp ios/HEXMobile/HEXMobile.entitlements Signing-Diagnostics/Hex-App.entitlements
+          cp ios/HEXKeyboard/HEXKeyboard.entitlements Signing-Diagnostics/Hex-Keyboard.entitlements
+          cat > Signing-Diagnostics/README.txt <<'EOF'
+          Hex Learning Shared Storage - Signing Requirements
+
+          Both the Hex app and Hex Keyboard must be signed with provisioning profiles
+          that authorize the SAME App Group:
+
+          group.anomaly.hex.mobile
+
+          Bundle identifiers:
+          - App: anomaly.hex.mobile
+          - Keyboard extension: anomaly.hex.mobile.keyboard
+
+          When signing the IPA in a signing tool, select profiles for BOTH bundle IDs
+          that include the App Groups capability and authorize group.anomaly.hex.mobile.
+          The app and keyboard must use compatible certificates/team and profiles.
+          Do not remove the application-groups entitlement from either target.
+
+          These entitlement files are templates for signing. They do not grant the
+          capability by themselves; Apple's provisioning profile must authorize it.
+          EOF
+          plutil -lint Signing-Diagnostics/Hex-App.entitlements
+          plutil -lint Signing-Diagnostics/Hex-Keyboard.entitlements
+          grep -q 'group.anomaly.hex.mobile' Signing-Diagnostics/Hex-App.entitlements
+          grep -q 'group.anomaly.hex.mobile' Signing-Diagnostics/Hex-Keyboard.entitlements
+          echo "App Group signing requirements verified."
+
+      - name: Upload App Group signing diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hex-App-Group-Signing-Diagnostics
+          path: Signing-Diagnostics
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload Xcode build log on failure
         if: failure()
         uses: actions/upload-artifact@v4
