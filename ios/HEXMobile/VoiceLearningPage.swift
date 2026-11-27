@@ -27,6 +27,7 @@ struct VoiceLearningPage: View {
     @State private var hasAnyVoiceSamples = false
     @State private var previewPlayer: AVAudioPlayer?
     @State private var previewingStep: Int?
+    @State private var previewGeneration = UUID()
     @State private var recordingLimitTask: Task<Void, Never>?
     @State private var sharedStorageDiagnostic = SpeechLearningStore().sharedStorageDiagnostic()
 
@@ -116,6 +117,7 @@ struct VoiceLearningPage: View {
         }
         .onDisappear {
             isVisible = false
+            previewGeneration = UUID()
             previewPlayer?.stop()
             previewPlayer = nil
             previewingStep = nil
@@ -393,6 +395,10 @@ struct VoiceLearningPage: View {
             return
         }
         discardPendingRecording()
+        previewGeneration = UUID()
+        previewPlayer?.stop()
+        previewPlayer = nil
+        previewingStep = nil
         statusMessage = nil
         isRequestingPermission = true
 
@@ -535,6 +541,7 @@ struct VoiceLearningPage: View {
 
     private func previewVoiceSample(step: Int) {
         if previewingStep == step {
+            previewGeneration = UUID()
             previewPlayer?.stop()
             previewPlayer = nil
             previewingStep = nil
@@ -547,19 +554,22 @@ struct VoiceLearningPage: View {
             statusMessage = "找不到这组声音样本，请重新录制。"
             return
         }
+        previewGeneration = UUID()
+        let generation = previewGeneration
         previewPlayer?.stop()
         previewPlayer = player
         previewingStep = step
         player.play()
         Task { @MainActor in
             try? await Task.sleep(for: .seconds(player.duration))
-            guard previewingStep == step else { return }
+            guard previewGeneration == generation else { return }
             previewPlayer = nil
             previewingStep = nil
         }
     }
 
     private func clearProfile() {
+        previewGeneration = UUID()
         previewPlayer?.stop()
         previewPlayer = nil
         previewingStep = nil
