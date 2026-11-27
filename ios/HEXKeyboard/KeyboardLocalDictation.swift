@@ -630,7 +630,21 @@ final class KeyboardLocalDictation {
             live?.append(audio)
             lastProgressAt = now
             watch.heardAudio(at: now)
-            loudness = displayedPeak > 0 ? max(-62, 20 * log10(displayedPeak)) : -62
+
+            let rawDB = displayedPeak > 0 ? 20 * log10(displayedPeak) : -62
+            if KeyboardBridge().noiseReductionEnabled {
+                // Meter-only voice gate: the recorder/recognizer still receive the
+                // complete processed audio stream, but low-level background ambience
+                // stays invisible in the waveform. Speech above the gate is expanded
+                // for a clearer, more responsive visual meter.
+                let voiceThresholdDB: Float = -43
+                if rawDB < voiceThresholdDB {
+                    loudness = -62
+                } else {
+                    loudness = min(0, max(-42, (rawDB - voiceThresholdDB) * 1.35 - 42))
+                }
+            } else {
+                loudness = max(-62, rawDB)
         case .state(let state):
             guard isCapturing(jobID) else { return }
             let now = Date().timeIntervalSince1970
