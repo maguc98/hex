@@ -124,7 +124,7 @@ never at a launch by itself.
     oscilloscope (`src/dot_scope.rs`, `src/rune_hud.wgsl`) at native display
     refresh via `CAMetalLayer` + `CADisplayLink`, pausing at 0% CPU/GPU once
     settled in idle. The keyboard extension mounts it only while a capture or
-    transcription is active and shows a static `Canvas` dot row at rest, so a
+    transcription is active and shows a static SwiftUI waveform at rest, so a
     fresh keyboard process builds no Metal device, pipeline, layer, display
     link, or idle pre-roll before its first frame; the app's docked keyboard
     preview keeps the live scope. The home-indicator swipe cue's pipeline is
