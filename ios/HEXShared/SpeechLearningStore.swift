@@ -248,7 +248,7 @@ nonisolated struct SpeechLearningStore {
     @discardableResult
     func deleteSample(id: String) -> Bool {
         guard let sample = readSamples().first(where: { $0.id == id }) else { return false }
-        if let dir = directory(named: "Samples", create: false) {
+        if !sample.audioFileName.isEmpty, let dir = directory(named: "Samples", create: false) {
             try? fileManager.removeItem(at: dir.appendingPathComponent(sample.audioFileName))
         }
         write(readSamples().filter { $0.id != id }, forKey: Key.samples)
@@ -271,7 +271,7 @@ nonisolated struct SpeechLearningStore {
     }
 
     private func removePending(_ record: SpeechLearningPending) {
-        if let directory = directory(named: "Pending", create: false) {
+        if !record.audioFileName.isEmpty, let directory = directory(named: "Pending", create: false) {
             try? fileManager.removeItem(at: directory.appendingPathComponent(record.audioFileName))
         }
         write(readPending().filter { $0.id != record.id }, forKey: Key.pending)
