@@ -687,8 +687,21 @@ final class KeyboardViewController: UIInputViewController {
         }
         viewModel.onPasteDictation = { [weak self] in self?.pasteOfferedDictation() }
         viewModel.onLearnSpeechSample = { [weak self] in
-            guard let self, let resultID = self.viewModel.speechLearningResultID else { return }
+            guard let self else { return }
+            guard let resultID = self.viewModel.speechLearningResultID else {
+                self.viewModel.markSpeechSampleSaveFailed()
+                KeyboardProbeLog.shared.write("speech learning tap ignored: missing result ID")
+                UIAccessibility.post(notification: .announcement, argument: "没有可保存的听写记录，请重新听写")
+                return
+            }
             let store = SpeechLearningStore()
+            let storageDiagnostic = store.sharedStorageDiagnostic()
+            KeyboardProbeLog.shared.write("speech learning button tapped: id=\(resultID), storage=\(storageDiagnostic), text=\(self.viewModel.speechLearningText != nil)")
+            guard storageDiagnostic == "共享空间可读写" else {
+                self.viewModel.markSpeechSampleSaveFailed()
+                UIAccessibility.post(notification: .announcement, argument: storageDiagnostic)
+                return
+            }
             let hasPending = store.hasPending(resultID: resultID)
             var saved = store.isSavedSample(id: resultID)
             if !saved && hasPending {
@@ -707,6 +720,7 @@ final class KeyboardViewController: UIInputViewController {
                     duration: self.viewModel.speechLearningDuration
                 )
             }
+            KeyboardProbeLog.shared.write("speech learning commit: id=\(resultID), pending=\(hasPending), savedCall=\(saved), verified=\(store.isSavedSample(id: resultID))")
             if saved && store.isSavedSample(id: resultID) {
                 self.viewModel.markSpeechSampleLearned()
                 UIAccessibility.post(notification: .announcement, argument: "已加入学习")
