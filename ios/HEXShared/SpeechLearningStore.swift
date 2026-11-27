@@ -68,6 +68,36 @@ nonisolated struct SpeechLearningStore {
         self.now = now
     }
 
+    /// Checks the actual App Group container and a real write/read/delete cycle.
+    /// Matching entitlements in source are not enough if the installed provisioning profile
+    /// does not grant this application group.
+    func sharedStorageDiagnostic() -> String {
+        let group = KeyboardBridge.appGroup
+        let root: URL
+        if let suppliedDirectoryURL {
+            root = suppliedDirectoryURL
+        } else {
+            guard let container = fileManager.containerURL(forSecurityApplicationGroupIdentifier: group) else {
+                return "无法访问共享容器：签名配置可能没有授权 \(group)"
+            }
+            root = container.appendingPathComponent("Library/Application Support/HEXSpeechLearning", isDirectory: true)
+        }
+        guard defaults != nil else { return "共享偏好设置不可用：\(group)" }
+        let probe = root.appendingPathComponent(".learning-write-check-\(UUID().uuidString)")
+        let payload = Data(UUID().uuidString.utf8)
+        do {
+            try fileManager.createDirectory(at: root, withIntermediateDirectories: true)
+            try payload.write(to: probe, options: .atomic)
+            let readBack = try Data(contentsOf: probe)
+            try? fileManager.removeItem(at: probe)
+            guard readBack == payload else { return "共享目录写入后校验不一致" }
+            return "共享空间可读写"
+        } catch {
+            try? fileManager.removeItem(at: probe)
+            return "共享空间读写失败：\(error.localizedDescription)"
+        }
+    }
+
     /// Copies the original audio when possible and persists the sentence independently.
     /// A missing/unavailable WAV must never prevent the text and translation being saved.
     @discardableResult
