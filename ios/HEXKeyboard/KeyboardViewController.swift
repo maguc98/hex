@@ -1237,17 +1237,19 @@ final class KeyboardViewController: UIInputViewController {
         let isTranslated = stages?.translated?.isEmpty == false
         let learningText: String?
         if isTranslated {
-            learningText = stages?.cleaned ?? stages?.raw ?? heard
+            learningText = stages?.cleaned ?? stages?.raw ?? heard ?? transcript
         } else if stages == nil && viewModel.isTranslating {
-            // With translation enabled but no stage details, transcript may be the translation;
-            // don't mislabel it as the spoken sentence.
-            learningText = nil
+            // When stage metadata is missing, preserve the spoken transcript if available.
+            // The translated result can still be attached as a pair, instead of disabling
+            // Learning entirely for this result.
+            learningText = heard ?? transcript
         } else {
-            learningText = transcript
+            learningText = stages?.cleaned ?? transcript
         }
         let learningLanguage = stages?.locale ?? viewModel.effectiveLanguage ?? stages?.language ?? "und"
-        let learningTranslation = isTranslated ? transcript : nil
-        let learningTranslationLanguage = isTranslated ? viewModel.translationLanguage : nil
+        let learningTranslation = isTranslated || (stages == nil && viewModel.isTranslating)
+            ? transcript : nil
+        let learningTranslationLanguage = learningTranslation == nil ? nil : viewModel.translationLanguage
         let learningDuration = TimeInterval(stages?.recordedMS ?? 0) / 1_000
 
         if !alreadySaved, !hasPendingSample, let learningText,
