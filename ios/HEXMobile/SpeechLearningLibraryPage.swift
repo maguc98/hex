@@ -6,6 +6,7 @@ struct SpeechLearningLibraryPage: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var records = SpeechLearningStore().samples()
+    @State private var storageDiagnostic = SpeechLearningStore().sharedStorageDiagnostic()
     @State private var player: AVAudioPlayer?
     @State private var playingID: String?
     @State private var deleteTarget: SpeechLearningSample?
@@ -33,6 +34,27 @@ struct SpeechLearningLibraryPage: View {
                     Spacer()
                 }
                 .padding(16)
+            }
+
+            SettingsCard {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: storageDiagnostic == "共享空间可读写" ? "checkmark.shield.fill" : "exclamationmark.shield.fill")
+                        .foregroundStyle(storageDiagnostic == "共享空间可读写" ? HexTheme.success : HexTheme.danger)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("数据共享状态")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(HexTheme.textBase)
+                        Text(storageDiagnostic)
+                            .font(.system(size: 11))
+                            .foregroundStyle(storageDiagnostic == "共享空间可读写" ? HexTheme.textMuted : HexTheme.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("键盘与 Hex App 必须共享同一个 App Group，才能互相读取学习记录。")
+                            .font(.system(size: 11))
+                            .foregroundStyle(HexTheme.textMuted)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(14)
             }
 
             SettingsCard {
@@ -228,6 +250,7 @@ struct SpeechLearningLibraryPage: View {
     }
 
     private func reload() {
+        storageDiagnostic = store.sharedStorageDiagnostic()
         records = store.samples()
     }
 
