@@ -467,7 +467,7 @@ private struct KeyboardRestingWaveShape: Shape {
     }
 }
 
-private struct KeyboardRestingDotBar: View {
+private struct KeyboardRestingWave: View {
     let isDark: Bool
     let leadingInset: CGFloat
     let trailingInset: CGFloat
@@ -1091,7 +1091,7 @@ struct KeyboardSurfaceView: View {
             HexRecessedWell(isDark: p.isDark)
 
             if defersDotScopeUntilActive && !isStageActive {
-                KeyboardRestingDotBar(
+                KeyboardRestingWave(
                     isDark: p.isDark,
                     leadingInset: CGFloat(leadInset),
                     trailingInset: CGFloat(trailInset)
