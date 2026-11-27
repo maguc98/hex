@@ -476,6 +476,7 @@ struct VoiceLearningPage: View {
     private func discardCurrentRecording() {
         recordingLimitTask?.cancel()
         recordingLimitTask = nil
+        let wasRecording = recorder != nil
         if let recorder {
             let url = recorder.url
             recorder.stop()
@@ -485,7 +486,9 @@ struct VoiceLearningPage: View {
         isRecording = false
         recordingStep = nil
         discardPendingRecording()
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        if wasRecording {
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     private func clearProfile() {
