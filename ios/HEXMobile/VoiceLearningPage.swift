@@ -24,6 +24,7 @@ struct VoiceLearningPage: View {
     @State private var statusMessage: String?
     @State private var showingClearConfirmation = false
     @State private var isVisible = false
+    @State private var hasAnyVoiceSamples = false
     @State private var recordingLimitTask: Task<Void, Never>?
     @State private var sharedStorageDiagnostic = SpeechLearningStore().sharedStorageDiagnostic()
 
@@ -65,7 +66,7 @@ struct VoiceLearningPage: View {
             noiseReductionCard
             privacyCard
 
-            if !completedSteps.isEmpty {
+            if hasAnyVoiceSamples {
                 SettingsCard {
                     Button(role: .destructive) {
                         showingClearConfirmation = true
@@ -95,6 +96,7 @@ struct VoiceLearningPage: View {
         .onAppear {
             isVisible = true
             sharedStorageDiagnostic = store.sharedStorageDiagnostic()
+            hasAnyVoiceSamples = store.samples().contains(where: VoiceLearningProfile.isVoiceSample)
             if KeyboardBridge().noiseReductionEnabled {
                 noiseReductionEnabled = true
             }
@@ -154,6 +156,10 @@ struct VoiceLearningPage: View {
                     .font(.system(size: 12))
                     .foregroundStyle(HexTheme.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
+
+                Text("当前识别语言：\(dictation.transcriptionLanguage)")
+                    .font(.system(size: 11))
+                    .foregroundStyle(HexTheme.textMuted)
 
                 HStack(spacing: 6) {
                     Label("仅保存在本机", systemImage: "iphone")
@@ -460,6 +466,7 @@ struct VoiceLearningPage: View {
         pendingStep = nil
         pendingDuration = 0
         completedSteps.insert(step)
+        hasAnyVoiceSamples = true
         sharedStorageDiagnostic = store.sharedStorageDiagnostic()
         statusMessage = "声音样本已保存，短句已加入个人识别提示。"
     }
@@ -497,7 +504,8 @@ struct VoiceLearningPage: View {
             _ = store.deleteSample(id: sample.id)
         }
         completedSteps.removeAll()
-        statusMessage = "声音学习档案已清除。"
+        hasAnyVoiceSamples = false
+        statusMessage = "声音学习档案已清除。" 
         phrases = Self.defaultPhrases(for: dictation.transcriptionLanguageID)
     }
 
