@@ -688,11 +688,26 @@ final class KeyboardViewController: UIInputViewController {
         viewModel.onPasteDictation = { [weak self] in self?.pasteOfferedDictation() }
         viewModel.onLearnSpeechSample = { [weak self] in
             guard let self, let resultID = self.viewModel.speechLearningResultID else { return }
-            if SpeechLearningStore().confirmPending(resultID: resultID) {
+            let store = SpeechLearningStore()
+            var hasPending = store.hasPending(resultID: resultID)
+            if !hasPending, let text = self.viewModel.speechLearningText {
+                hasPending = store.stagePendingText(
+                    resultID: resultID,
+                    text: text,
+                    heard: self.viewModel.speechLearningHeard,
+                    translatedText: self.viewModel.speechLearningTranslation,
+                    translatedLanguage: self.viewModel.speechLearningTranslationLanguage,
+                    language: self.viewModel.speechLearningLanguage ?? "und",
+                    duration: self.viewModel.speechLearningDuration
+                )
+            }
+            if (hasPending || store.isSavedSample(id: resultID)),
+               store.confirmPending(resultID: resultID),
+               store.isSavedSample(id: resultID) {
                 self.viewModel.markSpeechSampleLearned()
                 UIAccessibility.post(notification: .announcement, argument: "已加入学习")
             } else {
-                // Keep the action visible so the user can retry; never silently remove it.
+                // Keep the candidate and its text metadata so another tap can retry the write.
                 self.viewModel.markSpeechSampleSaveFailed()
                 UIAccessibility.post(notification: .announcement, argument: "保存失败，请重试")
             }
