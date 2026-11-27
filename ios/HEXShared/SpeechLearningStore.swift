@@ -363,6 +363,59 @@ nonisolated struct SpeechLearningStore {
         return committed && isSavedSample(id: id)
     }
 
+    /// Saves a manually entered sentence with a recording made in the app. This works with
+    /// the app-local fallback storage when App Group signing is unavailable.
+    @discardableResult
+    func saveManualAudioSample(
+        id: String,
+        text: String,
+        audioURL: URL,
+        language: String,
+        duration: TimeInterval
+    ) -> Bool {
+        let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard validID(id), !cleanText.isEmpty,
+              duration.isFinite, duration > 0, duration <= Self.maximumSampleDuration,
+              fileManager.fileExists(atPath: audioURL.path),
+              let attributes = try? fileManager.attributesOfItem(atPath: audioURL.path),
+              let size = attributes[.size] as? NSNumber,
+              size.intValue > 0, size.intValue <= Self.maximumAudioBytes,
+              let samplesDirectory = directory(named: "Samples", create: true) else {
+            return false
+        }
+        let audioName = id + ".m4a"
+        let destination = samplesDirectory.appendingPathComponent(audioName)
+        try? fileManager.removeItem(at: destination)
+        do {
+            try fileManager.copyItem(at: audioURL, to: destination)
+        } catch {
+            return false
+        }
+        let sample = SpeechLearningSample(
+            id: id,
+            text: cleanText,
+            heard: nil,
+            language: language,
+            translatedText: nil,
+            translatedLanguage: nil,
+            createdAt: now(),
+            duration: duration,
+            audioFileName: audioName
+        )
+        let committed = updateState { state -> Bool? in
+            state.pending.removeAll { $0.id == id }
+            state.samples.removeAll { $0.id == id }
+            state.samples.insert(sample, at: 0)
+            state.samples = Array(state.samples.prefix(Self.maximumSamples))
+            return true
+        } ?? false
+        guard committed, isSavedSample(id: id) else {
+            try? fileManager.removeItem(at: destination)
+            return false
+        }
+        return true
+    }
+
     /// Recent confirmed phrases are supplied as recognition context; no transcript is force-replaced.
     func recognitionHints(language: String?) -> [String] {
         let requestedLanguage = language.map(Self.languageFamily)
@@ -494,10 +547,18 @@ nonisolated struct SpeechLearningStore {
         if let suppliedDirectoryURL {
             root = suppliedDirectoryURL
         } else {
-            guard let container = fileManager.containerURL(
+            if let container = fileManager.containerURL(
                 forSecurityApplicationGroupIdentifier: KeyboardBridge.appGroup
-            ) else { return nil }
-            root = container.appendingPathComponent("Library/Application Support/HEXSpeechLearning", isDirectory: true)
+            ) {
+                root = container.appendingPathComponent("Library/Application Support/HEXSpeechLearning", isDirectory: true)
+            } else {
+                // App-only fallback so manual Learning remains usable when App Group signing
+                // is missing. The keyboard cannot see this location; that is intentional.
+                guard let documents = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+                    return nil
+                }
+                root = documents.appendingPathComponent("HEXSpeechLearning-local", isDirectory: true)
+            }
         }
         if create {
             do {
