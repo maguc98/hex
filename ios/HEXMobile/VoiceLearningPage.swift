@@ -25,6 +25,8 @@ struct VoiceLearningPage: View {
     @State private var showingClearConfirmation = false
     @State private var isVisible = false
     @State private var hasAnyVoiceSamples = false
+    @State private var previewPlayer: AVAudioPlayer?
+    @State private var previewingStep: Int?
     @State private var recordingLimitTask: Task<Void, Never>?
     @State private var sharedStorageDiagnostic = SpeechLearningStore().sharedStorageDiagnostic()
 
@@ -114,6 +116,9 @@ struct VoiceLearningPage: View {
         }
         .onDisappear {
             isVisible = false
+            previewPlayer?.stop()
+            previewPlayer = nil
+            previewingStep = nil
             discardCurrentRecording()
         }
         .confirmationDialog(
@@ -281,6 +286,22 @@ struct VoiceLearningPage: View {
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(HexTheme.success)
                     }
+                } else if isComplete {
+                    Button {
+                        previewVoiceSample(step: step)
+                    } label: {
+                        Label(
+                            previewingStep == step ? "停止试听" : "试听声音",
+                            systemImage: previewingStep == step ? "stop.fill" : "play.fill"
+                        )
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(HexTheme.textBase)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 36)
+                        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isRecording || isRequestingPermission)
                 } else {
                     Button {
                         startRecording(step: step)
@@ -498,7 +519,36 @@ struct VoiceLearningPage: View {
         }
     }
 
+    private func previewVoiceSample(step: Int) {
+        if previewingStep == step {
+            previewPlayer?.stop()
+            previewPlayer = nil
+            previewingStep = nil
+            return
+        }
+        let id = VoiceLearningProfile.sampleID(forStep: step, language: dictation.transcriptionLanguageID)
+        guard let sample = store.samples().first(where: { $0.id == id }),
+              let url = store.audioURL(for: sample),
+              let player = try? AVAudioPlayer(contentsOf: url) else {
+            statusMessage = "找不到这组声音样本，请重新录制。"
+            return
+        }
+        previewPlayer?.stop()
+        previewPlayer = player
+        previewingStep = step
+        player.play()
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(player.duration))
+            guard previewingStep == step else { return }
+            previewPlayer = nil
+            previewingStep = nil
+        }
+    }
+
     private func clearProfile() {
+        previewPlayer?.stop()
+        previewPlayer = nil
+        previewingStep = nil
         discardCurrentRecording()
         for sample in store.samples() where VoiceLearningProfile.isVoiceSample(sample) {
             _ = store.deleteSample(id: sample.id)
