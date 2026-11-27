@@ -164,22 +164,25 @@ nonisolated struct SpeechLearningStore {
     @discardableResult
     func confirmPending(resultID: String) -> Bool {
         guard hasPending(resultID: resultID),
-              let record = readPending().first(where: { $0.id == resultID }),
-              let samplesDirectory = directory(named: "Samples", create: true) else { return false }
+              let record = readPending().first(where: { $0.id == resultID }) else { return false }
 
+        var samplesDirectory = directory(named: "Samples", create: false)
         var savedAudioFileName = ""
         if !record.audioFileName.isEmpty,
            let pendingDirectory = directory(named: "Pending", create: false) {
-            let source = pendingDirectory.appendingPathComponent(record.audioFileName)
-            let destinationName = record.id + ".wav"
-            let destination = samplesDirectory.appendingPathComponent(destinationName)
-            try? fileManager.removeItem(at: destination)
-            do {
-                try fileManager.moveItem(at: source, to: destination)
-                savedAudioFileName = destinationName
-            } catch {
-                // Preserve the study text even when the audio file cannot be moved.
-                savedAudioFileName = ""
+            samplesDirectory = directory(named: "Samples", create: true)
+            if let samplesDirectory {
+                let source = pendingDirectory.appendingPathComponent(record.audioFileName)
+                let destinationName = record.id + ".wav"
+                let destination = samplesDirectory.appendingPathComponent(destinationName)
+                try? fileManager.removeItem(at: destination)
+                do {
+                    try fileManager.moveItem(at: source, to: destination)
+                    savedAudioFileName = destinationName
+                } catch {
+                    // Preserve the study text even when the audio file cannot be moved.
+                    savedAudioFileName = ""
+                }
             }
         }
 
@@ -200,8 +203,10 @@ nonisolated struct SpeechLearningStore {
 
         let retained = Array(allSamples.prefix(Self.maximumSamples))
         let retainedNames = Set(retained.map(\.audioFileName))
-        for old in allSamples where !retainedNames.contains(old.audioFileName) {
-            try? fileManager.removeItem(at: samplesDirectory.appendingPathComponent(old.audioFileName))
+        for old in allSamples where !old.audioFileName.isEmpty && !retainedNames.contains(old.audioFileName) {
+            if let samplesDirectory {
+                try? fileManager.removeItem(at: samplesDirectory.appendingPathComponent(old.audioFileName))
+            }
         }
         write(retained, forKey: Key.samples)
         removePending(record)
