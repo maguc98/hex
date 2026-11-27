@@ -518,7 +518,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
             if dictation.learningSaveFailed {
-                Label("学习记录暂存失败，请重新听写后再试。", systemImage: "exclamationmark.triangle")
+                Label("录音暂存失败；重试仍可保存原句和译文。", systemImage: "exclamationmark.triangle")
                     .font(.system(size: 12))
                     .foregroundStyle(HexTheme.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -538,7 +538,10 @@ struct ContentView: View {
                     Button {
                         _ = dictation.saveCurrentTranscriptToLearning()
                     } label: {
-                        Label("加入学习", systemImage: "book.closed.fill")
+                        Label(
+                            dictation.learningSaveFailed ? "重试加入学习" : "加入学习",
+                            systemImage: dictation.learningSaveFailed ? "arrow.clockwise.circle.fill" : "book.closed.fill"
+                        )
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Color.white)
                             .padding(.horizontal, 12)
