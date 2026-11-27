@@ -1052,20 +1052,28 @@ final class KeyboardViewController: UIInputViewController {
         }
         refreshOfferedDictation(app: appSnapshot, now: now)
 
-        // Associate the candidate with the exact inserted result ID. Do not gate visibility
-        // on the WAV file lookup: a missing/late audio copy must not hide the Learning action.
-        // Text and translation metadata are staged independently from the audio file.
+        // Reconcile the last inserted result with the shared manifest. A candidate is
+        // visible only when either its pending record exists or recoverable text is retained.
         if let insertedID = bridge.lastInsertedResultID {
-            let isCurrentCandidate = viewModel.speechLearningResultID == nil
-                || viewModel.speechLearningResultID == insertedID
-            let hasAlreadyShownSuccess = viewModel.didLearnSpeechSample
-                && viewModel.speechLearningResultID == insertedID
-            let learningCheckIsDue = now - lastSpeechLearningCheckAt >= 0.5
-            if isCurrentCandidate, !hasAlreadyShownSuccess,
-               viewModel.speechLearningResultID == nil || learningCheckIsDue {
-                let candidateID = SpeechLearningStore().isSavedSample(id: insertedID) ? nil : insertedID
-                viewModel.offerSpeechLearning(resultID: candidateID)
-                lastSpeechLearningCheckAt = now
+            let store = SpeechLearningStore()
+            if store.isSavedSample(id: insertedID) {
+                if viewModel.speechLearningResultID != insertedID {
+                    viewModel.offerSpeechLearning(resultID: insertedID)
+                }
+                viewModel.markSpeechSampleLearned()
+            } else {
+                let hasPending = store.hasPending(resultID: insertedID)
+                let hasRecoverableText = viewModel.speechLearningResultID == insertedID
+                    && viewModel.speechLearningText != nil
+                if hasPending || hasRecoverableText {
+                    let learningCheckIsDue = now - lastSpeechLearningCheckAt >= 0.5
+                    if viewModel.speechLearningResultID != insertedID || learningCheckIsDue {
+                        viewModel.offerSpeechLearning(resultID: insertedID)
+                        lastSpeechLearningCheckAt = now
+                    }
+                } else if viewModel.speechLearningResultID == insertedID {
+                    viewModel.offerSpeechLearning(resultID: nil)
+                }
             }
         }
 
@@ -1221,14 +1229,55 @@ final class KeyboardViewController: UIInputViewController {
         )
         observeDictationEdits(fromKeys: true)
         bridge.lastInsertedResultID = resultID
-        // Set the Learning candidate at the single insertion point shared by local,
-        // Hex-session and recovered/held dictations. The follow-up poll only reconciles it.
+        // Attach the Learning action to this exact inserted result. If the audio stage was
+        // unavailable, recover a text-only candidate from the result pipeline where possible.
         let learningStore = SpeechLearningStore()
         let alreadySaved = learningStore.isSavedSample(id: resultID)
-        let hasPendingSample = learningStore.hasPending(resultID: resultID)
-        viewModel.offerSpeechLearning(resultID: alreadySaved ? nil : resultID)
+        var hasPendingSample = learningStore.hasPending(resultID: resultID)
+        let isTranslated = stages?.translated?.isEmpty == false
+        let learningText: String?
+        if isTranslated {
+            learningText = stages?.cleaned ?? stages?.raw ?? heard
+        } else if stages == nil && viewModel.isTranslating {
+            // With translation enabled but no stage details, transcript may be the translation;
+            // don't mislabel it as the spoken sentence.
+            learningText = nil
+        } else {
+            learningText = transcript
+        }
+        let learningLanguage = stages?.locale ?? viewModel.effectiveLanguage ?? stages?.language ?? "und"
+        let learningTranslation = isTranslated ? transcript : nil
+        let learningTranslationLanguage = isTranslated ? viewModel.translationLanguage : nil
+        let learningDuration = TimeInterval(stages?.recordedMS ?? 0) / 1_000
+
+        if !alreadySaved, !hasPendingSample, let learningText,
+           !learningText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            hasPendingSample = learningStore.stagePendingText(
+                resultID: resultID,
+                text: learningText,
+                heard: stages?.raw ?? heard,
+                translatedText: learningTranslation,
+                translatedLanguage: learningTranslationLanguage,
+                language: learningLanguage,
+                duration: learningDuration
+            )
+        }
+
+        let canOfferLearning = !alreadySaved && (hasPendingSample || learningText != nil)
+        viewModel.offerSpeechLearning(
+            resultID: canOfferLearning ? resultID : nil,
+            text: learningText,
+            heard: stages?.raw ?? heard,
+            language: learningLanguage,
+            translatedText: learningTranslation,
+            translatedLanguage: learningTranslationLanguage,
+            duration: learningDuration
+        )
+        if canOfferLearning && !hasPendingSample {
+            viewModel.markSpeechSampleSaveFailed()
+        }
         KeyboardProbeLog.shared.write(
-            "speech learning candidate attached: source=\(source), pending=\(hasPendingSample), saved=\(alreadySaved)"
+            "speech learning candidate attached: source=\(source), pending=\(hasPendingSample), text=\(learningText != nil), saved=\(alreadySaved)"
         )
         showTranslationNote(translationFailure)
     }
