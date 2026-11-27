@@ -4,6 +4,7 @@ import AVFoundation
 /// 本机保存的语音句子学习记录。
 struct SpeechLearningLibraryPage: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
     @State private var records = SpeechLearningStore().samples()
     @State private var player: AVAudioPlayer?
     @State private var playingID: String?
@@ -89,6 +90,10 @@ struct SpeechLearningLibraryPage: View {
             }
         }
         .onAppear(perform: reload)
+        .onChange(of: scenePhase) { _, newPhase in
+            guard newPhase == .active else { return }
+            reload()
+        }
         .confirmationDialog("删除这条学习记录？", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("删除", role: .destructive) {
                 if let sample = deleteTarget {
