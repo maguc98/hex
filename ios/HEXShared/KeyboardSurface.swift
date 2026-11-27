@@ -1454,20 +1454,25 @@ struct KeyboardSurfaceView: View {
             .accessibilityLabel("Whisper mode")
             .accessibilityValue(whisperModeEnabled ? "On" : "Off")
 
-            ForEach(Self.punctuation, id: \.self) { mark in
-                Button {
-                    model.onKeyFeedback?()
-                    model.onInsertText?(mark)
-                } label: {
-                    Text(mark)
-                        .font(.system(size: 19, weight: .regular))
-                        .foregroundStyle(p.textBase)
-                        .opacity(glyphOpacity)
-                        .frame(width: Self.punctuationKeyWidth, height: 42)
-                        .contentShape(RoundedRectangle(cornerRadius: HexTheme.controlRadius, style: .continuous))
+            Button {
+                model.onKeyFeedback?()
+                model.onOpenURL?(KeyboardLaunchRequest.learning.url)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "book.closed.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                    Text("学习")
+                        .font(.system(size: 13, weight: .semibold))
                 }
-                .buttonStyle(KeyboardKeyButtonStyle(palette: p))
+                .foregroundStyle(p.textBase)
+                .opacity(glyphOpacity)
+                .frame(width: 52, height: 42)
+                .background(p.keyFill, in: RoundedRectangle(cornerRadius: HexTheme.controlRadius, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: HexTheme.controlRadius, style: .continuous))
             }
+            .buttonStyle(KeyboardKeyButtonStyle(palette: p))
+            .accessibilityLabel("学习")
+            .accessibilityHint("打开 Hex 学习页面，输入句子并录制学习语音")
 
             TrackpadSpaceKey(
                 palette: p,
