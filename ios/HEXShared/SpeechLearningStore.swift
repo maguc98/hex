@@ -136,6 +136,31 @@ nonisolated struct SpeechLearningStore {
         return committed && hasPending(resultID: resultID)
     }
 
+    /// Stages a sentence/translation without audio when the capture file is unavailable.
+    /// The library record remains useful for reading and recognition hints.
+    @discardableResult
+    func stagePendingText(
+        resultID: String,
+        text: String,
+        heard: String?,
+        translatedText: String? = nil,
+        translatedLanguage: String? = nil,
+        language: String,
+        duration: TimeInterval
+    ) -> Bool {
+        let unavailableAudioURL = URL(fileURLWithPath: "/__hex_learning_audio_unavailable__/\(UUID().uuidString).wav")
+        return stagePendingAudio(
+            from: unavailableAudioURL,
+            resultID: resultID,
+            text: text,
+            heard: heard,
+            translatedText: translatedText,
+            translatedLanguage: translatedLanguage,
+            language: language,
+            duration: duration
+        )
+    }
+
     /// Removes expired, unconfirmed recordings. Safe to call periodically while the keyboard is visible.
     func cleanupExpiredPending() {
         pruneExpiredPending()
