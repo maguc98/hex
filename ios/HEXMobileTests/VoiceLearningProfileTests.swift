@@ -49,7 +49,8 @@ final class VoiceLearningProfileTests: XCTestCase {
             now += 1
             XCTAssertTrue(store.saveTextSample(
                 id: "recent-\(index)",
-                text: "Recent sentence \\(index)",
+                text: "Recent sentence \(index)",
+                heard: nil,
                 language: "en-US"
             ))
         }
