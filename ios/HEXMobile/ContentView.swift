@@ -204,6 +204,8 @@ struct ContentView: View {
 
                 stageBar
 
+                voiceLearningHomeCard
+
                 if hasTranscript {
                     transcriptCard
                         .transition(.opacity.combined(with: .scale(scale: 0.98)))
@@ -303,6 +305,46 @@ struct ContentView: View {
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
         .background(HexTheme.bgDeep.ignoresSafeArea())
+    }
+
+    /// The personal voice profile is a first-class home action, separate from sentence review.
+    private var voiceLearningHomeCard: some View {
+        NavigationLink {
+            VoiceLearningPage(dictation: dictation)
+        } label: {
+            SettingsCard {
+                HStack(spacing: 13) {
+                    Image(systemName: "waveform.badge.mic")
+                        .font(.system(size: 21, weight: .medium))
+                        .foregroundStyle(HexTheme.warmMic)
+                        .frame(width: 46, height: 46)
+                        .background(
+                            HexTheme.warmMic.opacity(0.13),
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("声音学习")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(HexTheme.textBase)
+                        Text("学习你的发音习惯，增强嘈杂环境下的语音处理")
+                            .font(.system(size: 11))
+                            .foregroundStyle(HexTheme.textMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Spacer(minLength: 0)
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(HexTheme.textMuted)
+                }
+                .padding(14)
+                .contentShape(Rectangle())
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("建立本机声音档案")
     }
 
     @ViewBuilder
