@@ -23,6 +23,8 @@ struct VoiceLearningPage: View {
     @State private var isRequestingPermission = false
     @State private var statusMessage: String?
     @State private var showingClearConfirmation = false
+    @State private var isVisible = false
+    @State private var sharedStorageDiagnostic = SpeechLearningStore().sharedStorageDiagnostic()
 
     private var store: SpeechLearningStore { SpeechLearningStore() }
     private let stepTitles = ["自然语速", "轻声说话", "稍快语速"]
@@ -39,7 +41,9 @@ struct VoiceLearningPage: View {
         var initialPhrases = Self.defaultPhrases(for: language)
         var completed = Set<Int>()
         for step in 1...VoiceLearningProfile.stepCount {
-            if let sample = saved.first(where: { $0.id == VoiceLearningProfile.sampleID(forStep: step) }) {
+            if let sample = saved.first(where: {
+                $0.id == VoiceLearningProfile.sampleID(forStep: step, language: language)
+            }) {
                 initialPhrases[step - 1] = sample.text
                 completed.insert(step)
             }
@@ -88,6 +92,8 @@ struct VoiceLearningPage: View {
             }
         }
         .onAppear {
+            isVisible = true
+            sharedStorageDiagnostic = store.sharedStorageDiagnostic()
             if KeyboardBridge().noiseReductionEnabled {
                 noiseReductionEnabled = true
             }
@@ -96,11 +102,15 @@ struct VoiceLearningPage: View {
             KeyboardBridge().noiseReductionEnabled = enabled
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active, isRecording || pendingAudioURL != nil {
+            if phase != .active {
+                isVisible = false
                 discardCurrentRecording()
+            } else {
+                isVisible = true
             }
         }
         .onDisappear {
+            isVisible = false
             discardCurrentRecording()
         }
         .confirmationDialog(
@@ -299,7 +309,7 @@ struct VoiceLearningPage: View {
                 }
                 .tint(HexTheme.success)
 
-                Text("此设置应用于 HEX App 内后续录音；键盘仍保留自己的「降噪」开关。实际效果会受麦克风、距离和环境影响。")
+                Text("此设置应用于 HEX App 内后续录音；如果 App Group 共享权限可用，也会同步到键盘的「降噪」设置。实际效果会受麦克风、距离和环境影响。")
                     .font(.system(size: 11))
                     .foregroundStyle(HexTheme.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -318,6 +328,13 @@ struct VoiceLearningPage: View {
                     .font(.system(size: 11))
                     .foregroundStyle(HexTheme.textMuted)
                     .fixedSize(horizontal: false, vertical: true)
+
+                Text(sharedStorageDiagnostic == "共享空间可读写"
+                     ? "App Group 共享空间可读写，键盘也可以读取这些学习记录。"
+                     : "当前 App Group 不可用：声音样本仍保存在 HEX App 本机，并可用于 App 内的识别提示；键盘端暂时无法同步这些记录。")
+                    .font(.system(size: 11))
+                    .foregroundStyle(sharedStorageDiagnostic == "共享空间可读写" ? HexTheme.textMuted : HexTheme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text("开启嘈杂环境增强后，HEX 会在录音时使用 iOS 的 voiceChat 语音处理模式；这不是保证完全消除噪声的独立 AI 分离模型。")
                     .font(.system(size: 11))
                     .foregroundStyle(HexTheme.textMuted)
@@ -328,7 +345,11 @@ struct VoiceLearningPage: View {
     }
 
     private func startRecording(step: Int) {
-        guard !isRecording, !isRequestingPermission else { return }
+        guard isVisible, !isRecording, !isRequestingPermission else { return }
+        guard !dictation.phase.isBusy, dictation.phase != .recording else {
+            statusMessage = "请先结束当前听写，再录制声音样本。"
+            return
+        }
         discardPendingRecording()
         statusMessage = nil
         isRequestingPermission = true
@@ -341,8 +362,12 @@ struct VoiceLearningPage: View {
                     statusMessage = "没有麦克风权限，请在系统设置中允许 HEX 使用麦克风。"
                     return
                 }
+                guard isVisible else { return }
 
                 do {
+                    if dictation.keyboardSessionEnabled {
+                        dictation.endWarmSession()
+                    }
                     let mode: AVAudioSession.Mode = noiseReductionEnabled ? .voiceChat : .measurement
                     try session.setCategory(
                         .playAndRecord,
@@ -384,6 +409,7 @@ struct VoiceLearningPage: View {
         recorder = nil
         recordingStep = nil
         isRecording = false
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
 
         guard duration >= 0.8 else {
             try? FileManager.default.removeItem(at: url)
@@ -406,7 +432,7 @@ struct VoiceLearningPage: View {
         }
 
         let saved = store.saveManualAudioSample(
-            id: VoiceLearningProfile.sampleID(forStep: step),
+            id: VoiceLearningProfile.sampleID(forStep: step, language: dictation.transcriptionLanguageID),
             text: text,
             audioURL: url,
             language: dictation.transcriptionLanguageID,
@@ -422,6 +448,7 @@ struct VoiceLearningPage: View {
         pendingStep = nil
         pendingDuration = 0
         completedSteps.insert(step)
+        sharedStorageDiagnostic = store.sharedStorageDiagnostic()
         statusMessage = "声音样本已保存，短句已加入个人识别提示。"
     }
 
@@ -444,6 +471,7 @@ struct VoiceLearningPage: View {
         isRecording = false
         recordingStep = nil
         discardPendingRecording()
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
     private func clearProfile() {
