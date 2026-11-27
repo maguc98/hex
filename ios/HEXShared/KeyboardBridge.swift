@@ -77,6 +77,8 @@ nonisolated enum KeyboardLaunchRequest: Equatable, Sendable {
 
     /// Opens Hex's keyboard setup screen without starting a session.
     case setup
+    /// Opens the Learning page for manual sentence entry and recording.
+    case learning
     /// Opens Settings › Dictation, where Translate what I say downloads its languages: the
     /// keyboard's note after a dictation went in as spoken.
     case translationSettings
@@ -107,6 +109,8 @@ nonisolated enum KeyboardLaunchRequest: Equatable, Sendable {
             self = .setup
         case "/translation":
             self = .translationSettings
+        case "/learning":
+            self = .learning
         case "/start":
             self = .startSession(requestedAt: requestedAt)
         case "/record":
@@ -124,14 +128,14 @@ nonisolated enum KeyboardLaunchRequest: Equatable, Sendable {
     /// Opens a page of Hex, starting no session.
     var opensPage: Bool {
         switch self {
-        case .setup, .translationSettings: true
+        case .setup, .translationSettings, .learning: true
         case .startSession, .startRecording: false
         }
     }
 
     var requestedAt: TimeInterval? {
         switch self {
-        case .setup, .translationSettings:
+        case .setup, .translationSettings, .learning:
             nil
         case .startSession(let ts), .startRecording(_, let ts, _):
             ts
@@ -155,6 +159,8 @@ nonisolated enum KeyboardLaunchRequest: Equatable, Sendable {
 
         case .translationSettings:
             components.path = "/translation"
+        case .learning:
+            components.path = "/learning"
 
         case .startSession(let requestedAt):
             components.path = "/start"
