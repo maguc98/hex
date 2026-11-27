@@ -414,73 +414,81 @@ enum KeyboardSetupCopy {
     static let fullAccessPath = String(localized: "Allow Full Access: Settings › Apps › Hex › Keyboards")
 }
 
-/// Metal-free stand-in for the resting Dot Scope bar. Mounting it instead of
-/// `DotScopeView` keeps the keyboard extension's launch path off the GPU: no
-/// device, command queue, render pipelines, `CAMetalLayer`, display link, or
-/// idle simulation steps before the first frame.
-/// Metal-free idle visual for the dictation stage. Use a small, deterministic SwiftUI
-/// bar set instead of a Canvas of sub-pixel ellipses: on some keyboard-host redraws the
-/// Canvas could remain visually empty even though its parent well and controls were present.
-/// These lightweight capsule bars stay visible at the first frame and after the stage returns
-/// to idle, without creating a Metal device or display link.
+/// Lightweight idle visual for the dictation stage. The keyboard extension uses this
+/// single SwiftUI Shape instead of a Canvas of sub-pixel ellipses while idle; the active
+/// Metal scope is still mounted only when recording or transcribing.
+private struct KeyboardRestingWaveShape: Shape {
+    let leadingInset: CGFloat
+    let trailingInset: CGFloat
+
+    private static let maxBars = 96
+    private static let barSpacing: CGFloat = 3.7
+    private static let barWidth: CGFloat = 2.0
+    private static let edgeFadeBars = 5.0
+    private static let braidCycles = 2.1
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let startX = max(0, leadingInset) + 3
+        let endX = rect.width - max(0, trailingInset) - 3
+        let availableWidth = endX - startX
+        guard availableWidth > Self.barSpacing * 2, rect.height > 8 else { return path }
+
+        let count = min(Self.maxBars, max(12, Int(availableWidth / Self.barSpacing)))
+        let step = availableWidth / CGFloat(count)
+        let width = min(Self.barWidth, step * 0.7)
+        let middleY = rect.midY
+
+        for index in 0..<count {
+            let progress = Double(index) / Double(max(1, count - 1))
+            let fundamental = abs(sin(2 * .pi * Self.braidCycles * progress - 0.6))
+            let harmonic = abs(sin(2 * .pi * Self.braidCycles * 2 * progress + 0.8))
+            let amplitude = 0.72 * fundamental + 0.28 * harmonic
+            let edgeFade = min(
+                1.0,
+                min(
+                    (Double(index) + 1) / Self.edgeFadeBars,
+                    Double(count - index) / Self.edgeFadeBars
+                )
+            )
+            let height = CGFloat(5.0 + 10.0 * amplitude) * CGFloat(0.42 + 0.58 * edgeFade)
+            let bar = CGRect(
+                x: startX + CGFloat(index) * step + (step - width) / 2,
+                y: middleY - height / 2,
+                width: width,
+                height: height
+            )
+            path.addRoundedRect(
+                in: bar,
+                cornerSize: CGSize(width: width / 2, height: width / 2)
+            )
+        }
+        return path
+    }
+}
+
 private struct KeyboardRestingDotBar: View {
     let isDark: Bool
     let leadingInset: CGFloat
     let trailingInset: CGFloat
 
-    private static let maxBars = 96
-    private static let barWidth: CGFloat = 1.7
-    private static let barSpacing: CGFloat = 2.0
-    private static let sideFadeBars = 5.0
-
     var body: some View {
         GeometryReader { geometry in
-            let availableWidth = max(
-                0,
-                geometry.size.width - max(0, leadingInset) - max(0, trailingInset) - 6
-            )
-            let stride = Self.barWidth + Self.barSpacing
-            let count = min(Self.maxBars, max(0, Int((availableWidth + Self.barSpacing) / stride)))
-            let drawnWidth = count > 0
-                ? CGFloat(count) * stride - Self.barSpacing
-                : 0
             let tint = isDark
                 ? Color(red: 0.93, green: 0.91, blue: 0.86)
                 : Color(red: 0.55, green: 0.46, blue: 0.33)
 
-            HStack(spacing: Self.barSpacing) {
-                ForEach(0..<count, id: \.self) { index in
-                    let progress = Double(index) / Double(max(1, count - 1))
-                    let fundamental = abs(sin(2 * .pi * Self.braidCycles * progress - 0.6))
-                    let harmonic = abs(sin(2 * .pi * Self.braidCycles * 2 * progress + 0.8))
-                    let amplitude = 0.72 * fundamental + 0.28 * harmonic
-                    let height = CGFloat(5.0 + 10.0 * amplitude)
-                    let edgeFade = min(
-                        1.0,
-                        min(
-                            (Double(index) + 1) / Self.sideFadeBars,
-                            (Double(count - index)) / Self.sideFadeBars
-                        )
-                    )
-
-                    Capsule()
-                        .fill(tint.opacity((isDark ? 0.78 : 0.66) * edgeFade))
-                        .frame(width: Self.barWidth, height: height)
-                        .frame(maxHeight: .infinity)
-                }
-            }
-            .frame(width: drawnWidth, height: geometry.size.height)
-            .position(
-                x: max(0, leadingInset) + 3 + drawnWidth / 2,
-                y: geometry.size.height / 2
+            KeyboardRestingWaveShape(
+                leadingInset: leadingInset,
+                trailingInset: trailingInset
             )
+            .fill(tint.opacity(isDark ? 0.78 : 0.66))
+            .frame(width: geometry.size.width, height: geometry.size.height)
         }
         .frame(height: 44)
         .allowsHitTesting(false)
         .accessibilityHidden(true)
     }
-
-    private static let braidCycles = 2.1
 }
 
 struct KeyboardSurfaceView: View {
