@@ -37,7 +37,6 @@ private struct SpeechLearningDiskState: Codable, Equatable, Sendable {
 /// always use the spoken-language sentence, never the translated text.
 nonisolated struct SpeechLearningStore {
     static let pendingLifetime: TimeInterval = 30 * 60
-    static let maximumSamples = 12
     static let maximumSampleDuration: TimeInterval = 180
     static let maximumAudioBytes = 8 * 1_048_576
     static let maximumHintCount = 20
@@ -299,7 +298,7 @@ nonisolated struct SpeechLearningStore {
             var allSamples = state.samples.filter { $0.id != sample.id }
             allSamples.append(sample)
             allSamples.sort { $0.createdAt > $1.createdAt }
-            let retained = Array(allSamples.prefix(Self.maximumSamples))
+            let retained = allSamples
             let retainedIDs = Set(retained.map(\.id))
             obsoleteSampleAudioFiles = allSamples
                 .filter { !retainedIDs.contains($0.id) }
@@ -357,7 +356,7 @@ nonisolated struct SpeechLearningStore {
             state.pending.removeAll { $0.id == id }
             state.samples.removeAll { $0.id == id }
             state.samples.insert(sample, at: 0)
-            state.samples = Array(state.samples.prefix(Self.maximumSamples))
+            state.samples.sort { $0.createdAt > $1.createdAt }
             return true
         } ?? false
         return committed && isSavedSample(id: id)
@@ -406,7 +405,7 @@ nonisolated struct SpeechLearningStore {
             state.pending.removeAll { $0.id == id }
             state.samples.removeAll { $0.id == id }
             state.samples.insert(sample, at: 0)
-            state.samples = Array(state.samples.prefix(Self.maximumSamples))
+            state.samples.sort { $0.createdAt > $1.createdAt }
             return true
         } ?? false
         guard committed, isSavedSample(id: id) else {
