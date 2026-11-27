@@ -158,6 +158,8 @@ final class DictationController {
     private(set) var learningDuration: TimeInterval = 0
     private(set) var isLearningSampleReady = false
     private(set) var didSaveCurrentTranscriptToLearning = false
+    /// Audio staging can fail independently; it must not mark the user's save action as failed.
+    private(set) var learningAudioStagingFailed = false
     private(set) var learningSaveFailed = false
     @ObservationIgnored var audioLevel: Float = 0
     @ObservationIgnored var loudnessDB: Float = -120
@@ -493,6 +495,7 @@ final class DictationController {
         learningDuration = 0
         isLearningSampleReady = false
         didSaveCurrentTranscriptToLearning = false
+        learningAudioStagingFailed = false
         learningSaveFailed = false
     }
 
@@ -1020,7 +1023,9 @@ final class DictationController {
                 // the shared-store write as a text-only learning record.
                 self.isLearningSampleReady = hasSpokenSentence
                 self.didSaveCurrentTranscriptToLearning = false
-                self.learningSaveFailed = hasSpokenSentence && !stagedForLearning
+                self.learningAudioStagingFailed = hasSpokenSentence && !stagedForLearning
+                // Only a user-initiated commit failure may switch the action to "retry".
+                self.learningSaveFailed = false
 
                 if keyboardJobID != nil {
                     self.keyboardResultID = resultID
