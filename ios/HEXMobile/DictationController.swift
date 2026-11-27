@@ -626,7 +626,8 @@ final class DictationController {
         }
 
         switch request {
-        case .setup, .translationSettings:
+        case .setup, .translationSettings, .learning:
+            // These navigation-only requests do not start a dictation handoff.
             break
 
         case .startSession:
