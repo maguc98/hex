@@ -150,6 +150,12 @@ final class DictationController {
     var transcript = ""
     /// The current transcript's staged Learning sample, also available to the standalone app.
     private(set) var learningResultID: String?
+    private(set) var learningText: String?
+    private(set) var learningHeard: String?
+    private(set) var learningLanguage: String?
+    private(set) var learningTranslatedText: String?
+    private(set) var learningTranslatedLanguage: String?
+    private(set) var learningDuration: TimeInterval = 0
     private(set) var isLearningSampleReady = false
     private(set) var didSaveCurrentTranscriptToLearning = false
     private(set) var learningSaveFailed = false
@@ -479,19 +485,50 @@ final class DictationController {
         transcript = ""
         copied = false
         learningResultID = nil
+        learningText = nil
+        learningHeard = nil
+        learningLanguage = nil
+        learningTranslatedText = nil
+        learningTranslatedLanguage = nil
+        learningDuration = 0
         isLearningSampleReady = false
         didSaveCurrentTranscriptToLearning = false
         learningSaveFailed = false
     }
 
-    /// Saves the current app transcript's staged audio, spoken sentence and optional translation.
+    /// Saves the current transcript. If its audio staging failed, retry with the sentence and
+    /// translation as a text-only sample rather than hiding the Learning action.
     @discardableResult
     func saveCurrentTranscriptToLearning() -> Bool {
         if didSaveCurrentTranscriptToLearning { return true }
-        guard isLearningSampleReady, let learningResultID else { return false }
-        guard SpeechLearningStore().confirmPending(resultID: learningResultID) else {
+        guard let learningResultID, let learningText, isLearningSampleReady else { return false }
+
+        let store = SpeechLearningStore()
+        if store.isSavedSample(id: learningResultID) {
+            didSaveCurrentTranscriptToLearning = true
+            learningSaveFailed = false
+            return true
+        }
+
+        if !store.hasPending(resultID: learningResultID) {
+            let staged = store.stagePendingText(
+                resultID: learningResultID,
+                text: learningText,
+                heard: learningHeard,
+                translatedText: learningTranslatedText,
+                translatedLanguage: learningTranslatedLanguage,
+                language: learningLanguage ?? "und",
+                duration: learningDuration
+            )
+            guard staged else {
+                learningSaveFailed = true
+                return false
+            }
+        }
+
+        guard store.confirmPending(resultID: learningResultID),
+              store.isSavedSample(id: learningResultID) else {
             learningSaveFailed = true
-            isLearningSampleReady = false
             return false
         }
         didSaveCurrentTranscriptToLearning = true
@@ -972,8 +1009,16 @@ final class DictationController {
                     language: session.language,
                     duration: finalDuration
                 )
-                self.learningResultID = stagedForLearning ? resultID : nil
-                self.isLearningSampleReady = stagedForLearning
+                self.learningResultID = hasSpokenSentence ? resultID : nil
+                self.learningText = hasSpokenSentence ? spokenSentence : nil
+                self.learningHeard = stages.heard
+                self.learningLanguage = session.language
+                self.learningTranslatedText = translated == nil ? nil : formatted
+                self.learningTranslatedLanguage = stages.translatedLanguage
+                self.learningDuration = finalDuration
+                // Keep the action available even when audio staging fails: tapping it can retry
+                // the shared-store write as a text-only learning record.
+                self.isLearningSampleReady = hasSpokenSentence
                 self.didSaveCurrentTranscriptToLearning = false
                 self.learningSaveFailed = hasSpokenSentence && !stagedForLearning
 
