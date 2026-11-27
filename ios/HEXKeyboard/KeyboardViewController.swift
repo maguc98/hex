@@ -1273,9 +1273,8 @@ final class KeyboardViewController: UIInputViewController {
             translatedLanguage: learningTranslationLanguage,
             duration: learningDuration
         )
-        if canOfferLearning && !hasPendingSample {
-            viewModel.markSpeechSampleSaveFailed()
-        }
+        // Do not present the retry state before the user has attempted to save.
+        // A missing audio staging file is not itself a failed Learning action.
         KeyboardProbeLog.shared.write(
             "speech learning candidate attached: source=\(source), pending=\(hasPendingSample), text=\(learningText != nil), saved=\(alreadySaved)"
         )
