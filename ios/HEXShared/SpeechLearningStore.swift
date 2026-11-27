@@ -361,6 +361,7 @@ nonisolated struct SpeechLearningStore {
         }
 
         var result: T?
+        var didPersist = false
         var coordinationError: NSError?
         let coordinator = NSFileCoordinator(filePresenter: nil)
         coordinator.coordinate(writingItemAt: manifest, options: .forReplacing, error: &coordinationError) { coordinatedURL in
@@ -379,12 +380,19 @@ nonisolated struct SpeechLearningStore {
                 let persistedData = try Data(contentsOf: coordinatedURL)
                 let persistedState = try decoder.decode(SpeechLearningDiskState.self, from: persistedData)
                 guard persistedState == state else { return }
+                didPersist = true
                 result = value
             } catch {
                 result = nil
             }
         }
         guard coordinationError == nil else { return nil }
+        if didPersist {
+            // The atomic manifest is now authoritative. Remove the legacy defaults copies only
+            // after the new file has been read back successfully, avoiding stale resurrection.
+            defaults?.removeObject(forKey: Key.pending)
+            defaults?.removeObject(forKey: Key.samples)
+        }
         return result
     }
 
