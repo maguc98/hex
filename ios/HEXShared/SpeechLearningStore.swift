@@ -295,6 +295,44 @@ nonisolated struct SpeechLearningStore {
         return true
     }
 
+    /// Directly commits a text-only learning record. This bypasses pending/audio staging
+    /// entirely so the keyboard's Learn button has a simple, verifiable save path.
+    @discardableResult
+    func saveTextSample(
+        id: String,
+        text: String,
+        heard: String?,
+        translatedText: String? = nil,
+        translatedLanguage: String? = nil,
+        language: String,
+        duration: TimeInterval = 0
+    ) -> Bool {
+        let cleanText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard validID(id), !cleanText.isEmpty else { return false }
+        if isSavedSample(id: id) { return true }
+        let sample = SpeechLearningSample(
+            id: id,
+            text: cleanText,
+            heard: heard,
+            language: language,
+            translatedText: translatedText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ? translatedText?.trimmingCharacters(in: .whitespacesAndNewlines) : nil,
+            translatedLanguage: translatedText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+                ? translatedLanguage : nil,
+            createdAt: now(),
+            duration: min(max(duration.isFinite ? duration : 0, 0), Self.maximumSampleDuration),
+            audioFileName: ""
+        )
+        let committed = updateState { state -> Bool? in
+            state.pending.removeAll { $0.id == id }
+            state.samples.removeAll { $0.id == id }
+            state.samples.insert(sample, at: 0)
+            state.samples = Array(state.samples.prefix(Self.maximumSamples))
+            return true
+        } ?? false
+        return committed && isSavedSample(id: id)
+    }
+
     /// Recent confirmed phrases are supplied as recognition context; no transcript is force-replaced.
     func recognitionHints(language: String?) -> [String] {
         let requestedLanguage = language.map(Self.languageFamily)
