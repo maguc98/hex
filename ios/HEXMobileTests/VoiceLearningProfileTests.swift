@@ -44,10 +44,10 @@ final class VoiceLearningProfileTests: XCTestCase {
             language: "en-US"
         ))
 
-        for index in 0..<SpeechLearningStore.maximumHintCount + 5 {
+        for index in 0..<(SpeechLearningStore.maximumHintCount + 5) {
             now += 1
             XCTAssertTrue(store.saveTextSample(
-                id: "recent-\\(index)",
+                id: "recent-\(index)",
                 text: "Recent sentence \\(index)",
                 language: "en-US"
             ))
