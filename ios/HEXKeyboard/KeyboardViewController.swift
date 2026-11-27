@@ -1204,10 +1204,12 @@ final class KeyboardViewController: UIInputViewController {
         bridge.lastInsertedResultID = resultID
         // Set the Learning candidate at the single insertion point shared by local,
         // Hex-session and recovered/held dictations. The follow-up poll only reconciles it.
-        let alreadySaved = SpeechLearningStore().isSavedSample(id: resultID)
+        let learningStore = SpeechLearningStore()
+        let alreadySaved = learningStore.isSavedSample(id: resultID)
+        let hasPendingSample = learningStore.hasPending(resultID: resultID)
         viewModel.offerSpeechLearning(resultID: alreadySaved ? nil : resultID)
         KeyboardProbeLog.shared.write(
-            "speech learning candidate attached: source=\(source), id=\(resultID), saved=\(alreadySaved)"
+            "speech learning candidate attached: source=\(source), pending=\(hasPendingSample), saved=\(alreadySaved)"
         )
         showTranslationNote(translationFailure)
     }
