@@ -287,21 +287,35 @@ struct VoiceLearningPage: View {
                             .foregroundStyle(HexTheme.success)
                     }
                 } else if isComplete {
-                    Button {
-                        previewVoiceSample(step: step)
-                    } label: {
-                        Label(
-                            previewingStep == step ? "停止试听" : "试听声音",
-                            systemImage: previewingStep == step ? "stop.fill" : "play.fill"
-                        )
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(HexTheme.textBase)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 36)
-                        .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    HStack(spacing: 8) {
+                        Button {
+                            previewVoiceSample(step: step)
+                        } label: {
+                            Label(
+                                previewingStep == step ? "停止试听" : "试听声音",
+                                systemImage: previewingStep == step ? "stop.fill" : "play.fill"
+                            )
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(HexTheme.textBase)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 36)
+                            .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            startRecording(step: step)
+                        } label: {
+                            Label("重新录制", systemImage: "arrow.clockwise")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(HexTheme.textBase)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 36)
+                                .background(Color.white.opacity(0.07), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isRecording || isRequestingPermission)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(isRecording || isRequestingPermission)
                 } else {
                     Button {
                         startRecording(step: step)
