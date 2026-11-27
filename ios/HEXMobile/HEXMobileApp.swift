@@ -55,6 +55,9 @@ struct HEXMobileApp: App {
                     } else if case .translationSettings = request {
                         openedFromKeyboard = false
                         openPage = .dictation
+                    } else if case .learning = request {
+                        openedFromKeyboard = false
+                        openPage = .learning
                     } else {
                         openedFromKeyboard = true
                     }
