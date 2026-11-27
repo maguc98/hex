@@ -97,8 +97,8 @@ struct VoiceLearningPage: View {
             isVisible = true
             sharedStorageDiagnostic = store.sharedStorageDiagnostic()
             hasAnyVoiceSamples = store.samples().contains(where: VoiceLearningProfile.isVoiceSample)
-            if KeyboardBridge().noiseReductionEnabled {
-                noiseReductionEnabled = true
+            if sharedStorageDiagnostic == "共享空间可读写" {
+                noiseReductionEnabled = KeyboardBridge().noiseReductionEnabled
             }
         }
         .onChange(of: noiseReductionEnabled) { _, enabled in
