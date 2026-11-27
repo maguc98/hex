@@ -513,24 +513,25 @@ final class DictationController {
             return true
         }
 
-        if !store.hasPending(resultID: learningResultID) {
-            let staged = store.stagePendingText(
-                resultID: learningResultID,
+        var saved = store.isSavedSample(id: learningResultID)
+        if !saved, store.hasPending(resultID: learningResultID) {
+            saved = store.confirmPending(resultID: learningResultID)
+                && store.isSavedSample(id: learningResultID)
+        }
+        if !saved {
+            // No pending WAV/text pair survived staging. Commit the sentence directly as a
+            // text-only sample, then verify it through the same shared store read path.
+            saved = store.saveTextSample(
+                id: learningResultID,
                 text: learningText,
                 heard: learningHeard,
                 translatedText: learningTranslatedText,
                 translatedLanguage: learningTranslatedLanguage,
                 language: learningLanguage ?? "und",
                 duration: learningDuration
-            )
-            guard staged else {
-                learningSaveFailed = true
-                return false
-            }
+            ) && store.isSavedSample(id: learningResultID)
         }
-
-        guard store.confirmPending(resultID: learningResultID),
-              store.isSavedSample(id: learningResultID) else {
+        guard saved else {
             learningSaveFailed = true
             return false
         }
