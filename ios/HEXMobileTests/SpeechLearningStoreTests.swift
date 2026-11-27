@@ -76,6 +76,57 @@ final class SpeechLearningStoreTests: XCTestCase {
         XCTAssertNil(sample.translatedLanguage)
     }
 
+    func testLearningSentenceCanBeSavedWhenAudioFileIsUnavailable() throws {
+        let missingAudioURL = directory.appendingPathComponent("missing-capture.wav")
+        let store = SpeechLearningStore(
+            defaults: defaults,
+            directoryURL: directory.appendingPathComponent("library", isDirectory: true)
+        )
+
+        XCTAssertTrue(store.stagePendingAudio(
+            from: missingAudioURL,
+            resultID: "text-only-1",
+            text: "今天我们开始学习。",
+            heard: "今天我们开始学习",
+            translatedText: "Today we begin learning.",
+            translatedLanguage: "en",
+            language: "zh-CN",
+            duration: 5
+        ))
+        XCTAssertTrue(store.hasPending(resultID: "text-only-1"))
+        XCTAssertTrue(store.confirmPending(resultID: "text-only-1"))
+
+        let sample = try XCTUnwrap(store.samples().first)
+        XCTAssertEqual(sample.text, "今天我们开始学习。")
+        XCTAssertEqual(sample.translatedText, "Today we begin learning.")
+        XCTAssertTrue(sample.audioFileName.isEmpty)
+        XCTAssertNil(store.audioURL(for: sample))
+        XCTAssertTrue(store.deleteSample(id: sample.id))
+    }
+
+    func testLearningAudioCanBeStagedForLongerDictations() throws {
+        let audioURL = directory.appendingPathComponent("long-capture.wav")
+        try Data(repeating: 1, count: 64).write(to: audioURL)
+        let store = SpeechLearningStore(
+            defaults: defaults,
+            directoryURL: directory.appendingPathComponent("library", isDirectory: true)
+        )
+
+        XCTAssertTrue(store.stagePendingAudio(
+            from: audioURL,
+            resultID: "long-1",
+            text: "This is a longer dictated learning sentence.",
+            heard: nil,
+            language: "en-US",
+            duration: 60
+        ))
+        XCTAssertTrue(store.hasPending(resultID: "long-1"))
+        XCTAssertTrue(store.confirmPending(resultID: "long-1"))
+        let sample = try XCTUnwrap(store.samples().first)
+        XCTAssertEqual(sample.duration, 60)
+        XCTAssertNotNil(store.audioURL(for: sample))
+    }
+
     func testLegacySavedSamplesDecodeWithoutTranslationFields() throws {
         let legacy = """
         [{"id":"legacy-1","text":"Good morning","heard":"good morning","language":"en-US","createdAt":1,"duration":1.2,"audioFileName":"legacy-1.wav"}]
