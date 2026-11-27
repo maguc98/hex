@@ -24,6 +24,7 @@ struct VoiceLearningPage: View {
     @State private var statusMessage: String?
     @State private var showingClearConfirmation = false
     @State private var isVisible = false
+    @State private var recordingLimitTask: Task<Void, Never>?
     @State private var sharedStorageDiagnostic = SpeechLearningStore().sharedStorageDiagnostic()
 
     private var store: SpeechLearningStore { SpeechLearningStore() }
@@ -102,10 +103,10 @@ struct VoiceLearningPage: View {
             KeyboardBridge().noiseReductionEnabled = enabled
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase != .active {
+            if phase == .background {
                 isVisible = false
                 discardCurrentRecording()
-            } else {
+            } else if phase == .active {
                 isVisible = true
             }
         }
@@ -389,12 +390,21 @@ struct VoiceLearningPage: View {
                     guard audioRecorder.record() else {
                         statusMessage = "录音启动失败，请重试。"
                         try? FileManager.default.removeItem(at: url)
+                        try? session.setActive(false, options: .notifyOthersOnDeactivation)
                         return
                     }
                     recorder = audioRecorder
                     recordingStep = step
                     isRecording = true
+                    recordingLimitTask?.cancel()
+                    recordingLimitTask = Task { @MainActor in
+                        try? await Task.sleep(for: .seconds(30))
+                        guard !Task.isCancelled, isRecording, recordingStep == step else { return }
+                        stopRecording()
+                        statusMessage = "达到 30 秒录音上限，样本已准备保存。"
+                    }
                 } catch {
+                    try? session.setActive(false, options: .notifyOthersOnDeactivation)
                     statusMessage = "无法开始录音：\(error.localizedDescription)"
                 }
             }
@@ -405,6 +415,8 @@ struct VoiceLearningPage: View {
         guard let activeRecorder = recorder, let step = recordingStep else { return }
         let duration = activeRecorder.currentTime
         let url = activeRecorder.url
+        recordingLimitTask?.cancel()
+        recordingLimitTask = nil
         activeRecorder.stop()
         recorder = nil
         recordingStep = nil
@@ -462,6 +474,8 @@ struct VoiceLearningPage: View {
     }
 
     private func discardCurrentRecording() {
+        recordingLimitTask?.cancel()
+        recordingLimitTask = nil
         if let recorder {
             let url = recorder.url
             recorder.stop()
