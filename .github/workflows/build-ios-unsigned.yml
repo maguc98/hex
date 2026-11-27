@@ -7,6 +7,7 @@ on:
       - dev
       - 'sync/**'
       - 'rebuild/**'
+      - 'feature/**'
     paths:
       - ".github/workflows/build-ios-unsigned.yml"
       - "ios/**"
@@ -14,6 +15,7 @@ on:
   pull_request:
     branches:
       - dev
+      - 'fix/**'
     paths:
       - ".github/workflows/build-ios-unsigned.yml"
       - "ios/**"
