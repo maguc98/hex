@@ -264,7 +264,9 @@ final class SystemAudioManager: AudioManaging {
     /// at its end. The hardware keeps its own rate: the recorder writes 16 kHz itself, and the
     /// keepalive taps whatever format the hardware reports.
     func configureAudioSession(recordingFrom choice: MicrophoneChoice?) throws {
-        let noiseReduction = choice != nil && KeyboardBridge().noiseReductionEnabled
+        let noiseReduction = choice != nil && (
+            KeyboardBridge().noiseReductionEnabled || AppVoiceProcessingSettings.isEnabled
+        )
         try session.setCategory(
             .playAndRecord,
             mode: noiseReduction ? .voiceChat : .measurement,
