@@ -498,6 +498,31 @@ enum KeyboardStageWaveformPresentation {
     }
 }
 
+/// The noise-reduction top bar switches layouts without changing the original off state.
+enum KeyboardNoiseReductionTopBarPresentation {
+    static func showsLanguageAndStyle(noiseReductionEnabled: Bool) -> Bool {
+        !noiseReductionEnabled
+    }
+
+    static func showsReferenceWaveform(noiseReductionEnabled: Bool, hasReferenceChannel: Bool) -> Bool {
+        noiseReductionEnabled && hasReferenceChannel
+    }
+
+    static func showsReferenceWaitingState(noiseReductionEnabled: Bool, hasReferenceChannel: Bool) -> Bool {
+        noiseReductionEnabled && !hasReferenceChannel
+    }
+
+    static func referenceStatusText(for state: KeyboardNoiseReferenceState) -> String {
+        switch state {
+        case .idle: return "点按后使用 Hex 原生录音"
+        case .waiting: return "等待辅助声道"
+        case .available: return "辅助声道已连接"
+        case .unavailable: return "当前输入未提供辅助声道"
+        case .nativeCapture: return "Hex 原生录音中"
+        }
+    }
+}
+
 struct KeyboardSurfaceView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -604,6 +629,9 @@ struct KeyboardSurfaceView: View {
         }
         .onChange(of: noiseReductionEnabled) { _, enabled in
             KeyboardBridge().noiseReductionEnabled = enabled
+            if enabled {
+                model.setActiveTray(.none, reduceMotion: reduceMotion)
+            }
         }
         .padding(.top, 4)
         .padding(.bottom, 6)
@@ -677,14 +705,24 @@ struct KeyboardSurfaceView: View {
                 Spacer(minLength: 4)
             }
 
-            // Keep language switch (Chinese) and style/精修 visible during recording.
-            if model.showsLanguageSwitch || model.showsTranslationSwitch, model.translationNote == nil {
+            if noiseReductionEnabled {
+                noiseReferenceCapsule(palette: p)
+                    .frame(maxWidth: .infinity)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
                 noiseReductionTrigger(palette: p)
-                languageTrigger(palette: p)
-            }
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else if KeyboardNoiseReductionTopBarPresentation.showsLanguageAndStyle(
+                noiseReductionEnabled: noiseReductionEnabled
+            ) {
+                // The original layout is unchanged when noise reduction is off.
+                if model.showsLanguageSwitch || model.showsTranslationSwitch, model.translationNote == nil {
+                    noiseReductionTrigger(palette: p)
+                    languageTrigger(palette: p)
+                }
 
-            styleTrigger(palette: p)
-                .hexTrayReveal(model.hasFullAccess && model.translationNote == nil, reduceMotion: reduceMotion, offsetY: 0)
+                styleTrigger(palette: p)
+                    .hexTrayReveal(model.hasFullAccess && model.translationNote == nil, reduceMotion: reduceMotion, offsetY: 0)
+            }
         }
         .frame(height: TopBarMetrics.height)
     }
@@ -878,6 +916,65 @@ struct KeyboardSurfaceView: View {
         // the switch shows (it needs Full Access).
         .layoutPriority(1)
         .accessibilityLabel("Dictation language: \(label)")
+    }
+
+    private func noiseReferenceCapsule(palette p: KeyboardChromePalette) -> some View {
+        TimelineView(
+            .animation(
+                minimumInterval: 1.0 / 18.0,
+                paused: !noiseReductionEnabled || !model.hasLiveNoiseReferenceChannel
+            )
+        ) { _ in
+            ZStack {
+                if KeyboardNoiseReductionTopBarPresentation.showsReferenceWaveform(
+                    noiseReductionEnabled: noiseReductionEnabled,
+                    hasReferenceChannel: model.hasLiveNoiseReferenceChannel
+                ) {
+                    Canvas { context, size in
+                        let samples = model.noiseReferenceWaveformLevels
+                        let count = 32
+                        let gap: CGFloat = 2
+                        let barWidth = max(1, (size.width - CGFloat(count - 1) * gap) / CGFloat(count))
+                        let start = max(0, samples.count - count)
+
+                        for index in 0..<count {
+                            let sampleIndex = start + index
+                            let level = sampleIndex < samples.count ? samples[sampleIndex] : 0
+                            let height = max(2, min(size.height * 0.78, CGFloat(level) * size.height * 1.25))
+                            let rect = CGRect(
+                                x: CGFloat(index) * (barWidth + gap),
+                                y: (size.height - height) * 0.5,
+                                width: barWidth,
+                                height: height
+                            )
+                            context.fill(
+                                Path(roundedRect: rect, cornerRadius: barWidth * 0.5),
+                                with: .color(Color.blue.opacity(0.82))
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 4)
+                } else if KeyboardNoiseReductionTopBarPresentation.showsReferenceWaitingState(
+                    noiseReductionEnabled: noiseReductionEnabled,
+                    hasReferenceChannel: model.hasLiveNoiseReferenceChannel
+                ) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 11, weight: .medium))
+                        Text(KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: model.noiseReferenceState))
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundStyle(p.textMuted)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 26)
+            .background(p.chipActiveFill.opacity(0.82), in: Capsule())
+            .overlay(Capsule().stroke(Color.blue.opacity(0.10), lineWidth: 0.6))
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel(model.noiseReferenceState == .available ? "实时辅助声道波形" : KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: model.noiseReferenceState))
     }
 
     private func noiseReductionTrigger(palette p: KeyboardChromePalette) -> some View {
@@ -1362,8 +1459,18 @@ struct KeyboardSurfaceView: View {
     private func handleIdleStageTap() {
         if !model.hasFullAccess {
             model.onOpenURL?(KeyboardLaunchRequest.setup.url)
+        } else if noiseReductionEnabled {
+            // WKWebView getUserMedia is mono on iOS. Route this mode through the host app's
+            // native stereo recorder; a warm Hex session can still keep the keyboard visible.
+            if model.dictatesThroughHex {
+                model.onDictateTap?()
+            } else if let local = model.onLocalDictateTap {
+                local() // The controller redirects this request to Hex's native capture path.
+            } else {
+                model.onDictationUnavailable?()
+            }
         } else if whisperModeEnabled, let local = model.onLocalDictateTap {
-            // Whisper mode stays on the keyboard's locally processed audio path.
+            // Whisper-only mode keeps its low-volume, keyboard-local processing path.
             local()
         } else if model.stagePhase == .failed {
             if let local = model.onLocalDictateTap {

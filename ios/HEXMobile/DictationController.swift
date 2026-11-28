@@ -735,7 +735,7 @@ final class DictationController {
         Task {
             let granted = await audio.requestPermission()
             guard self.jobGeneration == requestGen else { return }
-            guard !self.keyboardBridge.quickWakeEnabled else {
+            guard !self.keyboardBridge.quickWakeEnabled || self.keyboardBridge.noiseReductionEnabled else {
                 self.pendingHandoff = nil
                 self.phase = self.isModelReady ? .ready : .modelRequired
                 self.audio.deactivateSession()
@@ -957,6 +957,11 @@ final class DictationController {
                 try? FileManager.default.removeItem(at: captureURL)
                 backgroundTime?.end()
             }
+
+            // Stereo input is analyzed and folded to the mono WAV format expected by the
+            // speech engines before transcription or Learning audio staging reads the file.
+            await session.capture.finalizeCapture()
+            guard self?.jobGeneration == captureGeneration, !Task.isCancelled else { return }
             let transcribeStarted = Date()
 
             do {
@@ -1060,7 +1065,7 @@ final class DictationController {
                 self.publishKeyboardSnapshot()
                 self.prepareDeferredLanguageIfNeeded()
             } catch {
-                guard !Task.isCancelled, let self, self.jobGeneration == captureGeneration else {
+                guard let self, !Task.isCancelled, self.jobGeneration == captureGeneration else {
                     return
                 }
                 self.recordingDuration = 0
@@ -1155,6 +1160,7 @@ final class DictationController {
                 self.loudnessDB = db
                 self.audioLevel = max(0, min(1, (db + 48) / 48))
                 self.recordingDuration = session.capture.currentTime
+                self.keyboardBridge.nativeStereoReferenceLevelDB = session.capture.referencePowerDB()
                 self.publishKeyboardSnapshot(minInterval: 0.10)
 
                 if self.recordingDuration >= Self.maxCaptureDuration - 0.25 {

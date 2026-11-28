@@ -504,6 +504,8 @@ struct KeyboardBridge {
         static let appMicrophoneAllowed = "app.microphoneAllowed"
         static let quickWakeEnabled = "settings.quickWakeEnabled"
         static let noiseReductionEnabled = "settings.noiseReductionEnabled"
+        static let nativeStereoChannelAvailable = "keyboard.nativeStereoChannelAvailable"
+        static let nativeStereoReferenceLevelDB = "keyboard.nativeStereoReferenceLevelDB"
         static let lastEmptyDictationAt = "keyboard.lastEmptyDictationAt"
         static let heldDictation = "keyboard.heldDictation"
         static let shownAt = "keyboard.shownAt"
@@ -688,6 +690,27 @@ struct KeyboardBridge {
     var noiseReductionEnabled: Bool {
         get { defaults?.bool(forKey: Key.noiseReductionEnabled) ?? false }
         nonmutating set { defaults?.set(newValue, forKey: Key.noiseReductionEnabled) }
+    }
+
+    /// Live telemetry from Hex's native recorder. The keyboard reads the actual second-channel
+    /// meter when the selected input really supplied stereo; nil means no reference sample.
+    var nativeStereoChannelAvailable: Bool {
+        get { defaults?.bool(forKey: Key.nativeStereoChannelAvailable) ?? false }
+        nonmutating set { defaults?.set(newValue, forKey: Key.nativeStereoChannelAvailable) }
+    }
+
+    var nativeStereoReferenceLevelDB: Float? {
+        get {
+            guard let value = defaults?.object(forKey: Key.nativeStereoReferenceLevelDB) as? NSNumber else { return nil }
+            return value.floatValue
+        }
+        nonmutating set {
+            if let newValue {
+                defaults?.set(Double(newValue), forKey: Key.nativeStereoReferenceLevelDB)
+            } else {
+                defaults?.removeObject(forKey: Key.nativeStereoReferenceLevelDB)
+            }
+        }
     }
 
     /// Whether Hex has the microphone, as the app last read it. Only the app sets this. A

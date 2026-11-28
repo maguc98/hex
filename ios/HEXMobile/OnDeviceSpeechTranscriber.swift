@@ -220,13 +220,14 @@ actor OnDeviceSpeechTranscriber: LocalTranscribing {
         let text: String = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
                 once.start(continuation) {
-                    recognizer.recognitionTask(with: request) { result, error in
+                    let task = recognizer.recognitionTask(with: request) { result, error in
                         if let result, result.isFinal {
                             once.finish(.success(result.bestTranscription.formattedString))
                         } else if let error {
                             once.finish(Self.isNoSpeech(error) ? .success("") : .failure(error))
                         }
                     }
+                    return { task.cancel() }
                 }
             }
         } onCancel: {
@@ -247,46 +248,50 @@ actor OnDeviceSpeechTranscriber: LocalTranscribing {
 
 /// Resumes one recognition's continuation once: Speech can call back again after the final
 /// result, and with an error after a cancel.
-private nonisolated final class RecognitionResume: @unchecked Sendable {
+nonisolated final class RecognitionResume: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<String, Error>?
-    private var task: SFSpeechRecognitionTask?
+    private var cancelTask: (() -> Void)?
     private var cancelled = false
 
-    func start(_ continuation: CheckedContinuation<String, Error>, task make: () -> SFSpeechRecognitionTask) {
-        let cancelled = lock.withLock {
+    func start(_ continuation: CheckedContinuation<String, Error>, task make: () -> (() -> Void)) {
+        let wasCancelled = lock.withLock {
             self.continuation = continuation
             return self.cancelled
         }
-        guard !cancelled else { return finish(.failure(CancellationError())) }
-        let task = make()
+        guard !wasCancelled else { return finish(.failure(CancellationError())) }
+
+        let cancelTask = make()
         // Cancellation can race the task factory: cancel() may run after the first
-        // lock above but before this handle is installed. Recheck under the lock so
-        // the newly-created Speech task cannot outlive its already-cancelled request.
+        // lock above but before this handle is installed. Read the stored state (not
+        // the initial snapshot) so the newly-created Speech task is cancelled as well.
         let shouldCancel = lock.withLock {
-            guard !cancelled else { return true }
-            self.task = task
+            guard !self.cancelled, self.continuation != nil else { return true }
+            self.cancelTask = cancelTask
             return false
         }
         if shouldCancel {
-            task.cancel()
+            cancelTask()
         }
     }
 
     func finish(_ result: Result<String, Error>) {
         let continuation = lock.withLock {
-            defer { self.continuation = nil }
+            defer {
+                self.continuation = nil
+                self.cancelTask = nil
+            }
             return self.continuation
         }
         continuation?.resume(with: result)
     }
 
     func cancel() {
-        let task = lock.withLock {
+        let cancelTask = lock.withLock {
             cancelled = true
-            return self.task
+            return self.cancelTask
         }
-        task?.cancel()
+        cancelTask?()
         finish(.failure(CancellationError()))
     }
 }

@@ -56,6 +56,8 @@ final class KeyboardLocalDictation {
     }
     /// Refresh the keyboard immediately when the first real microphone buffer arrives.
     var onPhaseChange: (() -> Void)?
+    /// Levels from a separately reported second audio channel, when the route supplies one.
+    var onNoiseReferenceUpdate: ((Float?, KeyboardNoiseReferenceState) -> Void)?
 
     private enum VisibleStage: Equatable { case idle, starting, recording, transcribing, finished, failed }
     private func visibleStage(of phase: Phase) -> VisibleStage {
@@ -274,6 +276,7 @@ final class KeyboardLocalDictation {
     private func noteCaptureStopped() {
         live?.stop()
         live = nil
+        onNoiseReferenceUpdate?(nil, .idle)
         if capture === Self.sharedCapture {
             Self.ownership.endCapture(by: ownerID)
         }
@@ -472,6 +475,7 @@ final class KeyboardLocalDictation {
         loudness = -62
         armedFailure = nil
         firstAudioAt = nil
+        onNoiseReferenceUpdate?(nil, .waiting)
         phase = armed
             ? .armed(jobID: jobID, startedAt: requestedAt.timeIntervalSince1970)
             : .starting(jobID: jobID, startedAt: requestedAt.timeIntervalSince1970)
@@ -492,6 +496,7 @@ final class KeyboardLocalDictation {
         let label = armed ? ", touch-down" : ""
         Self.audioSessionQueue.async { [weak self, weak capture] in
             log.write("start(web\(label)): mic=\(Self.describe(AVAudioApplication.shared.recordPermission)) app=\(appAllowed ? "granted" : "no") speech=\(Self.describe(SFSpeechRecognizer.authorizationStatus())) \(KeyboardProbeLog.memory())")
+            let noiseReduction = KeyboardBridge().noiseReductionEnabled
             let input = Self.microphone(for: microphone)
             let otherAudio = AVAudioSession.sharedInstance().isOtherAudioPlaying
             DispatchQueue.main.async {
@@ -504,7 +509,7 @@ final class KeyboardLocalDictation {
                     capture.start(
                         microphone: input?.name,
                         builtInFallback: microphone != .bluetooth,
-                        noiseReduction: KeyboardBridge().noiseReductionEnabled
+                        noiseReduction: noiseReduction
                     )
                 }
             }
@@ -569,28 +574,15 @@ final class KeyboardLocalDictation {
         }
     }
 
-    /// Moderate gain for whispered speech. A hard ceiling prevents clipping; the same
-    /// processed samples feed both saved audio and streaming recognition.
-    private static func amplifyWhisperPCM(_ data: Data) -> Data {
-        guard data.count >= 2 else { return data }
-        var bytes = Array(data)
-        for offset in stride(from: 0, to: bytes.count - 1, by: 2) {
-            let bits = UInt16(bytes[offset]) | (UInt16(bytes[offset + 1]) << 8)
-            let sample = Int16(bitPattern: bits)
-            let amplified = Int32((Float(sample) * 2.4).rounded())
-            let clipped = Int16(max(-30_000, min(30_000, amplified)))
-            let output = UInt16(bitPattern: clipped)
-            bytes[offset] = UInt8(truncatingIfNeeded: output)
-            bytes[offset + 1] = UInt8(truncatingIfNeeded: output >> 8)
-        }
-        return Data(bytes)
-    }
-
     private func handle(_ event: KeyboardWebCapture.Event, jobID: String, requestedAt: Date) {
         let log = KeyboardProbeLog.shared
         switch event {
-        case .started(let sampleRate, let device, let steps):
-            log.write("web capture started in \(Int(Date().timeIntervalSince(requestedAt) * 1000)) ms at \(Int(sampleRate)) Hz from \(device) \(KeyboardProbeLog.memory())")
+        case .started(let sampleRate, let device, let steps, let noiseSuppression, let autoGainControl, let channelCount):
+            log.write("web capture started in \(Int(Date().timeIntervalSince(requestedAt) * 1000)) ms at \(Int(sampleRate)) Hz from \(device), channels=\(channelCount) \(KeyboardProbeLog.memory())")
+            let requestedNoiseReduction = KeyboardBridge().noiseReductionEnabled
+            let suppression = noiseSuppression.map { $0 ? "on" : "off" } ?? "not reported"
+            let gainControl = autoGainControl.map { $0 ? "on" : "off" } ?? "not reported"
+            log.write("audio processing: requested noise reduction=\(requestedNoiseReduction), WebKit noise suppression=\(suppression), auto gain=\(gainControl)")
             if let capture {
                 timeline?.noteStarted(capture: capture, steps: steps, sampleRate: sampleRate)
             }
@@ -599,6 +591,7 @@ final class KeyboardLocalDictation {
                 capture?.stop()
                 return
             }
+            onNoiseReferenceUpdate?(nil, channelCount > 1 ? .waiting : .unavailable)
             do {
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent("keyboard-\(jobID).wav")
                 pcmFile = try KeyboardPCMFile(url: url, sampleRate: sampleRate)
@@ -607,9 +600,15 @@ final class KeyboardLocalDictation {
                 capture?.stop()
                 fail(UserFacingError.Context.microphone.fallback, detail: "Could not create audio file: \(Self.describe(error))")
             }
-        case .samples(let data, let peak):
+        case .samples(let data, let peak, let referencePeak):
             // Old WebKit pages can deliver late callbacks; only this job's non-empty PCM counts.
             guard isCapturing(jobID), !data.isEmpty, pcmFile != nil else { return }
+            if let referencePeak {
+                let referenceDB = referencePeak > 0 ? max(-60, min(0, 20 * log10(referencePeak))) : -60
+                onNoiseReferenceUpdate?(referenceDB, .available)
+            } else {
+                onNoiseReferenceUpdate?(nil, .unavailable)
+            }
             let now = Date().timeIntervalSince1970
             if firstAudioAt == nil {
                 firstAudioAt = now
@@ -624,8 +623,8 @@ final class KeyboardLocalDictation {
             // Whisper mode adds conservative, peak-limited gain before both the WAV
             // recorder and live recogniser receive the samples.
             let whisper = KeyboardWhisperSettings().isEnabled
-            let audio = whisper ? Self.amplifyWhisperPCM(data) : data
-            let displayedPeak = min(1.0, peak * (whisper ? 2.4 : 1.0))
+            let audio = whisper ? WhisperAudioProcessor.amplify(data) : data
+            let displayedPeak = min(1.0, peak * (whisper ? WhisperAudioProcessor.defaultGain : 1.0))
             pcmFile?.append(audio)
             live?.append(audio)
             lastProgressAt = now
@@ -730,6 +729,7 @@ final class KeyboardLocalDictation {
         guard case .starting(let jobID, _) = phase else { return }
         if startPending == jobID { startPending = nil }
         timeline = nil
+        onNoiseReferenceUpdate?(nil, .idle)
         if let capture, capture !== Self.sharedCapture || Self.ownership.owner == ownerID {
             listenWhileIdle(capture)
             capture.stop()
@@ -1244,8 +1244,15 @@ private final class KeyboardPCMFile {
 @MainActor
 private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     enum Event {
-        case started(sampleRate: Double, device: String, steps: CaptureSteps)
-        case samples(Data, peak: Float)
+        case started(
+            sampleRate: Double,
+            device: String,
+            steps: CaptureSteps,
+            noiseSuppression: Bool?,
+            autoGainControl: Bool?,
+            channelCount: Int
+        )
+        case samples(Data, peak: Float, referencePeak: Float?)
         /// The page's AudioContext or microphone track changed.
         case state(KeyboardCapturePageState)
         case stopped
@@ -1368,11 +1375,18 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
                     openedAt: (body["opened"] as? Double).map { $0 / 1000 },
                     microphoneAt: (body["mic"] as? Double).map { $0 / 1000 },
                     audioAt: (body["audio"] as? Double).map { $0 / 1000 }
-                )
+                ),
+                noiseSuppression: body["noiseSuppression"] as? Bool,
+                autoGainControl: body["autoGainControl"] as? Bool,
+                channelCount: (body["channels"] as? Int) ?? 1
             ))
         case "pcm":
             guard let encoded = body["data"] as? String, let data = Data(base64Encoded: encoded) else { return }
-            onEvent?(.samples(data, peak: Float((body["peak"] as? Double) ?? 0)))
+            onEvent?(.samples(
+                data,
+                peak: Float((body["peak"] as? Double) ?? 0),
+                referencePeak: (body["referencePeak"] as? Double).map(Float.init)
+            ))
         case "state":
             onEvent?(.state(KeyboardCapturePageState(
                 cause: (body["cause"] as? String) ?? "unknown",
@@ -1474,7 +1488,9 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
       let s = null, c = null;
       try {
         const base = {
-          channelCount: 1,
+          // Ask for stereo where the active input route supports it. The returned channel
+          // count is verified below; mono remains a valid fallback.
+          channelCount: { ideal: 2 },
           echoCancellation: false,
           noiseSuppression: !!noiseReduction,
           autoGainControl: !!noiseReduction
@@ -1506,21 +1522,99 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
         listen(track());
         c.onstatechange = () => report("statechange");
         source = ctx.createMediaStreamSource(stream);
-        node = ctx.createScriptProcessor(4096, 1, 1);
+        const initialSettings = track().getSettings ? track().getSettings() : {};
+        const inputChannels = Math.max(1, Math.min(2, Number(initialSettings.channelCount) || 1));
+        node = ctx.createScriptProcessor(4096, inputChannels, 1);
+
+        // Conservative dual-channel reference cancellation (NLMS).
+        // Stereo is not assumed to mean two independent physical microphones:
+        // analyze each buffer and bypass cancellation when channels look duplicated,
+        // the reference is weak, or the primary is speech-dominant.
+        const filterTaps = 64;
+        const filterMu = 0.025;
+        const filterEpsilon = 1e-5;
+        const referenceHistory = new Float32Array(filterTaps);
+        const adaptiveWeights = new Float32Array(filterTaps);
+        let historyIndex = 0;
+        const cancellationEnabled = !!noiseReduction;
+        let cancellationFrames = 0;
+        let cancelledFrames = 0;
         node.onaudioprocess = (event) => {
           if (!running && !flushed) return;
-          const input = event.inputBuffer.getChannelData(0);
+          const inputBuffer = event.inputBuffer;
+          const input = inputBuffer.getChannelData(0);
+          const currentSettings = track() && track().getSettings ? track().getSettings() : {};
+          const hasReference = Number(currentSettings.channelCount || 1) > 1 && inputBuffer.numberOfChannels > 1;
+          const reference = hasReference ? inputBuffer.getChannelData(1) : null;
           const pcm = new Int16Array(input.length);
-          let peak = 0;
+          let primarySumSq = 0, referenceSumSq = 0, cross = 0, differenceSumSq = 0;
+          let peak = 0, referencePeak = 0, cancelledPeak = 0;
+          if (reference) {
+            for (let i = 0; i < input.length; i++) {
+              const p = input[i], r = reference[i];
+              primarySumSq += p * p; referenceSumSq += r * r;
+              cross += p * r; differenceSumSq += (p - r) * (p - r);
+            }
+          } else {
+            for (let i = 0; i < input.length; i++) primarySumSq += input[i] * input[i];
+          }
+          const primaryRMS = Math.sqrt(primarySumSq / Math.max(1, input.length));
+          const referenceRMS = reference ? Math.sqrt(referenceSumSq / Math.max(1, input.length)) : 0;
+          const correlation = reference && primaryRMS > 1e-6 && referenceRMS > 1e-6
+            ? cross / Math.sqrt(primarySumSq * referenceSumSq) : 0;
+          const differenceRMS = reference ? Math.sqrt(differenceSumSq / Math.max(1, input.length)) : 0;
+          const duplicatedChannels = !!reference && Math.abs(correlation) > 0.995 &&
+            differenceRMS < Math.max(0.002, primaryRMS * 0.035);
+          const validReference = !!reference && referenceRMS > 0.003 && !duplicatedChannels;
+          // Block-level double-talk guard: if the target channel dominates, pass it untouched.
+          const speechDominant = primaryRMS > referenceRMS * 1.30 + 0.012;
+          const allowCancellation = cancellationEnabled && validReference && !speechDominant;
           for (let i = 0; i < input.length; i++) {
-            const s = Math.max(-1, Math.min(1, input[i]));
-            peak = Math.max(peak, Math.abs(s));
-            pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+            const primary = Math.max(-1, Math.min(1, input[i]));
+            let output = primary;
+            if (allowCancellation) {
+              const ref = Math.max(-1, Math.min(1, reference[i]));
+              referenceHistory[historyIndex] = ref;
+              let estimate = 0, norm = filterEpsilon, cursor = historyIndex;
+              for (let tap = 0; tap < filterTaps; tap++) {
+                const x = referenceHistory[cursor];
+                estimate += adaptiveWeights[tap] * x;
+                norm += x * x;
+                cursor = cursor === 0 ? filterTaps - 1 : cursor - 1;
+              }
+              const error = primary - estimate;
+              if (Math.abs(ref) > 0.004) {
+                const step = filterMu * error / norm;
+                cursor = historyIndex;
+                for (let tap = 0; tap < filterTaps; tap++) {
+                  adaptiveWeights[tap] += step * referenceHistory[cursor];
+                  cursor = cursor === 0 ? filterTaps - 1 : cursor - 1;
+                }
+              }
+              output = error;
+              historyIndex = (historyIndex + 1) % filterTaps;
+              cancellationFrames++;
+              if (Math.abs(estimate) > 0.001) cancelledFrames++;
+            }
+            output = Math.max(-1, Math.min(1, output));
+            peak = Math.max(peak, Math.abs(output));
+            cancelledPeak = Math.max(cancelledPeak, Math.abs(primary - output));
+            pcm[i] = output < 0 ? output * 0x8000 : output * 0x7fff;
+            if (reference) referencePeak = Math.max(referencePeak, Math.abs(reference[i]));
           }
           const bytes = new Uint8Array(pcm.buffer);
           let binary = "";
           for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-          post({ type: "pcm", data: btoa(binary), peak });
+          post({
+            type: "pcm", data: btoa(binary), peak,
+            referencePeak: reference ? referencePeak : null,
+            cancellationActive: allowCancellation,
+            cancellationBypass: cancellationEnabled && !!reference && !allowCancellation,
+            cancellationReason: !reference ? "mono" : duplicatedChannels ? "duplicate channels" :
+              referenceRMS <= 0.003 ? "weak reference" : speechDominant ? "speech dominant" : null,
+            channelCorrelation: correlation, primaryRMS, referenceRMS, differenceRMS,
+            cancellationFrames, cancelledFrames, cancelledPeak
+          });
           if (flushed) flushed();
         };
         source.connect(node);
@@ -1531,12 +1625,13 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
           type: "started",
           rate: ctx.sampleRate,
           device: track().label,
+          channels: Math.max(1, Math.min(2, Number(applied.channelCount) || inputChannels)),
           listed,
           opened,
           mic,
           audio: Date.now(),
-          noiseSuppression: !!applied.noiseSuppression,
-          autoGainControl: !!applied.autoGainControl
+          noiseSuppression: typeof applied.noiseSuppression === "boolean" ? applied.noiseSuppression : null,
+          autoGainControl: typeof applied.autoGainControl === "boolean" ? applied.autoGainControl : null
         });
       } catch (error) {
         if (stale()) return release(s, c);

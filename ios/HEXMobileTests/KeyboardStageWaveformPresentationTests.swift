@@ -31,6 +31,65 @@ final class KeyboardStageWaveformPresentationTests: XCTestCase {
         }
     }
 
+    func testNoiseReductionOffKeepsOriginalLanguageAndStyleLayout() {
+        XCTAssertTrue(KeyboardNoiseReductionTopBarPresentation.showsLanguageAndStyle(noiseReductionEnabled: false))
+        XCTAssertFalse(KeyboardNoiseReductionTopBarPresentation.showsReferenceWaveform(
+            noiseReductionEnabled: false,
+            hasReferenceChannel: true
+        ))
+    }
+
+    func testNoiseReductionOnHidesLanguageAndStyleAndUsesReferenceCapsule() {
+        XCTAssertFalse(KeyboardNoiseReductionTopBarPresentation.showsLanguageAndStyle(noiseReductionEnabled: true))
+        XCTAssertTrue(KeyboardNoiseReductionTopBarPresentation.showsReferenceWaveform(
+            noiseReductionEnabled: true,
+            hasReferenceChannel: true
+        ))
+        XCTAssertTrue(KeyboardNoiseReductionTopBarPresentation.showsReferenceWaitingState(
+            noiseReductionEnabled: true,
+            hasReferenceChannel: false
+        ))
+    }
+
+    func testReferenceWaveformIsNotShownWithoutASecondReportedChannel() {
+        XCTAssertFalse(KeyboardNoiseReductionTopBarPresentation.showsReferenceWaveform(
+            noiseReductionEnabled: true,
+            hasReferenceChannel: false
+        ))
+    }
+
+    func testNoiseReferenceStatusDoesNotClaimToWaitWhileIdle() {
+        XCTAssertEqual(
+            KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: .idle),
+            "点按后使用 Hex 原生录音"
+        )
+    }
+
+    func testNoiseReferenceStatusDistinguishesConnectingAndUnsupportedInput() {
+        XCTAssertEqual(
+            KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: .waiting),
+            "等待辅助声道"
+        )
+        XCTAssertEqual(
+            KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: .unavailable),
+            "当前输入未提供辅助声道"
+        )
+    }
+
+    func testAvailableReferenceChannelHasNoWaitingMessage() {
+        XCTAssertEqual(
+            KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: .available),
+            "辅助声道已连接"
+        )
+    }
+
+    func testNativeCaptureRouteHasItsOwnAccurateStatus() {
+        XCTAssertEqual(
+            KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: .nativeCapture),
+            "Hex 原生录音中"
+        )
+    }
+
     func testAppPreviewKeepsLiveScopeAtIdle() {
         XCTAssertFalse(
             KeyboardStageWaveformPresentation.usesRestingVisual(

@@ -34,6 +34,31 @@ the keyboard alike (a TestFlight tester who turned it off dictated, iOS 27.0.1, 
 Before iOS 26 Hex asks for it as it gets `SFSpeechRecognizer` ready (setup, or Set up),
 never at a launch by itself.
 
+## Personal Voice Learning
+
+The iOS app home has a **声音学习** entry. It guides the user through three
+short, language-scoped voice samples (natural pace, softer speech, and faster
+speech), each paired with an editable sentence. Recordings are kept in the
+existing local speech-learning store and can be played back, replaced, or
+cleared. The paired sentences are prioritized in the contextual-hint list sent
+to recognizers that support hints (Apple Speech); Parakeet currently ignores
+that hint list. This is not acoustic-model fine-tuning, a speaker embedding,
+or voice cloning.
+
+**嘈杂环境增强 / 双通道录音** uses the host app's native `AVAudioSession`
+and `AVAudioRecorder` path when the selected input exposes a stereo polar
+pattern and two actual input channels. The app verifies the route's real channel
+count, processes the two-channel recording conservatively, then folds it to the
+mono WAV format expected by speech engines. If the route cannot provide stereo,
+the app falls back to iOS `voiceChat` processing. The keyboard's WebKit
+`getUserMedia` capture remains the Quick Wake path for ordinary dictation; it is
+not used for reference-channel reduction because WebKit may expose only mono
+input. With an existing warm Hex session, the keyboard can remain visible while
+the app captures; without one, a noise-reduction dictation opens Hex for native
+capture. Whisper gain is preserved in the native finalization path. This is not
+a dedicated neural source-separation model, and results depend on the selected
+microphone, channel layout, and environment.
+
 ## Capabilities
 
 - **One-tap keyboard dictation (`HEXKeyboard`):**

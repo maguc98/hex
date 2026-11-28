@@ -5,7 +5,7 @@ import AVFoundation
 struct SpeechLearningLibraryPage: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.scenePhase) private var scenePhase
-    @State private var records = SpeechLearningStore().samples()
+    @State private var records = SpeechLearningStore().samples().filter { !VoiceLearningProfile.isVoiceSample($0) }
     @State private var storageDiagnostic = SpeechLearningStore().sharedStorageDiagnostic()
     @State private var player: AVAudioPlayer?
     @State private var playingID: String?
@@ -389,7 +389,7 @@ struct SpeechLearningLibraryPage: View {
 
     private func reload() {
         storageDiagnostic = store.sharedStorageDiagnostic()
-        records = store.samples()
+        records = store.samples().filter { !VoiceLearningProfile.isVoiceSample($0) }
     }
 
     private func play(_ sample: SpeechLearningSample) {

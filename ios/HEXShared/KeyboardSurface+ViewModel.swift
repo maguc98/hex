@@ -2,6 +2,15 @@ import Combine
 import SwiftUI
 import UIKit
 
+/// Availability of the second input channel while noise reduction is selected.
+enum KeyboardNoiseReferenceState: Equatable {
+    case idle
+    case waiting
+    case available
+    case unavailable
+    case nativeCapture
+}
+
 /// The dictation bar's state: its phase, the style and language trays, the message and
 /// transcript, and the clock the surface reads. Kept beside the surface view.
 @MainActor
@@ -161,6 +170,33 @@ final class KeyboardViewModel: ObservableObject {
         guard speechLearningResultID != nil else { return }
         withAnimation(.easeOut(duration: 0.18)) {
             speechLearningSaveFailed = true
+        }
+    }
+
+    // The reference channel's level history is read by a lightweight TimelineView/Canvas;
+    // only availability is published, so audio buffers don't invalidate the whole keyboard.
+    @Published private(set) var hasLiveNoiseReferenceChannel = false
+    @Published private(set) var noiseReferenceState: KeyboardNoiseReferenceState = .idle
+    private(set) var noiseReferenceWaveformLevels: [Float] = []
+
+    func updateNoiseReference(levelDB: Float?, state: KeyboardNoiseReferenceState) {
+        if noiseReferenceState != state {
+            noiseReferenceState = state
+        }
+        let available = state == .available
+        if hasLiveNoiseReferenceChannel != available {
+            hasLiveNoiseReferenceChannel = available
+            if available { noiseReferenceWaveformLevels.removeAll(keepingCapacity: true) }
+        }
+        guard available, let levelDB, levelDB.isFinite else {
+            if !available { noiseReferenceWaveformLevels.removeAll(keepingCapacity: true) }
+            return
+        }
+
+        let normalized = min(1, max(0, (levelDB + 60) / 60))
+        noiseReferenceWaveformLevels.append(normalized)
+        if noiseReferenceWaveformLevels.count > 36 {
+            noiseReferenceWaveformLevels.removeFirst(noiseReferenceWaveformLevels.count - 36)
         }
     }
 
