@@ -61,7 +61,7 @@ final class KeyboardStageWaveformPresentationTests: XCTestCase {
     func testNoiseReferenceStatusDoesNotClaimToWaitWhileIdle() {
         XCTAssertEqual(
             KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: .idle),
-            "录音时启动辅助声道"
+            "点按后使用 Hex 原生录音"
         )
     }
 
