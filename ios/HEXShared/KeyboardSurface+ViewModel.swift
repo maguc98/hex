@@ -8,6 +8,7 @@ enum KeyboardNoiseReferenceState: Equatable {
     case waiting
     case available
     case unavailable
+    case nativeCapture
 }
 
 /// The dictation bar's state: its phase, the style and language trays, the message and
