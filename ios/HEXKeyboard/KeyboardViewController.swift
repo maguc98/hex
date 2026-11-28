@@ -1111,7 +1111,14 @@ final class KeyboardViewController: UIInputViewController {
         )
         if bridge.noiseReductionEnabled {
             switch snap.state {
-            case .starting, .recording, .transcribing:
+            case .starting, .recording:
+                let state: KeyboardNoiseReferenceState = bridge.nativeStereoChannelAvailable
+                    ? .available : .unavailable
+                viewModel.updateNoiseReference(
+                    levelDB: bridge.nativeStereoReferenceLevelDB,
+                    state: state
+                )
+            case .transcribing:
                 viewModel.updateNoiseReference(levelDB: nil, state: .nativeCapture)
             case .offline, .ready, .failed:
                 if !localDictation.isActive {
