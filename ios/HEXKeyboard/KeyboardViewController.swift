@@ -1457,7 +1457,7 @@ final class KeyboardViewController: UIInputViewController {
         viewModel.onLocalDictateTap = available ? { [weak self] in
             guard let self else { return }
             if self.bridge.noiseReductionEnabled {
-                self.localDictation.discard(reason: "native stereo capture is handled by Hex")
+                self.localDictation.cancel()
                 self.viewModel.updateNoiseReference(levelDB: nil, state: .nativeCapture)
                 let request = KeyboardLaunchRequest.startRecording(
                     jobID: UUID().uuidString,
@@ -1661,8 +1661,9 @@ final class KeyboardViewController: UIInputViewController {
         if bridge.noiseReductionEnabled {
             viewModel.updateNoiseReference(levelDB: nil, state: .nativeCapture)
         }
-        // A warm session that came up since touch-down records instead.
-        localDictation.discard(reason: "warm session")
+        // The app owns this native recording; clear any stale keyboard-local failure or armed job
+        // so its snapshot cannot shadow the host app snapshot in syncFromBridge().
+        localDictation.cancel()
         let jobID = UUID().uuidString
         warmStartTimeline = WarmStartTimeline(jobID: jobID, pressedAt: takeHexKeyPress() ?? now, sentAt: now)
         viewModel.setPendingCommand(
