@@ -1109,6 +1109,16 @@ final class KeyboardViewController: UIInputViewController {
             clearPending: insertedResult,
             animated: animated
         )
+        if bridge.noiseReductionEnabled {
+            switch snap.state {
+            case .starting, .recording, .transcribing:
+                viewModel.updateNoiseReference(levelDB: nil, state: .nativeCapture)
+            case .offline, .ready, .failed:
+                if !localDictation.isActive {
+                    viewModel.updateNoiseReference(levelDB: nil, state: .idle)
+                }
+            }
+        }
 
         // Re-check the selected surface after applying the latest dictation phase. On
         // appearance, mountSurface() can run before this bridge sync and see a stale
@@ -1441,6 +1451,7 @@ final class KeyboardViewController: UIInputViewController {
             guard let self else { return }
             if self.bridge.noiseReductionEnabled {
                 self.localDictation.discard(reason: "native stereo capture is handled by Hex")
+                self.viewModel.updateNoiseReference(levelDB: nil, state: .nativeCapture)
                 let request = KeyboardLaunchRequest.startRecording(
                     jobID: UUID().uuidString,
                     requestedAt: Date().timeIntervalSince1970,
@@ -1640,6 +1651,9 @@ final class KeyboardViewController: UIInputViewController {
     private func startWarmDictation() {
         let now = Date().timeIntervalSince1970
         guard viewModel.hasFullAccess, viewModel.currentSnapshot.isAvailable(at: now) else { return }
+        if bridge.noiseReductionEnabled {
+            viewModel.updateNoiseReference(levelDB: nil, state: .nativeCapture)
+        }
         // A warm session that came up since touch-down records instead.
         localDictation.discard(reason: "warm session")
         let jobID = UUID().uuidString
