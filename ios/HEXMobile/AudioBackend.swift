@@ -17,6 +17,7 @@ protocol ActiveAudioCapture: AnyObject {
     var currentTime: TimeInterval { get }
     func normalizedPowerLevel() -> Float
     func averagePowerDB() -> Float
+    func referencePowerDB() -> Float?
     func stop()
     /// Finishes any capture-format conversion before transcription reads the file.
     func finalizeCapture() async
@@ -28,6 +29,8 @@ extension ActiveAudioCapture {
     func averagePowerDB() -> Float {
         DotScopeSimulation.loudness(fromNormalized: normalizedPowerLevel())
     }
+
+    func referencePowerDB() -> Float? { nil }
 }
 
 @MainActor
@@ -116,6 +119,12 @@ private final class RecorderCaptureAdapter: NSObject, ActiveAudioCapture, AVAudi
     func normalizedPowerLevel() -> Float {
         let decibels = averagePowerDB()
         return max(0, min(1, (decibels + 48) / 48))
+    }
+
+    func referencePowerDB() -> Float? {
+        guard normalizesStereo else { return nil }
+        recorder.updateMeters()
+        return recorder.averagePower(forChannel: 1)
     }
 
     func stop() {
@@ -236,6 +245,8 @@ final class SystemAudioManager: AudioManaging {
 
     func deactivateSession() {
         stopKeepalive()
+        KeyboardBridge().nativeStereoChannelAvailable = false
+        KeyboardBridge().nativeStereoReferenceLevelDB = nil
         try? session.setActive(false, options: .notifyOthersOnDeactivation)
     }
 
@@ -267,6 +278,8 @@ final class SystemAudioManager: AudioManaging {
             Self.log.error("Native stereo recorder initialization failed; retrying mono: \(String(describing: error), privacy: .public)")
             recordsStereo = false
             stereoCaptureConfigured = false
+            KeyboardBridge().nativeStereoChannelAvailable = false
+            KeyboardBridge().nativeStereoReferenceLevelDB = nil
             try? session.setCategory(
                 .playAndRecord,
                 mode: .voiceChat,
@@ -322,6 +335,8 @@ final class SystemAudioManager: AudioManaging {
         let requestsBuiltInStereo = noiseReduction && input?.port == .builtInMic && session is AVAudioSession
 
         stereoCaptureConfigured = false
+        KeyboardBridge().nativeStereoChannelAvailable = false
+        KeyboardBridge().nativeStereoReferenceLevelDB = nil
         try session.setCategory(
             .playAndRecord,
             mode: requestsBuiltInStereo ? .measurement : (noiseReduction ? .voiceChat : .measurement),
@@ -342,6 +357,8 @@ final class SystemAudioManager: AudioManaging {
                 try session.setActive(true, options: [])
             }
         }
+        KeyboardBridge().nativeStereoChannelAvailable = stereoCaptureConfigured
+        KeyboardBridge().nativeStereoReferenceLevelDB = nil
     }
 
     /// Requests Apple's native stereo recording configuration from a rear-facing built-in
