@@ -518,6 +518,7 @@ enum KeyboardNoiseReductionTopBarPresentation {
         case .waiting: return "等待辅助声道"
         case .available: return "辅助声道已连接"
         case .unavailable: return "当前输入未提供辅助声道"
+        case .nativeCapture: return "Hex 原生录音中"
         }
     }
 }
