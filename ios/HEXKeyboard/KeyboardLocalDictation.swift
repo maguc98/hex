@@ -56,6 +56,8 @@ final class KeyboardLocalDictation {
     }
     /// Refresh the keyboard immediately when the first real microphone buffer arrives.
     var onPhaseChange: (() -> Void)?
+    /// Levels from a separately reported second audio channel, when the route supplies one.
+    var onNoiseReferenceUpdate: ((Float?, Bool) -> Void)?
 
     private enum VisibleStage: Equatable { case idle, starting, recording, transcribing, finished, failed }
     private func visibleStage(of phase: Phase) -> VisibleStage {
@@ -274,6 +276,7 @@ final class KeyboardLocalDictation {
     private func noteCaptureStopped() {
         live?.stop()
         live = nil
+        onNoiseReferenceUpdate?(nil, false)
         if capture === Self.sharedCapture {
             Self.ownership.endCapture(by: ownerID)
         }
@@ -472,6 +475,7 @@ final class KeyboardLocalDictation {
         loudness = -62
         armedFailure = nil
         firstAudioAt = nil
+        onNoiseReferenceUpdate?(nil, false)
         phase = armed
             ? .armed(jobID: jobID, startedAt: requestedAt.timeIntervalSince1970)
             : .starting(jobID: jobID, startedAt: requestedAt.timeIntervalSince1970)
@@ -572,8 +576,8 @@ final class KeyboardLocalDictation {
     private func handle(_ event: KeyboardWebCapture.Event, jobID: String, requestedAt: Date) {
         let log = KeyboardProbeLog.shared
         switch event {
-        case .started(let sampleRate, let device, let steps, let noiseSuppression, let autoGainControl):
-            log.write("web capture started in \(Int(Date().timeIntervalSince(requestedAt) * 1000)) ms at \(Int(sampleRate)) Hz from \(device) \(KeyboardProbeLog.memory())")
+        case .started(let sampleRate, let device, let steps, let noiseSuppression, let autoGainControl, let channelCount):
+            log.write("web capture started in \(Int(Date().timeIntervalSince(requestedAt) * 1000)) ms at \(Int(sampleRate)) Hz from \(device), channels=\(channelCount) \(KeyboardProbeLog.memory())")
             let requestedNoiseReduction = KeyboardBridge().noiseReductionEnabled
             let suppression = noiseSuppression.map { $0 ? "on" : "off" } ?? "not reported"
             let gainControl = autoGainControl.map { $0 ? "on" : "off" } ?? "not reported"
@@ -586,6 +590,7 @@ final class KeyboardLocalDictation {
                 capture?.stop()
                 return
             }
+            onNoiseReferenceUpdate?(nil, channelCount > 1)
             do {
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent("keyboard-\(jobID).wav")
                 pcmFile = try KeyboardPCMFile(url: url, sampleRate: sampleRate)
@@ -594,9 +599,15 @@ final class KeyboardLocalDictation {
                 capture?.stop()
                 fail(UserFacingError.Context.microphone.fallback, detail: "Could not create audio file: \(Self.describe(error))")
             }
-        case .samples(let data, let peak):
+        case .samples(let data, let peak, let referencePeak):
             // Old WebKit pages can deliver late callbacks; only this job's non-empty PCM counts.
             guard isCapturing(jobID), !data.isEmpty, pcmFile != nil else { return }
+            if let referencePeak {
+                let referenceDB = referencePeak > 0 ? max(-60, min(0, 20 * log10(referencePeak))) : -60
+                onNoiseReferenceUpdate?(referenceDB, true)
+            } else {
+                onNoiseReferenceUpdate?(nil, false)
+            }
             let now = Date().timeIntervalSince1970
             if firstAudioAt == nil {
                 firstAudioAt = now
@@ -717,6 +728,7 @@ final class KeyboardLocalDictation {
         guard case .starting(let jobID, _) = phase else { return }
         if startPending == jobID { startPending = nil }
         timeline = nil
+        onNoiseReferenceUpdate?(nil, false)
         if let capture, capture !== Self.sharedCapture || Self.ownership.owner == ownerID {
             listenWhileIdle(capture)
             capture.stop()
@@ -1231,8 +1243,15 @@ private final class KeyboardPCMFile {
 @MainActor
 private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     enum Event {
-        case started(sampleRate: Double, device: String, steps: CaptureSteps, noiseSuppression: Bool?, autoGainControl: Bool?)
-        case samples(Data, peak: Float)
+        case started(
+            sampleRate: Double,
+            device: String,
+            steps: CaptureSteps,
+            noiseSuppression: Bool?,
+            autoGainControl: Bool?,
+            channelCount: Int
+        )
+        case samples(Data, peak: Float, referencePeak: Float?)
         /// The page's AudioContext or microphone track changed.
         case state(KeyboardCapturePageState)
         case stopped
@@ -1357,11 +1376,16 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
                     audioAt: (body["audio"] as? Double).map { $0 / 1000 }
                 ),
                 noiseSuppression: body["noiseSuppression"] as? Bool,
-                autoGainControl: body["autoGainControl"] as? Bool
+                autoGainControl: body["autoGainControl"] as? Bool,
+                channelCount: (body["channels"] as? Int) ?? 1
             ))
         case "pcm":
             guard let encoded = body["data"] as? String, let data = Data(base64Encoded: encoded) else { return }
-            onEvent?(.samples(data, peak: Float((body["peak"] as? Double) ?? 0)))
+            onEvent?(.samples(
+                data,
+                peak: Float((body["peak"] as? Double) ?? 0),
+                referencePeak: (body["referencePeak"] as? Double).map(Float.init)
+            ))
         case "state":
             onEvent?(.state(KeyboardCapturePageState(
                 cause: (body["cause"] as? String) ?? "unknown",
@@ -1463,7 +1487,9 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
       let s = null, c = null;
       try {
         const base = {
-          channelCount: 1,
+          // Ask for stereo where the active input route supports it. The returned channel
+          // count is verified below; mono remains a valid fallback.
+          channelCount: { ideal: 2 },
           echoCancellation: false,
           noiseSuppression: !!noiseReduction,
           autoGainControl: !!noiseReduction
@@ -1495,21 +1521,29 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
         listen(track());
         c.onstatechange = () => report("statechange");
         source = ctx.createMediaStreamSource(stream);
-        node = ctx.createScriptProcessor(4096, 1, 1);
+        const initialSettings = track().getSettings ? track().getSettings() : {};
+        const inputChannels = Math.max(1, Math.min(2, Number(initialSettings.channelCount) || 1));
+        node = ctx.createScriptProcessor(4096, inputChannels, 1);
         node.onaudioprocess = (event) => {
           if (!running && !flushed) return;
-          const input = event.inputBuffer.getChannelData(0);
+          const inputBuffer = event.inputBuffer;
+          const input = inputBuffer.getChannelData(0);
+          const currentSettings = track() && track().getSettings ? track().getSettings() : {};
+          const hasReference = Number(currentSettings.channelCount || 1) > 1 && inputBuffer.numberOfChannels > 1;
+          const reference = hasReference ? inputBuffer.getChannelData(1) : null;
           const pcm = new Int16Array(input.length);
           let peak = 0;
+          let referencePeak = 0;
           for (let i = 0; i < input.length; i++) {
             const s = Math.max(-1, Math.min(1, input[i]));
             peak = Math.max(peak, Math.abs(s));
             pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+            if (reference) referencePeak = Math.max(referencePeak, Math.abs(reference[i]));
           }
           const bytes = new Uint8Array(pcm.buffer);
           let binary = "";
           for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-          post({ type: "pcm", data: btoa(binary), peak });
+          post({ type: "pcm", data: btoa(binary), peak, referencePeak: reference ? referencePeak : null });
           if (flushed) flushed();
         };
         source.connect(node);
@@ -1520,6 +1554,7 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
           type: "started",
           rate: ctx.sampleRate,
           device: track().label,
+          channels: Math.max(1, Math.min(2, Number(applied.channelCount) || inputChannels)),
           listed,
           opened,
           mic,

@@ -164,6 +164,28 @@ final class KeyboardViewModel: ObservableObject {
         }
     }
 
+    // The reference channel's level history is read by a lightweight TimelineView/Canvas;
+    // only availability is published, so audio buffers don't invalidate the whole keyboard.
+    @Published private(set) var hasLiveNoiseReferenceChannel = false
+    private(set) var noiseReferenceWaveformLevels: [Float] = []
+
+    func updateNoiseReference(levelDB: Float?, available: Bool) {
+        if hasLiveNoiseReferenceChannel != available {
+            hasLiveNoiseReferenceChannel = available
+            if available { noiseReferenceWaveformLevels.removeAll(keepingCapacity: true) }
+        }
+        guard available, let levelDB, levelDB.isFinite else {
+            if !available { noiseReferenceWaveformLevels.removeAll(keepingCapacity: true) }
+            return
+        }
+
+        let normalized = min(1, max(0, (levelDB + 60) / 60))
+        noiseReferenceWaveformLevels.append(normalized)
+        if noiseReferenceWaveformLevels.count > 36 {
+            noiseReferenceWaveformLevels.removeFirst(noiseReferenceWaveformLevels.count - 36)
+        }
+    }
+
     // Non-published live telemetry read directly by `DotScopeHostView` / button tap handlers
     // so 25–30 Hz polling never invalidates SwiftUI views mid-spring.
     var liveLoudnessDB: Float = -62.0

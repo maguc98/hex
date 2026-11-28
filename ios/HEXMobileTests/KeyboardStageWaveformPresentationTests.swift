@@ -31,6 +31,33 @@ final class KeyboardStageWaveformPresentationTests: XCTestCase {
         }
     }
 
+    func testNoiseReductionOffKeepsOriginalLanguageAndStyleLayout() {
+        XCTAssertTrue(KeyboardNoiseReductionTopBarPresentation.showsLanguageAndStyle(noiseReductionEnabled: false))
+        XCTAssertFalse(KeyboardNoiseReductionTopBarPresentation.showsReferenceWaveform(
+            noiseReductionEnabled: false,
+            hasReferenceChannel: true
+        ))
+    }
+
+    func testNoiseReductionOnHidesLanguageAndStyleAndUsesReferenceCapsule() {
+        XCTAssertFalse(KeyboardNoiseReductionTopBarPresentation.showsLanguageAndStyle(noiseReductionEnabled: true))
+        XCTAssertTrue(KeyboardNoiseReductionTopBarPresentation.showsReferenceWaveform(
+            noiseReductionEnabled: true,
+            hasReferenceChannel: true
+        ))
+        XCTAssertTrue(KeyboardNoiseReductionTopBarPresentation.showsReferenceWaitingState(
+            noiseReductionEnabled: true,
+            hasReferenceChannel: false
+        ))
+    }
+
+    func testReferenceWaveformIsNotShownWithoutASecondReportedChannel() {
+        XCTAssertFalse(KeyboardNoiseReductionTopBarPresentation.showsReferenceWaveform(
+            noiseReductionEnabled: true,
+            hasReferenceChannel: false
+        ))
+    }
+
     func testAppPreviewKeepsLiveScopeAtIdle() {
         XCTAssertFalse(
             KeyboardStageWaveformPresentation.usesRestingVisual(
