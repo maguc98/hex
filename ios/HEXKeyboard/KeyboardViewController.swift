@@ -662,8 +662,8 @@ final class KeyboardViewController: UIInputViewController {
         NotificationCenter.default.addObserver(self, selector: #selector(updateBackdrop), name: Self.onScreenDidChange, object: nil)
 
         viewModel.inputViewController = self
-        localDictation.onNoiseReferenceUpdate = { [weak viewModel = self.viewModel] levelDB, available in
-            viewModel?.updateNoiseReference(levelDB: levelDB, available: available)
+        localDictation.onNoiseReferenceUpdate = { [weak viewModel = self.viewModel] levelDB, state in
+            viewModel?.updateNoiseReference(levelDB: levelDB, state: state)
         }
         dictationEdits.onResult = { result in
             let language = LanguageLearning.dictationCode(LanguageSettings().effectiveDictationLanguage)
