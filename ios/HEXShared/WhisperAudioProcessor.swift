@@ -12,6 +12,24 @@ nonisolated enum WhisperAudioProcessor {
     private static let kneeWidth: Float = 0.25
     private static let safetyCeiling: Int32 = 30_000
 
+    /// Float-sample equivalent used by the native file normalizer, so whisper gain is
+    /// preserved when stereo capture is handed from the app to the speech engine.
+    static func amplify(_ sample: Float, gain: Float = defaultGain) -> Float {
+        guard sample.isFinite, gain.isFinite, gain > 0 else { return sample }
+        let magnitude = min(1, abs(sample))
+        let driven = magnitude * gain
+        let limited: Float
+        if driven <= knee {
+            limited = driven
+        } else {
+            let overKnee = driven - knee
+            limited = knee + overKnee / (1 + overKnee / kneeWidth)
+        }
+        let ceiling = Float(safetyCeiling) / 32_768
+        let output = min(ceiling, limited)
+        return sample < 0 ? -output : output
+    }
+
     static func amplify(_ data: Data, gain: Float = defaultGain) -> Data {
         guard data.count >= 2, gain.isFinite, gain > 0 else { return data }
 
