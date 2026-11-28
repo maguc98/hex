@@ -572,8 +572,12 @@ final class KeyboardLocalDictation {
     private func handle(_ event: KeyboardWebCapture.Event, jobID: String, requestedAt: Date) {
         let log = KeyboardProbeLog.shared
         switch event {
-        case .started(let sampleRate, let device, let steps):
+        case .started(let sampleRate, let device, let steps, let noiseSuppression, let autoGainControl):
             log.write("web capture started in \(Int(Date().timeIntervalSince(requestedAt) * 1000)) ms at \(Int(sampleRate)) Hz from \(device) \(KeyboardProbeLog.memory())")
+            let requestedNoiseReduction = KeyboardBridge().noiseReductionEnabled
+            let suppression = noiseSuppression.map { $0 ? "on" : "off" } ?? "not reported"
+            let gainControl = autoGainControl.map { $0 ? "on" : "off" } ?? "not reported"
+            log.write("audio processing: requested noise reduction=\(requestedNoiseReduction), WebKit noise suppression=\(suppression), auto gain=\(gainControl)")
             if let capture {
                 timeline?.noteStarted(capture: capture, steps: steps, sampleRate: sampleRate)
             }
@@ -1227,7 +1231,7 @@ private final class KeyboardPCMFile {
 @MainActor
 private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
     enum Event {
-        case started(sampleRate: Double, device: String, steps: CaptureSteps)
+        case started(sampleRate: Double, device: String, steps: CaptureSteps, noiseSuppression: Bool?, autoGainControl: Bool?)
         case samples(Data, peak: Float)
         /// The page's AudioContext or microphone track changed.
         case state(KeyboardCapturePageState)
@@ -1351,7 +1355,9 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
                     openedAt: (body["opened"] as? Double).map { $0 / 1000 },
                     microphoneAt: (body["mic"] as? Double).map { $0 / 1000 },
                     audioAt: (body["audio"] as? Double).map { $0 / 1000 }
-                )
+                ),
+                noiseSuppression: body["noiseSuppression"] as? Bool,
+                autoGainControl: body["autoGainControl"] as? Bool
             ))
         case "pcm":
             guard let encoded = body["data"] as? String, let data = Data(base64Encoded: encoded) else { return }
@@ -1518,8 +1524,8 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
           opened,
           mic,
           audio: Date.now(),
-          noiseSuppression: !!applied.noiseSuppression,
-          autoGainControl: !!applied.autoGainControl
+          noiseSuppression: typeof applied.noiseSuppression === "boolean" ? applied.noiseSuppression : null,
+          autoGainControl: typeof applied.autoGainControl === "boolean" ? applied.autoGainControl : null
         });
       } catch (error) {
         if (stale()) return release(s, c);
