@@ -1458,8 +1458,18 @@ struct KeyboardSurfaceView: View {
     private func handleIdleStageTap() {
         if !model.hasFullAccess {
             model.onOpenURL?(KeyboardLaunchRequest.setup.url)
+        } else if noiseReductionEnabled {
+            // WKWebView getUserMedia is mono on iOS. Route this mode through the host app's
+            // native stereo recorder; a warm Hex session can still keep the keyboard visible.
+            if model.dictatesThroughHex {
+                model.onDictateTap?()
+            } else if let local = model.onLocalDictateTap {
+                local() // The controller redirects this request to Hex's native capture path.
+            } else {
+                model.onDictationUnavailable?()
+            }
         } else if whisperModeEnabled, let local = model.onLocalDictateTap {
-            // Whisper mode stays on the keyboard's locally processed audio path.
+            // Whisper-only mode keeps its low-volume, keyboard-local processing path.
             local()
         } else if model.stagePhase == .failed {
             if let local = model.onLocalDictateTap {
