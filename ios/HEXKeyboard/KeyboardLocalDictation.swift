@@ -1525,11 +1525,12 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
         const inputChannels = Math.max(1, Math.min(2, Number(initialSettings.channelCount) || 1));
         node = ctx.createScriptProcessor(4096, inputChannels, 1);
 
-        // Conservative adaptive reference-noise cancellation (NLMS).
-        // Channel 0 remains the speech channel; channel 1 is only a noise reference.
-        // Freeze adaptation during likely double-talk to reduce voice cancellation.
-        const filterTaps = 32;
-        const filterMu = 0.035;
+        // Conservative dual-channel reference cancellation (NLMS).
+        // Stereo is not assumed to mean two independent physical microphones:
+        // analyze each buffer and bypass cancellation when channels look duplicated,
+        // the reference is weak, or the primary is speech-dominant.
+        const filterTaps = 64;
+        const filterMu = 0.025;
         const filterEpsilon = 1e-5;
         const referenceHistory = new Float32Array(filterTaps);
         const adaptiveWeights = new Float32Array(filterTaps);
@@ -1545,19 +1546,35 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
           const hasReference = Number(currentSettings.channelCount || 1) > 1 && inputBuffer.numberOfChannels > 1;
           const reference = hasReference ? inputBuffer.getChannelData(1) : null;
           const pcm = new Int16Array(input.length);
-          let peak = 0;
-          let referencePeak = 0;
-          let cancelledPeak = 0;
-
+          let primarySumSq = 0, referenceSumSq = 0, cross = 0, differenceSumSq = 0;
+          let peak = 0, referencePeak = 0, cancelledPeak = 0;
+          if (reference) {
+            for (let i = 0; i < input.length; i++) {
+              const p = input[i], r = reference[i];
+              primarySumSq += p * p; referenceSumSq += r * r;
+              cross += p * r; differenceSumSq += (p - r) * (p - r);
+            }
+          } else {
+            for (let i = 0; i < input.length; i++) primarySumSq += input[i] * input[i];
+          }
+          const primaryRMS = Math.sqrt(primarySumSq / Math.max(1, input.length));
+          const referenceRMS = reference ? Math.sqrt(referenceSumSq / Math.max(1, input.length)) : 0;
+          const correlation = reference && primaryRMS > 1e-6 && referenceRMS > 1e-6
+            ? cross / Math.sqrt(primarySumSq * referenceSumSq) : 0;
+          const differenceRMS = reference ? Math.sqrt(differenceSumSq / Math.max(1, input.length)) : 0;
+          const duplicatedChannels = !!reference && Math.abs(correlation) > 0.995 &&
+            differenceRMS < Math.max(0.002, primaryRMS * 0.035);
+          const validReference = !!reference && referenceRMS > 0.003 && !duplicatedChannels;
+          // Block-level double-talk guard: if the target channel dominates, pass it untouched.
+          const speechDominant = primaryRMS > referenceRMS * 1.30 + 0.012;
+          const allowCancellation = cancellationEnabled && validReference && !speechDominant;
           for (let i = 0; i < input.length; i++) {
             const primary = Math.max(-1, Math.min(1, input[i]));
             let output = primary;
-            if (reference && cancellationEnabled) {
+            if (allowCancellation) {
               const ref = Math.max(-1, Math.min(1, reference[i]));
               referenceHistory[historyIndex] = ref;
-              let estimate = 0;
-              let norm = filterEpsilon;
-              let cursor = historyIndex;
+              let estimate = 0, norm = filterEpsilon, cursor = historyIndex;
               for (let tap = 0; tap < filterTaps; tap++) {
                 const x = referenceHistory[cursor];
                 estimate += adaptiveWeights[tap] * x;
@@ -1565,9 +1582,7 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
                 cursor = cursor === 0 ? filterTaps - 1 : cursor - 1;
               }
               const error = primary - estimate;
-              // If primary dominates the reference, it is probably desired near-field speech.
-              const doubleTalk = Math.abs(primary) > Math.abs(ref) * 1.35 + 0.015;
-              if (!doubleTalk && Math.abs(ref) > 0.004) {
+              if (Math.abs(ref) > 0.004) {
                 const step = filterMu * error / norm;
                 cursor = historyIndex;
                 for (let tap = 0; tap < filterTaps; tap++) {
@@ -1590,14 +1605,14 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
           let binary = "";
           for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
           post({
-            type: "pcm",
-            data: btoa(binary),
-            peak,
+            type: "pcm", data: btoa(binary), peak,
             referencePeak: reference ? referencePeak : null,
-            cancellationActive: !!reference && cancellationEnabled,
-            cancellationFrames,
-            cancelledFrames,
-            cancelledPeak
+            cancellationActive: allowCancellation,
+            cancellationBypass: cancellationEnabled && !!reference && !allowCancellation,
+            cancellationReason: !reference ? "mono" : duplicatedChannels ? "duplicate channels" :
+              referenceRMS <= 0.003 ? "weak reference" : speechDominant ? "speech dominant" : null,
+            channelCorrelation: correlation, primaryRMS, referenceRMS, differenceRMS,
+            cancellationFrames, cancelledFrames, cancelledPeak
           });
           if (flushed) flushed();
         };
