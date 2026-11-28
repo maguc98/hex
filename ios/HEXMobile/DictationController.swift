@@ -1160,6 +1160,7 @@ final class DictationController {
                 self.loudnessDB = db
                 self.audioLevel = max(0, min(1, (db + 48) / 48))
                 self.recordingDuration = session.capture.currentTime
+                self.keyboardBridge.nativeStereoReferenceLevelDB = session.capture.referencePowerDB()
                 self.publishKeyboardSnapshot(minInterval: 0.10)
 
                 if self.recordingDuration >= Self.maxCaptureDuration - 0.25 {
