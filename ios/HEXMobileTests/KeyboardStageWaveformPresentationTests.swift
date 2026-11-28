@@ -83,6 +83,13 @@ final class KeyboardStageWaveformPresentationTests: XCTestCase {
         )
     }
 
+    func testNativeCaptureRouteHasItsOwnAccurateStatus() {
+        XCTAssertEqual(
+            KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: .nativeCapture),
+            "Hex 原生录音中"
+        )
+    }
+
     func testAppPreviewKeepsLiveScopeAtIdle() {
         XCTAssertFalse(
             KeyboardStageWaveformPresentation.usesRestingVisual(
