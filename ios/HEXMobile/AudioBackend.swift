@@ -381,7 +381,8 @@ final class SystemAudioManager: AudioManaging {
             "Native stereo request: source=\(source.dataSourceName, privacy: .public), orientation=\(String(describing: source.orientation), privacy: .public), pattern=\(selectedPattern, privacy: .public), channels preferred/actual/max=\(requestedChannels)/\(actualChannels)/\(maximumChannels)"
         )
 
-        return requestedChannels >= 2 && maximumChannels >= 2 && selected.selectedPolarPattern == .stereo
+        return requestedChannels >= 2 && actualChannels >= 2 && maximumChannels >= 2
+            && selected.selectedPolarPattern == .stereo
     }
 
     private static let log = Logger(subsystem: "anomaly.hex.mobile", category: "NativeAudio")
