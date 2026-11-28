@@ -128,10 +128,16 @@ private final class RecorderCaptureAdapter: NSObject, ActiveAudioCapture, AVAudi
     }
 
     func finalizeCapture() async {
-        guard normalizesStereo else { return }
+        let amplifyWhisper = KeyboardWhisperSettings().isEnabled
+        guard normalizesStereo || amplifyWhisper else { return }
         let captureURL = url
+        let usesNativeStereo = normalizesStereo
         let report = await Task.detached(priority: .userInitiated) {
-            NativeStereoCaptureNormalizer.normalizeToMono(at: captureURL)
+            NativeStereoCaptureNormalizer.normalizeToMono(
+                at: captureURL,
+                noiseReduction: usesNativeStereo,
+                amplifyWhisper: amplifyWhisper
+            )
         }.value
         Self.log.info("\(report, privacy: .public)")
     }
