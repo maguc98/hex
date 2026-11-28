@@ -25,7 +25,7 @@ final class RecognitionResumeTests: XCTestCase {
         } catch is CancellationError {
             // Expected: cancellation finishes the waiting transcription immediately.
         } catch {
-            XCTFail("Unexpected error: \\(error)")
+            XCTFail("Unexpected error: \(error)")
         }
 
         await fulfillment(of: [taskCancelled], timeout: 1)
@@ -53,7 +53,7 @@ final class RecognitionResumeTests: XCTestCase {
         } catch is CancellationError {
             // Expected.
         } catch {
-            XCTFail("Unexpected error: \\(error)")
+            XCTFail("Unexpected error: \(error)")
         }
 
         await fulfillment(of: [taskCreated], timeout: 0.05)
