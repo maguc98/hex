@@ -1,9 +1,8 @@
 import AVFAudio
 import Foundation
 
-/// Inspects an actual native stereo recording and folds it to mono for the speech engines.
-/// The per-channel measurements are retained in the report so the next stage can determine
-/// whether the channels are meaningfully different before enabling adaptive cancellation.
+/// Reads the native input's real channel layout, performs conservative two-channel
+/// reference cancellation when requested, then writes the mono PCM format used by speech.
 nonisolated enum NativeStereoCaptureNormalizer {
     private struct Report {
         let channelCount: Int
@@ -12,33 +11,50 @@ nonisolated enum NativeStereoCaptureNormalizer {
         let leftRMS: Double
         let rightRMS: Double
         let correlation: Double
+        let cancellationBlocks: Int
+        let cancelledFrames: Int64
+        let cancellationPeak: Double
+        let whisperGainApplied: Bool
 
         var summary: String {
             String(
-                format: "Native stereo capture: channels=%d, rate=%.0f Hz, frames=%lld, L-R RMS=%.4f/%.4f, correlation=%.4f, output=mono",
+                format: "Native audio capture: channels=%d, rate=%.0f Hz, frames=%lld, L-R RMS=%.4f/%.4f, correlation=%.4f, cancellation blocks=%d, affected frames=%lld, peak reduction=%.4f, whisper gain=%@, output=mono",
                 channelCount,
                 sampleRate,
                 frames,
                 leftRMS,
                 rightRMS,
-                correlation
+                correlation,
+                cancellationBlocks,
+                cancelledFrames,
+                cancellationPeak,
+                whisperGainApplied ? "on" : "off"
             )
         }
     }
 
-    /// Converts a captured stereo PCM file to a mono PCM file at the same sample rate.
-    /// If the recorder actually supplied only one channel, the original file is left untouched.
-    static func normalizeToMono(at url: URL) -> String {
+    /// Converts native stereo to mono for speech, optionally applying whisper gain.
+    /// A mono capture is left untouched unless whisper gain was explicitly requested.
+    static func normalizeToMono(
+        at url: URL,
+        noiseReduction: Bool = false,
+        amplifyWhisper: Bool = false
+    ) -> String {
         let fileManager = FileManager.default
         let temporaryURL = url.deletingLastPathComponent()
             .appendingPathComponent("\(url.lastPathComponent).mono-\(UUID().uuidString).wav")
         let backupURL = url.deletingPathExtension()
-            .appendingPathExtension("stereo-original.wav")
+            .appendingPathExtension("capture-original.wav")
 
         do {
-            let report = try renderStereoInput(at: url, to: temporaryURL)
-            guard report.channelCount >= 2 else {
-                return "Native audio capture remained mono; no stereo processing was applied."
+            let report = try renderInput(
+                at: url,
+                to: temporaryURL,
+                noiseReduction: noiseReduction,
+                amplifyWhisper: amplifyWhisper
+            )
+            guard report.channelCount >= 2 || amplifyWhisper else {
+                return "Native audio capture remained mono; no second channel was available."
             }
 
             if fileManager.fileExists(atPath: backupURL.path) {
@@ -55,22 +71,31 @@ nonisolated enum NativeStereoCaptureNormalizer {
             return report.summary
         } catch {
             try? fileManager.removeItem(at: temporaryURL)
-            return "Native stereo normalization failed; original recording retained: \(error.localizedDescription)"
+            return "Native audio processing failed; original recording retained: \(error.localizedDescription)"
         }
     }
 
-    private static func renderStereoInput(at url: URL, to outputURL: URL) throws -> Report {
+    private static func renderInput(
+        at url: URL,
+        to outputURL: URL,
+        noiseReduction: Bool,
+        amplifyWhisper: Bool
+    ) throws -> Report {
         let input = try AVAudioFile(forReading: url, commonFormat: .pcmFormatFloat32, interleaved: false)
         let inputFormat = input.processingFormat
         let channelCount = Int(inputFormat.channelCount)
-        guard channelCount >= 2 else {
+        guard channelCount >= 2 || amplifyWhisper else {
             return Report(
                 channelCount: channelCount,
                 sampleRate: inputFormat.sampleRate,
                 frames: 0,
                 leftRMS: 0,
                 rightRMS: 0,
-                correlation: 0
+                correlation: 0,
+                cancellationBlocks: 0,
+                cancelledFrames: 0,
+                cancellationPeak: 0,
+                whisperGainApplied: false
             )
         }
 
@@ -89,11 +114,21 @@ nonisolated enum NativeStereoCaptureNormalizer {
             interleaved: false
         )
 
+        let filterTaps = 64
+        let filterMu: Float = 0.025
+        let filterEpsilon: Float = 1e-5
+        var referenceHistory = [Float](repeating: 0, count: filterTaps)
+        var adaptiveWeights = [Float](repeating: 0, count: filterTaps)
+        var historyIndex = 0
+
         let blockSize: AVAudioFrameCount = 2_048
         var totalFrames: Int64 = 0
         var leftSquareSum = 0.0
         var rightSquareSum = 0.0
         var crossSum = 0.0
+        var cancellationBlocks = 0
+        var cancelledFrames: Int64 = 0
+        var cancellationPeak = 0.0
 
         while true {
             guard let inputBuffer = AVAudioPCMBuffer(pcmFormat: inputFormat, frameCapacity: blockSize) else {
@@ -111,18 +146,96 @@ nonisolated enum NativeStereoCaptureNormalizer {
                 throw CocoaError(.coderInvalidValue)
             }
 
-            let left = channels[0]
-            let right = channels[1]
+            let primaryChannel = channels[0]
+            let hasReference = channelCount >= 2
+            let referenceChannel = hasReference ? channels[1] : channels[0]
+
+            var primarySumSq = 0.0
+            var referenceSumSq = 0.0
+            var cross = 0.0
+            var differenceSumSq = 0.0
+
+            for frame in 0..<frames {
+                let primary = Double(primaryChannel[frame])
+                let reference = Double(referenceChannel[frame])
+                primarySumSq += primary * primary
+                if hasReference {
+                    referenceSumSq += reference * reference
+                    cross += primary * reference
+                    let difference = primary - reference
+                    differenceSumSq += difference * difference
+                }
+            }
+
+            let divisor = Double(max(frames, 1))
+            let primaryRMS = sqrt(primarySumSq / divisor)
+            let referenceRMS = hasReference ? sqrt(referenceSumSq / divisor) : 0
+            let blockCorrelation = hasReference && primarySumSq > 1e-12 && referenceSumSq > 1e-12
+                ? cross / sqrt(primarySumSq * referenceSumSq) : 0
+            let differenceRMS = hasReference ? sqrt(differenceSumSq / divisor) : 0
+            let duplicatedChannels = hasReference
+                && abs(blockCorrelation) > 0.995
+                && differenceRMS < max(0.002, primaryRMS * 0.035)
+            let validReference = noiseReduction
+                && hasReference
+                && referenceRMS > 0.003
+                && !duplicatedChannels
+            let speechDominant = primaryRMS > referenceRMS * 1.30 + 0.012
+            let allowCancellation = validReference && !speechDominant
+            if allowCancellation { cancellationBlocks += 1 }
+
             let mono = outputChannels[0]
             outputBuffer.frameLength = AVAudioFrameCount(frames)
 
             for frame in 0..<frames {
-                let l = Double(left[frame])
-                let r = Double(right[frame])
-                leftSquareSum += l * l
-                rightSquareSum += r * r
-                crossSum += l * r
-                mono[frame] = Float((l + r) * 0.5)
+                let primary = max(-1, min(1, primaryChannel[frame]))
+                let reference = max(-1, min(1, referenceChannel[frame]))
+                var result = hasReference ? (primary + reference) * 0.5 : primary
+
+                if allowCancellation {
+                    referenceHistory[historyIndex] = reference
+                    var estimate: Float = 0
+                    var norm = filterEpsilon
+                    var cursor = historyIndex
+
+                    for tap in 0..<filterTaps {
+                        let sample = referenceHistory[cursor]
+                        estimate += adaptiveWeights[tap] * sample
+                        norm += sample * sample
+                        cursor = cursor == 0 ? filterTaps - 1 : cursor - 1
+                    }
+
+                    let error = primary - estimate
+                    if abs(reference) > 0.004 {
+                        let step = filterMu * error / norm
+                        cursor = historyIndex
+                        for tap in 0..<filterTaps {
+                            adaptiveWeights[tap] += step * referenceHistory[cursor]
+                            cursor = cursor == 0 ? filterTaps - 1 : cursor - 1
+                        }
+                    }
+
+                    result = error
+                    historyIndex = (historyIndex + 1) % filterTaps
+                    if abs(estimate) > 0.001 { cancelledFrames += 1 }
+                    cancellationPeak = max(cancellationPeak, Double(abs(primary - result)))
+                }
+
+                result = max(-1, min(1, result))
+                if amplifyWhisper {
+                    result = WhisperAudioProcessor.amplify(result)
+                }
+                mono[frame] = result
+            }
+
+            for frame in 0..<frames {
+                let left = Double(primaryChannel[frame])
+                leftSquareSum += left * left
+                if hasReference {
+                    let right = Double(referenceChannel[frame])
+                    rightSquareSum += right * right
+                    crossSum += left * right
+                }
             }
 
             totalFrames += Int64(frames)
@@ -138,7 +251,11 @@ nonisolated enum NativeStereoCaptureNormalizer {
             frames: totalFrames,
             leftRMS: sqrt(leftSquareSum / divisor),
             rightRMS: sqrt(rightSquareSum / divisor),
-            correlation: correlation
+            correlation: correlation,
+            cancellationBlocks: cancellationBlocks,
+            cancelledFrames: cancelledFrames,
+            cancellationPeak: cancellationPeak,
+            whisperGainApplied: amplifyWhisper
         )
     }
 }
