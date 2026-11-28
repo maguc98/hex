@@ -497,7 +497,7 @@ final class KeyboardLocalDictation {
         Self.audioSessionQueue.async { [weak self, weak capture] in
             log.write("start(web\(label)): mic=\(Self.describe(AVAudioApplication.shared.recordPermission)) app=\(appAllowed ? "granted" : "no") speech=\(Self.describe(SFSpeechRecognizer.authorizationStatus())) \(KeyboardProbeLog.memory())")
             let noiseReduction = KeyboardBridge().noiseReductionEnabled
-            let input = Self.microphone(for: microphone, noiseReduction: noiseReduction)
+            let input = Self.microphone(for: microphone)
             let otherAudio = AVAudioSession.sharedInstance().isOtherAudioPlaying
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -554,71 +554,24 @@ final class KeyboardLocalDictation {
     /// Bluetooth hands-free inputs are listed only there. WebKit records in its own session,
     /// which only getUserMedia's `deviceId` steers (WebKit then prefers that input), so the
     /// page asks for this input by its name, the label WebKit gives it.
-    nonisolated private static func microphone(for choice: MicrophoneChoice, noiseReduction: Bool) -> Microphone? {
+    nonisolated private static func microphone(for choice: MicrophoneChoice) -> Microphone? {
         let session = AVAudioSession.sharedInstance()
-        let options = MicrophoneRoute.categoryOptions(allowingBluetooth: choice.allowsBluetooth)
         do {
-            // The keyboard extension has its own capture path. Configure the active input
-            // route here before WebKit opens getUserMedia; the app's AudioBackend is separate.
-            try session.setCategory(.playAndRecord, mode: .measurement, options: options)
-            try? session.setActive(true, options: [])
+            try session.setCategory(
+                .playAndRecord,
+                mode: .measurement,
+                options: MicrophoneRoute.categoryOptions(allowingBluetooth: choice.allowsBluetooth)
+            )
             let inputs = session.microphones
             let input = MicrophoneRoute.capture(choice, from: inputs)
             try? session.prefer(input)
-
-            let requestsBuiltInStereo = noiseReduction && input?.port == .builtInMic
-            let stereoConfigured = requestsBuiltInStereo && Self.enableBuiltInStereoCapture(on: session)
-            if noiseReduction && !stereoConfigured {
-                // Keep a system voice-processing fallback for routes that cannot provide
-                // a genuine reference channel (headsets, Bluetooth, or mono-only inputs).
-                try? session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
-                try? session.setActive(true, options: [])
-            }
-
             let listed = inputs.map { "\($0.name) (\($0.port.rawValue))" }.joined(separator: ", ")
-            KeyboardProbeLog.shared.write(
-                "microphone \(choice.rawValue): \(input?.name ?? "none") of [\(listed)], stereo=\(stereoConfigured), channels=\(session.inputNumberOfChannels)"
-            )
+            KeyboardProbeLog.shared.write("microphone \(choice.rawValue): \(input?.name ?? "none") of [\(listed)]")
             return input
         } catch {
             KeyboardProbeLog.shared.write("microphone \(choice.rawValue) unknown: \(describe(error))")
             return nil
         }
-    }
-
-    /// Mirrors the app's native stereo profile, but configures it in the keyboard process
-    /// before WebKit creates its microphone stream.
-    nonisolated private static func enableBuiltInStereoCapture(on audioSession: AVAudioSession) -> Bool {
-        guard let builtInPort = audioSession.availableInputs?.first(where: { $0.portType == .builtInMic }),
-              let dataSources = builtInPort.dataSources else {
-            KeyboardProbeLog.shared.write("native stereo unavailable: built-in microphone sources not exposed")
-            return false
-        }
-
-        let stereoSources = dataSources.filter { $0.supportedPolarPatterns?.contains(.stereo) == true }
-        guard let source = stereoSources.first(where: { $0.orientation == .back }) ?? stereoSources.first else {
-            KeyboardProbeLog.shared.write("native stereo unavailable: no stereo polar pattern")
-            return false
-        }
-
-        do {
-            try source.setPreferredPolarPattern(.stereo)
-            try builtInPort.setPreferredDataSource(source)
-            try audioSession.setPreferredInputNumberOfChannels(2)
-        } catch {
-            KeyboardProbeLog.shared.write("native stereo configuration failed: \(describe(error))")
-            return false
-        }
-
-        let selected = audioSession.currentRoute.inputs
-            .first(where: { $0.portType == .builtInMic })?.selectedDataSource ?? source
-        let configured = audioSession.preferredInputNumberOfChannels >= 2
-            && audioSession.maximumInputNumberOfChannels >= 2
-            && selected.selectedPolarPattern == .stereo
-        KeyboardProbeLog.shared.write(
-            "native stereo request: preferred/actual/max channels=\(audioSession.preferredInputNumberOfChannels)/\(audioSession.inputNumberOfChannels)/\(audioSession.maximumInputNumberOfChannels), pattern=\(String(describing: selected.selectedPolarPattern))"
-        )
-        return configured
     }
 
     private func handle(_ event: KeyboardWebCapture.Event, jobID: String, requestedAt: Date) {
