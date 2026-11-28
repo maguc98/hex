@@ -57,7 +57,7 @@ final class KeyboardLocalDictation {
     /// Refresh the keyboard immediately when the first real microphone buffer arrives.
     var onPhaseChange: (() -> Void)?
     /// Levels from a separately reported second audio channel, when the route supplies one.
-    var onNoiseReferenceUpdate: ((Float?, Bool) -> Void)?
+    var onNoiseReferenceUpdate: ((Float?, KeyboardNoiseReferenceState) -> Void)?
 
     private enum VisibleStage: Equatable { case idle, starting, recording, transcribing, finished, failed }
     private func visibleStage(of phase: Phase) -> VisibleStage {
@@ -276,7 +276,7 @@ final class KeyboardLocalDictation {
     private func noteCaptureStopped() {
         live?.stop()
         live = nil
-        onNoiseReferenceUpdate?(nil, false)
+        onNoiseReferenceUpdate?(nil, .idle)
         if capture === Self.sharedCapture {
             Self.ownership.endCapture(by: ownerID)
         }
@@ -475,7 +475,7 @@ final class KeyboardLocalDictation {
         loudness = -62
         armedFailure = nil
         firstAudioAt = nil
-        onNoiseReferenceUpdate?(nil, false)
+        onNoiseReferenceUpdate?(nil, .waiting)
         phase = armed
             ? .armed(jobID: jobID, startedAt: requestedAt.timeIntervalSince1970)
             : .starting(jobID: jobID, startedAt: requestedAt.timeIntervalSince1970)
@@ -496,7 +496,8 @@ final class KeyboardLocalDictation {
         let label = armed ? ", touch-down" : ""
         Self.audioSessionQueue.async { [weak self, weak capture] in
             log.write("start(web\(label)): mic=\(Self.describe(AVAudioApplication.shared.recordPermission)) app=\(appAllowed ? "granted" : "no") speech=\(Self.describe(SFSpeechRecognizer.authorizationStatus())) \(KeyboardProbeLog.memory())")
-            let input = Self.microphone(for: microphone)
+            let noiseReduction = KeyboardBridge().noiseReductionEnabled
+            let input = Self.microphone(for: microphone, noiseReduction: noiseReduction)
             let otherAudio = AVAudioSession.sharedInstance().isOtherAudioPlaying
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
@@ -508,7 +509,7 @@ final class KeyboardLocalDictation {
                     capture.start(
                         microphone: input?.name,
                         builtInFallback: microphone != .bluetooth,
-                        noiseReduction: KeyboardBridge().noiseReductionEnabled
+                        noiseReduction: noiseReduction
                     )
                 }
             }
@@ -553,24 +554,71 @@ final class KeyboardLocalDictation {
     /// Bluetooth hands-free inputs are listed only there. WebKit records in its own session,
     /// which only getUserMedia's `deviceId` steers (WebKit then prefers that input), so the
     /// page asks for this input by its name, the label WebKit gives it.
-    nonisolated private static func microphone(for choice: MicrophoneChoice) -> Microphone? {
+    nonisolated private static func microphone(for choice: MicrophoneChoice, noiseReduction: Bool) -> Microphone? {
         let session = AVAudioSession.sharedInstance()
+        let options = MicrophoneRoute.categoryOptions(allowingBluetooth: choice.allowsBluetooth)
         do {
-            try session.setCategory(
-                .playAndRecord,
-                mode: .measurement,
-                options: MicrophoneRoute.categoryOptions(allowingBluetooth: choice.allowsBluetooth)
-            )
+            // The keyboard extension has its own capture path. Configure the active input
+            // route here before WebKit opens getUserMedia; the app's AudioBackend is separate.
+            try session.setCategory(.playAndRecord, mode: .measurement, options: options)
+            try? session.setActive(true, options: [])
             let inputs = session.microphones
             let input = MicrophoneRoute.capture(choice, from: inputs)
             try? session.prefer(input)
+
+            let requestsBuiltInStereo = noiseReduction && input?.port == .builtInMic
+            let stereoConfigured = requestsBuiltInStereo && Self.enableBuiltInStereoCapture(on: session)
+            if noiseReduction && !stereoConfigured {
+                // Keep a system voice-processing fallback for routes that cannot provide
+                // a genuine reference channel (headsets, Bluetooth, or mono-only inputs).
+                try? session.setCategory(.playAndRecord, mode: .voiceChat, options: options)
+                try? session.setActive(true, options: [])
+            }
+
             let listed = inputs.map { "\($0.name) (\($0.port.rawValue))" }.joined(separator: ", ")
-            KeyboardProbeLog.shared.write("microphone \(choice.rawValue): \(input?.name ?? "none") of [\(listed)]")
+            KeyboardProbeLog.shared.write(
+                "microphone \(choice.rawValue): \(input?.name ?? "none") of [\(listed)], stereo=\(stereoConfigured), channels=\(session.inputNumberOfChannels)"
+            )
             return input
         } catch {
             KeyboardProbeLog.shared.write("microphone \(choice.rawValue) unknown: \(describe(error))")
             return nil
         }
+    }
+
+    /// Mirrors the app's native stereo profile, but configures it in the keyboard process
+    /// before WebKit creates its microphone stream.
+    nonisolated private static func enableBuiltInStereoCapture(on audioSession: AVAudioSession) -> Bool {
+        guard let builtInPort = audioSession.availableInputs?.first(where: { $0.portType == .builtInMic }),
+              let dataSources = builtInPort.dataSources else {
+            KeyboardProbeLog.shared.write("native stereo unavailable: built-in microphone sources not exposed")
+            return false
+        }
+
+        let stereoSources = dataSources.filter { $0.supportedPolarPatterns?.contains(.stereo) == true }
+        guard let source = stereoSources.first(where: { $0.orientation == .back }) ?? stereoSources.first else {
+            KeyboardProbeLog.shared.write("native stereo unavailable: no stereo polar pattern")
+            return false
+        }
+
+        do {
+            try source.setPreferredPolarPattern(.stereo)
+            try builtInPort.setPreferredDataSource(source)
+            try audioSession.setPreferredInputNumberOfChannels(2)
+        } catch {
+            KeyboardProbeLog.shared.write("native stereo configuration failed: \(describe(error))")
+            return false
+        }
+
+        let selected = audioSession.currentRoute.inputs
+            .first(where: { $0.portType == .builtInMic })?.selectedDataSource ?? source
+        let configured = audioSession.preferredInputNumberOfChannels >= 2
+            && audioSession.maximumInputNumberOfChannels >= 2
+            && selected.selectedPolarPattern == .stereo
+        KeyboardProbeLog.shared.write(
+            "native stereo request: preferred/actual/max channels=\(audioSession.preferredInputNumberOfChannels)/\(audioSession.inputNumberOfChannels)/\(audioSession.maximumInputNumberOfChannels), pattern=\(String(describing: selected.selectedPolarPattern))"
+        )
+        return configured
     }
 
     private func handle(_ event: KeyboardWebCapture.Event, jobID: String, requestedAt: Date) {
@@ -590,7 +638,7 @@ final class KeyboardLocalDictation {
                 capture?.stop()
                 return
             }
-            onNoiseReferenceUpdate?(nil, channelCount > 1)
+            onNoiseReferenceUpdate?(nil, channelCount > 1 ? .waiting : .unavailable)
             do {
                 let url = FileManager.default.temporaryDirectory.appendingPathComponent("keyboard-\(jobID).wav")
                 pcmFile = try KeyboardPCMFile(url: url, sampleRate: sampleRate)
@@ -604,9 +652,9 @@ final class KeyboardLocalDictation {
             guard isCapturing(jobID), !data.isEmpty, pcmFile != nil else { return }
             if let referencePeak {
                 let referenceDB = referencePeak > 0 ? max(-60, min(0, 20 * log10(referencePeak))) : -60
-                onNoiseReferenceUpdate?(referenceDB, true)
+                onNoiseReferenceUpdate?(referenceDB, .available)
             } else {
-                onNoiseReferenceUpdate?(nil, false)
+                        onNoiseReferenceUpdate?(nil, .unavailable)
             }
             let now = Date().timeIntervalSince1970
             if firstAudioAt == nil {
@@ -728,7 +776,7 @@ final class KeyboardLocalDictation {
         guard case .starting(let jobID, _) = phase else { return }
         if startPending == jobID { startPending = nil }
         timeline = nil
-        onNoiseReferenceUpdate?(nil, false)
+        onNoiseReferenceUpdate?(nil, .idle)
         if let capture, capture !== Self.sharedCapture || Self.ownership.owner == ownerID {
             listenWhileIdle(capture)
             capture.stop()
