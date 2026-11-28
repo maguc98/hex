@@ -1065,7 +1065,7 @@ final class DictationController {
                 self.publishKeyboardSnapshot()
                 self.prepareDeferredLanguageIfNeeded()
             } catch {
-                guard !Task.isCancelled, self.jobGeneration == captureGeneration else {
+                guard let self, !Task.isCancelled, self.jobGeneration == captureGeneration else {
                     return
                 }
                 self.recordingDuration = 0
