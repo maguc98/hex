@@ -190,7 +190,9 @@ nonisolated enum NativeStereoCaptureNormalizer {
             for frame in 0..<frames {
                 let primary = max(-1, min(1, primaryChannel[frame]))
                 let reference = max(-1, min(1, referenceChannel[frame]))
-                var result = hasReference ? (primary + reference) * 0.5 : primary
+                // Bypass means keep the target microphone untouched; do not blend a weak,
+                // duplicate, or speech-contaminated reference back into the signal.
+                var result = primary
 
                 if allowCancellation {
                     referenceHistory[historyIndex] = reference
