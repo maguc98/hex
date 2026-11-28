@@ -514,7 +514,7 @@ enum KeyboardNoiseReductionTopBarPresentation {
 
     static func referenceStatusText(for state: KeyboardNoiseReferenceState) -> String {
         switch state {
-        case .idle: return "录音时启动辅助声道"
+        case .idle: return "点按后使用 Hex 原生录音"
         case .waiting: return "等待辅助声道"
         case .available: return "辅助声道已连接"
         case .unavailable: return "当前输入未提供辅助声道"
