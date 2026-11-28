@@ -2,8 +2,7 @@ import Combine
 import SwiftUI
 import UIKit
 
-/// The dictation bar's state: its phase, the style and language trays, the message and
-/// transcript, and the clock the surface reads. Kept beside the surface view.
+/// Availability of the second input channel while noise reduction is selected.
 enum KeyboardNoiseReferenceState: Equatable {
     case idle
     case waiting
@@ -11,6 +10,8 @@ enum KeyboardNoiseReferenceState: Equatable {
     case unavailable
 }
 
+/// The dictation bar's state: its phase, the style and language trays, the message and
+/// transcript, and the clock the surface reads. Kept beside the surface view.
 @MainActor
 final class KeyboardViewModel: ObservableObject {
     enum PickerTray: Equatable {
