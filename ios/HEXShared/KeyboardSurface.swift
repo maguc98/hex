@@ -511,6 +511,15 @@ enum KeyboardNoiseReductionTopBarPresentation {
     static func showsReferenceWaitingState(noiseReductionEnabled: Bool, hasReferenceChannel: Bool) -> Bool {
         noiseReductionEnabled && !hasReferenceChannel
     }
+
+    static func referenceStatusText(for state: KeyboardNoiseReferenceState) -> String {
+        switch state {
+        case .idle: return "录音时启动辅助声道"
+        case .waiting: return "等待辅助声道"
+        case .available: return "辅助声道已连接"
+        case .unavailable: return "当前输入未提供辅助声道"
+        }
+    }
 }
 
 struct KeyboardSurfaceView: View {
@@ -952,7 +961,7 @@ struct KeyboardSurfaceView: View {
                     HStack(spacing: 5) {
                         Image(systemName: "waveform")
                             .font(.system(size: 11, weight: .medium))
-                        Text("等待辅助声道")
+                        Text(KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: model.noiseReferenceState))
                             .font(.system(size: 11, weight: .medium))
                     }
                     .foregroundStyle(p.textMuted)
@@ -964,7 +973,7 @@ struct KeyboardSurfaceView: View {
             .overlay(Capsule().stroke(Color.blue.opacity(0.10), lineWidth: 0.6))
         }
         .frame(maxWidth: .infinity)
-        .accessibilityLabel(model.hasLiveNoiseReferenceChannel ? "实时辅助声道波形" : "等待辅助声道输入")
+        .accessibilityLabel(model.noiseReferenceState == .available ? "实时辅助声道波形" : KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: model.noiseReferenceState))
     }
 
     private func noiseReductionTrigger(palette p: KeyboardChromePalette) -> some View {
