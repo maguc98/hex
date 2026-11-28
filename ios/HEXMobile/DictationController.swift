@@ -735,7 +735,7 @@ final class DictationController {
         Task {
             let granted = await audio.requestPermission()
             guard self.jobGeneration == requestGen else { return }
-            guard !self.keyboardBridge.quickWakeEnabled else {
+            guard !self.keyboardBridge.quickWakeEnabled || self.keyboardBridge.noiseReductionEnabled else {
                 self.pendingHandoff = nil
                 self.phase = self.isModelReady ? .ready : .modelRequired
                 self.audio.deactivateSession()
