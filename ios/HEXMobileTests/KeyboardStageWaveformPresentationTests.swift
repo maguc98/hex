@@ -58,6 +58,31 @@ final class KeyboardStageWaveformPresentationTests: XCTestCase {
         ))
     }
 
+    func testNoiseReferenceStatusDoesNotClaimToWaitWhileIdle() {
+        XCTAssertEqual(
+            KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: .idle),
+            "录音时启动辅助声道"
+        )
+    }
+
+    func testNoiseReferenceStatusDistinguishesConnectingAndUnsupportedInput() {
+        XCTAssertEqual(
+            KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: .waiting),
+            "等待辅助声道"
+        )
+        XCTAssertEqual(
+            KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: .unavailable),
+            "当前输入未提供辅助声道"
+        )
+    }
+
+    func testAvailableReferenceChannelHasNoWaitingMessage() {
+        XCTAssertEqual(
+            KeyboardNoiseReductionTopBarPresentation.referenceStatusText(for: .available),
+            "辅助声道已连接"
+        )
+    }
+
     func testAppPreviewKeepsLiveScopeAtIdle() {
         XCTAssertFalse(
             KeyboardStageWaveformPresentation.usesRestingVisual(
