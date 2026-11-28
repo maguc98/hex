@@ -569,23 +569,6 @@ final class KeyboardLocalDictation {
         }
     }
 
-    /// Moderate gain for whispered speech. A hard ceiling prevents clipping; the same
-    /// processed samples feed both saved audio and streaming recognition.
-    private static func amplifyWhisperPCM(_ data: Data) -> Data {
-        guard data.count >= 2 else { return data }
-        var bytes = Array(data)
-        for offset in stride(from: 0, to: bytes.count - 1, by: 2) {
-            let bits = UInt16(bytes[offset]) | (UInt16(bytes[offset + 1]) << 8)
-            let sample = Int16(bitPattern: bits)
-            let amplified = Int32((Float(sample) * 2.4).rounded())
-            let clipped = Int16(max(-30_000, min(30_000, amplified)))
-            let output = UInt16(bitPattern: clipped)
-            bytes[offset] = UInt8(truncatingIfNeeded: output)
-            bytes[offset + 1] = UInt8(truncatingIfNeeded: output >> 8)
-        }
-        return Data(bytes)
-    }
-
     private func handle(_ event: KeyboardWebCapture.Event, jobID: String, requestedAt: Date) {
         let log = KeyboardProbeLog.shared
         switch event {
@@ -624,8 +607,8 @@ final class KeyboardLocalDictation {
             // Whisper mode adds conservative, peak-limited gain before both the WAV
             // recorder and live recogniser receive the samples.
             let whisper = KeyboardWhisperSettings().isEnabled
-            let audio = whisper ? Self.amplifyWhisperPCM(data) : data
-            let displayedPeak = min(1.0, peak * (whisper ? 2.4 : 1.0))
+            let audio = whisper ? WhisperAudioProcessor.amplify(data) : data
+            let displayedPeak = min(1.0, peak * (whisper ? WhisperAudioProcessor.defaultGain : 1.0))
             pcmFile?.append(audio)
             live?.append(audio)
             lastProgressAt = now
