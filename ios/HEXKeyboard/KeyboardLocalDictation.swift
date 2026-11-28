@@ -1524,6 +1524,19 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
         const initialSettings = track().getSettings ? track().getSettings() : {};
         const inputChannels = Math.max(1, Math.min(2, Number(initialSettings.channelCount) || 1));
         node = ctx.createScriptProcessor(4096, inputChannels, 1);
+
+        // Conservative adaptive reference-noise cancellation (NLMS).
+        // Channel 0 remains the speech channel; channel 1 is only a noise reference.
+        // Freeze adaptation during likely double-talk to reduce voice cancellation.
+        const filterTaps = 32;
+        const filterMu = 0.035;
+        const filterEpsilon = 1e-5;
+        const referenceHistory = new Float32Array(filterTaps);
+        const adaptiveWeights = new Float32Array(filterTaps);
+        let historyIndex = 0;
+        const cancellationEnabled = !!noiseReduction;
+        let cancellationFrames = 0;
+        let cancelledFrames = 0;
         node.onaudioprocess = (event) => {
           if (!running && !flushed) return;
           const inputBuffer = event.inputBuffer;
@@ -1534,16 +1547,58 @@ private final class KeyboardWebCapture: NSObject, WKNavigationDelegate, WKUIDele
           const pcm = new Int16Array(input.length);
           let peak = 0;
           let referencePeak = 0;
+          let cancelledPeak = 0;
+
           for (let i = 0; i < input.length; i++) {
-            const s = Math.max(-1, Math.min(1, input[i]));
-            peak = Math.max(peak, Math.abs(s));
-            pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+            const primary = Math.max(-1, Math.min(1, input[i]));
+            let output = primary;
+            if (reference && cancellationEnabled) {
+              const ref = Math.max(-1, Math.min(1, reference[i]));
+              referenceHistory[historyIndex] = ref;
+              let estimate = 0;
+              let norm = filterEpsilon;
+              let cursor = historyIndex;
+              for (let tap = 0; tap < filterTaps; tap++) {
+                const x = referenceHistory[cursor];
+                estimate += adaptiveWeights[tap] * x;
+                norm += x * x;
+                cursor = cursor === 0 ? filterTaps - 1 : cursor - 1;
+              }
+              const error = primary - estimate;
+              // If primary dominates the reference, it is probably desired near-field speech.
+              const doubleTalk = Math.abs(primary) > Math.abs(ref) * 1.35 + 0.015;
+              if (!doubleTalk && Math.abs(ref) > 0.004) {
+                const step = filterMu * error / norm;
+                cursor = historyIndex;
+                for (let tap = 0; tap < filterTaps; tap++) {
+                  adaptiveWeights[tap] += step * referenceHistory[cursor];
+                  cursor = cursor === 0 ? filterTaps - 1 : cursor - 1;
+                }
+              }
+              output = error;
+              historyIndex = (historyIndex + 1) % filterTaps;
+              cancellationFrames++;
+              if (Math.abs(estimate) > 0.001) cancelledFrames++;
+            }
+            output = Math.max(-1, Math.min(1, output));
+            peak = Math.max(peak, Math.abs(output));
+            cancelledPeak = Math.max(cancelledPeak, Math.abs(primary - output));
+            pcm[i] = output < 0 ? output * 0x8000 : output * 0x7fff;
             if (reference) referencePeak = Math.max(referencePeak, Math.abs(reference[i]));
           }
           const bytes = new Uint8Array(pcm.buffer);
           let binary = "";
           for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-          post({ type: "pcm", data: btoa(binary), peak, referencePeak: reference ? referencePeak : null });
+          post({
+            type: "pcm",
+            data: btoa(binary),
+            peak,
+            referencePeak: reference ? referencePeak : null,
+            cancellationActive: !!reference && cancellationEnabled,
+            cancellationFrames,
+            cancelledFrames,
+            cancelledPeak
+          });
           if (flushed) flushed();
         };
         source.connect(node);
