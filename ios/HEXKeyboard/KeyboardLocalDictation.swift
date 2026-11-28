@@ -654,7 +654,7 @@ final class KeyboardLocalDictation {
                 let referenceDB = referencePeak > 0 ? max(-60, min(0, 20 * log10(referencePeak))) : -60
                 onNoiseReferenceUpdate?(referenceDB, .available)
             } else {
-                        onNoiseReferenceUpdate?(nil, .unavailable)
+                onNoiseReferenceUpdate?(nil, .unavailable)
             }
             let now = Date().timeIntervalSince1970
             if firstAudioAt == nil {
