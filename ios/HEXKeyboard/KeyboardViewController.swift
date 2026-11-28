@@ -1411,7 +1411,12 @@ final class KeyboardViewController: UIInputViewController {
         let multilingualOpensHex = multilingual.keyboardOpensHex(language: multilingual.language())
             && !KeyboardParakeet.shared.dictatesMultilingualHere
         let needsHex = !localDictation.isActive && (LanguageSettings().keyboardNeedsHex() || multilingualOpensHex)
-        let available = localDictation.isActive || (!needsHex && localDictation.hasMemoryToStart)
+        // WebKit getUserMedia is mono on iOS. When reference-channel reduction is selected,
+        // route through Hex's native AVAudioSession/AVAudioRecorder instead of preparing a
+        // keyboard WebView that cannot provide the required second channel.
+        let nativeStereoRoute = bridge.noiseReductionEnabled
+        let available = localDictation.isActive || nativeStereoRoute
+            || (!needsHex && localDictation.hasMemoryToStart)
         guard available != localDictationAvailable else { return }
         // Noted at most every 5 s, as the footprint can hover at the line.
         let now = Date().timeIntervalSince1970
@@ -1419,7 +1424,7 @@ final class KeyboardViewController: UIInputViewController {
             lastAvailabilityNote = now
             let change: String
             if available {
-                change = "dictating in the keyboard"
+                change = nativeStereoRoute ? "noise reduction uses Hex native audio capture" : "dictating in the keyboard"
             } else if viewModel.quickWakeEnabled {
                 change = multilingualOpensHex ? "quick wake blocked: multilingual model needs Hex"
                     : needsHex ? "quick wake blocked: speech model missing in keyboard"
@@ -1434,6 +1439,16 @@ final class KeyboardViewController: UIInputViewController {
         localDictationAvailable = available
         viewModel.onLocalDictateTap = available ? { [weak self] in
             guard let self else { return }
+            if self.bridge.noiseReductionEnabled {
+                self.localDictation.discard(reason: "native stereo capture is handled by Hex")
+                let request = KeyboardLaunchRequest.startRecording(
+                    jobID: UUID().uuidString,
+                    requestedAt: Date().timeIntervalSince1970,
+                    style: self.viewModel.style
+                )
+                self.viewModel.onOpenURL?(request.url)
+                return
+            }
             self.localDictation.start(
                 in: self.view,
                 microphone: self.bridge.microphone,
@@ -1446,7 +1461,10 @@ final class KeyboardViewController: UIInputViewController {
     /// only waits for the microphone. It is prepared when the keyboard is the selected
     /// dictation path; `prepare` checks memory but does not open the microphone while idle.
     private func prepareLocalDictationIfNeeded() {
-        guard hasFullAccess, viewModel.onLocalDictateTap != nil, !viewModel.dictatesThroughHex else { return }
+        guard hasFullAccess,
+              viewModel.onLocalDictateTap != nil,
+              !viewModel.dictatesThroughHex,
+              !bridge.noiseReductionEnabled else { return }
         localDictation.prepare(in: view)
     }
 
@@ -1604,7 +1622,10 @@ final class KeyboardViewController: UIInputViewController {
     /// the Hex key's own choice of in-keyboard dictation; a warm Hex session records instead.
     private func hexKeyPressed(at time: TimeInterval) {
         hexKeyPressedAt = time
-        guard viewModel.hasFullAccess, !viewModel.dictatesThroughHex, viewModel.onLocalDictateTap != nil,
+        guard viewModel.hasFullAccess,
+              !viewModel.dictatesThroughHex,
+              !bridge.noiseReductionEnabled,
+              viewModel.onLocalDictateTap != nil,
               viewModel.stagePhase == .idle || viewModel.stagePhase == .failed else { return }
         localDictation.arm(in: view, microphone: bridge.microphone, pressedAt: time)
     }
