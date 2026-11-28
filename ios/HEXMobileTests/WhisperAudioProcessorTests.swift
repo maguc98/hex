@@ -44,6 +44,15 @@ final class WhisperAudioProcessorTests: XCTestCase {
         }
     }
 
+    func testFloatSamplesUseTheSameSoftLimitedWhisperGain() {
+        let quiet = WhisperAudioProcessor.amplify(Float(2_000) / 32_768)
+        XCTAssertEqual(quiet, Float(4_800) / 32_768, accuracy: 0.0001)
+
+        let loud = WhisperAudioProcessor.amplify(1)
+        XCTAssertLessThanOrEqual(loud, Float(30_000) / 32_768)
+        XCTAssertGreaterThan(loud, 0.8)
+    }
+
     func testOddTrailingByteAndInvalidGainArePreserved() {
         let input = Data([0x10, 0x00, 0xA5])
         let output = WhisperAudioProcessor.amplify(input)
