@@ -1,5 +1,6 @@
 import AVFAudio
 import Foundation
+import os
 
 nonisolated enum AudioSystemEvent: Equatable, Sendable {
     case interruptionBegan
@@ -17,9 +18,13 @@ protocol ActiveAudioCapture: AnyObject {
     func normalizedPowerLevel() -> Float
     func averagePowerDB() -> Float
     func stop()
+    /// Finishes any capture-format conversion before transcription reads the file.
+    func finalizeCapture() async
 }
 
 extension ActiveAudioCapture {
+    func finalizeCapture() async {}
+
     func averagePowerDB() -> Float {
         DotScopeSimulation.loudness(fromNormalized: normalizedPowerLevel())
     }
@@ -78,15 +83,18 @@ private final class RecorderCaptureAdapter: NSObject, ActiveAudioCapture, AVAudi
     let url: URL
     private let recorder: AVAudioRecorder
     private let onFinish: @MainActor (URL, Bool) -> Void
+    private let normalizesStereo: Bool
     private var explicitlyStopped = false
 
     init(
         url: URL,
         recorder: AVAudioRecorder,
+        normalizesStereo: Bool,
         onFinish: @escaping @MainActor (URL, Bool) -> Void
     ) {
         self.url = url
         self.recorder = recorder
+        self.normalizesStereo = normalizesStereo
         self.onFinish = onFinish
         super.init()
         recorder.delegate = self
@@ -119,6 +127,17 @@ private final class RecorderCaptureAdapter: NSObject, ActiveAudioCapture, AVAudi
         RetiredRecorders.shared.hold(recorder)
     }
 
+    func finalizeCapture() async {
+        guard normalizesStereo else { return }
+        let captureURL = url
+        let report = await Task.detached(priority: .userInitiated) {
+            NativeStereoCaptureNormalizer.normalizeToMono(at: captureURL)
+        }.value
+        Self.log.info("\(report, privacy: .public)")
+    }
+
+    private static let log = Logger(subsystem: "anomaly.hex.mobile", category: "NativeAudio")
+
     nonisolated func audioRecorderDidFinishRecording(
         _ recorder: AVAudioRecorder,
         successfully flag: Bool
@@ -135,6 +154,7 @@ final class SystemAudioManager: AudioManaging {
     private let session: any AudioSessionControlling
     private var engine = AVAudioEngine()
     private var tapInstalled = false
+    private var stereoCaptureConfigured = false
     nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
 
     var onSystemEvent: ((AudioSystemEvent) -> Void)?
@@ -221,27 +241,51 @@ final class SystemAudioManager: AudioManaging {
         stopKeepalive()
         try configureAudioSession(recordingFrom: microphone)
 
-        let settings: [String: Any] = [
-            AVFormatIDKey: kAudioFormatLinearPCM,
-            AVSampleRateKey: 16_000,
-            AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsFloatKey: false,
-        ]
-        let recorder = try AVAudioRecorder(url: url, settings: settings)
+        func recorderSettings(channels: Int) -> [String: Any] {
+            [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: 16_000,
+                AVNumberOfChannelsKey: channels,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsBigEndianKey: false,
+                AVLinearPCMIsFloatKey: false,
+            ]
+        }
+
+        var recordsStereo = stereoCaptureConfigured
+        var recorder: AVAudioRecorder
+        do {
+            recorder = try AVAudioRecorder(url: url, settings: recorderSettings(channels: recordsStereo ? 2 : 1))
+        } catch {
+            guard recordsStereo else { throw error }
+            Self.log.error("Native stereo recorder initialization failed; retrying mono: \(String(describing: error), privacy: .public)")
+            recordsStereo = false
+            stereoCaptureConfigured = false
+            try? session.setCategory(
+                .playAndRecord,
+                mode: .voiceChat,
+                options: MicrophoneRoute.categoryOptions(allowingBluetooth: microphone.allowsBluetooth)
+            )
+            try? session.setActive(true, options: [])
+            try? AVAudioSession.sharedInstance().setPreferredInputNumberOfChannels(1)
+            recorder = try AVAudioRecorder(url: url, settings: recorderSettings(channels: 1))
+        }
+
         recorder.isMeteringEnabled = true
         recorder.prepareToRecord()
         guard recorder.record(forDuration: maxDuration) else {
-            // The microphone didn't start (none in the simulator, or one another app holds).
             // The recorder's queue made it this far and is still winding down: freeing the
-            // recorder here crashed Hex on the queue's thread.
+            // recorder in that window can crash in AudioRecorderAQInputCallback.
             recorder.stop()
             RetiredRecorders.shared.hold(recorder)
             throw CocoaError(.fileWriteUnknown)
         }
 
-        return RecorderCaptureAdapter(url: url, recorder: recorder) { [weak self] finishedURL, ok in
+        return RecorderCaptureAdapter(
+            url: url,
+            recorder: recorder,
+            normalizesStereo: recordsStereo
+        ) { [weak self] finishedURL, ok in
             self?.onUnexpectedCaptureEnd?(finishedURL, ok)
         }
     }
@@ -267,16 +311,74 @@ final class SystemAudioManager: AudioManaging {
         let noiseReduction = choice != nil && (
             KeyboardBridge().noiseReductionEnabled || AppVoiceProcessingSettings.isEnabled
         )
+        let inputs = session.microphones
+        let input = choice.map { MicrophoneRoute.capture($0, from: inputs) } ?? MicrophoneRoute.keepalive(from: inputs)
+        let requestsBuiltInStereo = noiseReduction && input?.port == .builtInMic && session is AVAudioSession
+
+        stereoCaptureConfigured = false
         try session.setCategory(
             .playAndRecord,
-            mode: noiseReduction ? .voiceChat : .measurement,
+            mode: requestsBuiltInStereo ? .measurement : (noiseReduction ? .voiceChat : .measurement),
             options: MicrophoneRoute.categoryOptions(allowingBluetooth: choice?.allowsBluetooth ?? false)
         )
         try session.setActive(true, options: [])
-        let inputs = session.microphones
-        let input = choice.map { MicrophoneRoute.capture($0, from: inputs) } ?? MicrophoneRoute.keepalive(from: inputs)
         try? session.prefer(input)
+
+        if requestsBuiltInStereo, let audioSession = session as? AVAudioSession {
+            stereoCaptureConfigured = Self.enableBuiltInStereoCapture(on: audioSession)
+            if !stereoCaptureConfigured {
+                // Stereo isn't exposed by this route: retain the previous system voice-processing path.
+                try session.setCategory(
+                    .playAndRecord,
+                    mode: .voiceChat,
+                    options: MicrophoneRoute.categoryOptions(allowingBluetooth: choice?.allowsBluetooth ?? false)
+                )
+                try session.setActive(true, options: [])
+            }
+        }
     }
+
+    /// Requests Apple's native stereo recording configuration from a rear-facing built-in
+    /// microphone data source. This is a stereo capture profile, not a claim that AVAudioSession
+    /// exposes two raw physical microphone capsules independently.
+    private static func enableBuiltInStereoCapture(on audioSession: AVAudioSession) -> Bool {
+        guard let builtInPort = audioSession.availableInputs?.first(where: { $0.portType == .builtInMic }),
+              let dataSources = builtInPort.dataSources else {
+            Self.log.error("Native stereo unavailable: built-in microphone data sources were not exposed")
+            return false
+        }
+
+        let stereoSources = dataSources.filter {
+            $0.supportedPolarPatterns?.contains(.stereo) == true
+        }
+        guard let source = stereoSources.first(where: { $0.orientation == .back }) ?? stereoSources.first else {
+            Self.log.error("Native stereo unavailable: no built-in data source supports the stereo polar pattern")
+            return false
+        }
+
+        do {
+            try source.setPreferredPolarPattern(.stereo)
+            try builtInPort.setPreferredDataSource(source)
+            try audioSession.setPreferredInputNumberOfChannels(2)
+        } catch {
+            Self.log.error("Native stereo configuration failed: \(String(describing: error), privacy: .public)")
+            return false
+        }
+
+        let actualChannels = audioSession.inputNumberOfChannels
+        let maximumChannels = audioSession.maximumInputNumberOfChannels
+        let requestedChannels = audioSession.preferredInputNumberOfChannels
+        let selected = audioSession.currentRoute.inputs
+            .first(where: { $0.portType == .builtInMic })?.selectedDataSource ?? source
+        let selectedPattern = String(describing: selected.selectedPolarPattern)
+        Self.log.info(
+            "Native stereo request: source=\(source.dataSourceName, privacy: .public), orientation=\(String(describing: source.orientation), privacy: .public), pattern=\(selectedPattern, privacy: .public), channels preferred/actual/max=\(requestedChannels)/\(actualChannels)/\(maximumChannels)"
+        )
+
+        return requestedChannels >= 2 && maximumChannels >= 2 && selected.selectedPolarPattern == .stereo
+    }
+
+    private static let log = Logger(subsystem: "anomaly.hex.mobile", category: "NativeAudio")
 
     nonisolated private static func discardSamples(
         _ buffer: AVAudioPCMBuffer,

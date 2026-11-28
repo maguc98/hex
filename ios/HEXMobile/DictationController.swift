@@ -957,6 +957,11 @@ final class DictationController {
                 try? FileManager.default.removeItem(at: captureURL)
                 backgroundTime?.end()
             }
+
+            // Stereo input is analyzed and folded to the mono WAV format expected by the
+            // speech engines before transcription or Learning audio staging reads the file.
+            await session.capture.finalizeCapture()
+            guard let self, self.jobGeneration == captureGeneration, !Task.isCancelled else { return }
             let transcribeStarted = Date()
 
             do {
