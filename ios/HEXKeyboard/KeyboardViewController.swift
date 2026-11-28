@@ -1658,12 +1658,12 @@ final class KeyboardViewController: UIInputViewController {
     private func startWarmDictation() {
         let now = Date().timeIntervalSince1970
         guard viewModel.hasFullAccess, viewModel.currentSnapshot.isAvailable(at: now) else { return }
-        if bridge.noiseReductionEnabled {
-            viewModel.updateNoiseReference(levelDB: nil, state: .nativeCapture)
-        }
         // The app owns this native recording; clear any stale keyboard-local failure or armed job
         // so its snapshot cannot shadow the host app snapshot in syncFromBridge().
         localDictation.cancel()
+        if bridge.noiseReductionEnabled {
+            viewModel.updateNoiseReference(levelDB: nil, state: .nativeCapture)
+        }
         let jobID = UUID().uuidString
         warmStartTimeline = WarmStartTimeline(jobID: jobID, pressedAt: takeHexKeyPress() ?? now, sentAt: now)
         viewModel.setPendingCommand(
